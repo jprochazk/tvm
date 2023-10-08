@@ -27,6 +27,11 @@ jobs:
           toolchain: "nightly"
           targets: "wasm32-unknown-unknown"
 
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "rust-web-build"
+
       - name: "Install Trunk"
         uses: taiki-e/install-action@v2.20.1
         with:

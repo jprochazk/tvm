@@ -7,3 +7,7 @@ edition = "2021"
 [dependencies]
 leptos = { version = "0.5.1", features = ["csr", "nightly"] }
 tvm = { path = "../" }
+
+[dependencies.web-sys]
+version = "0.3.64"
+features = ["Window", "Storage"]

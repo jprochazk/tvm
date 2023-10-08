@@ -39,7 +39,7 @@ jobs:
       - name: "Build"
         run: |
           cd web
-          trunk build --release
+          trunk build --release --public-url "/tvm/"
           cd ..
 
       - name: "Upload"

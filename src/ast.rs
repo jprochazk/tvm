@@ -3,6 +3,8 @@
 #[macro_use]
 mod macros;
 
+use std::fmt::Debug;
+
 use crate::lex::{Lexer, Span, Token, TokenKind};
 use crate::Cow;
 
@@ -64,10 +66,10 @@ decl! {
   Expr<'src> {
     Never,
     Return {
-      value: Expr<'src>,
+      value: Option<Expr<'src>>,
     },
     Yield {
-      value: Expr<'src>,
+      value: Option<Expr<'src>>,
     },
     Break,
     Continue,
@@ -104,19 +106,19 @@ decl! {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Param<'src> {
   pub name: Ident<'src>,
   pub ty: Type<'src>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Branch<'src> {
   pub cond: Expr<'src>,
   pub body: Block<'src>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Arg<'src> {
   pub key: Option<Ident<'src>>,
   pub value: Expr<'src>,
@@ -128,7 +130,7 @@ impl<'src> UseExpr<'src> {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Place<'src> {
   Var {
     name: Ident<'src>,
@@ -157,7 +159,7 @@ impl<'src> Place<'src> {
   }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum BinaryOp {
   Add,
   Sub,
@@ -194,7 +196,7 @@ macro_rules! binop {
   [??] => ($crate::ast::BinaryOp::Opt);
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum UnaryOp {
   Minus,
   Not,
@@ -207,7 +209,7 @@ macro_rules! unop {
   [?] => ($crate::ast::UnaryOp::Opt);
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Literal<'src> {
   None,
   Int(i64),
@@ -253,7 +255,7 @@ impl Default for Literal<'_> {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Block<'src> {
   pub span: Span,
   pub body: Vec<Stmt<'src>>,
@@ -272,7 +274,7 @@ impl<'src> From<Expr<'src>> for Stmt<'src> {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Ident<'src> {
   pub span: Span,
   pub lexeme: &'src str,
@@ -298,4 +300,104 @@ trait UnwrapBox {
   type Unboxed;
 
   fn unwrap_box(self) -> Self::Unboxed;
+}
+
+impl Debug for Param<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_tuple("Param")
+      .field(&self.name)
+      .field(&self.ty)
+      .finish()
+  }
+}
+
+impl Debug for Branch<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_tuple("Branch")
+      .field(&self.cond)
+      .field(&self.body)
+      .finish()
+  }
+}
+
+impl Debug for Arg<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let mut t = f.debug_tuple("Arg");
+    match &self.key {
+      Some(key) => t.field(key).field(&self.value).finish(),
+      None => t.field(&self.value).finish(),
+    }
+  }
+}
+
+impl Debug for Place<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Var { name } => write!(f, "Var({name:?})"),
+      Self::Field { parent, name } => f.debug_tuple("Field").field(parent).field(name).finish(),
+      Self::Index { parent, key } => f.debug_tuple("Index").field(parent).field(key).finish(),
+    }
+  }
+}
+
+impl Debug for BinaryOp {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Add => f.write_str("Op(+)"),
+      Self::Sub => f.write_str("Op(-)"),
+      Self::Mul => f.write_str("Op(*)"),
+      Self::Div => f.write_str("Op(/)"),
+      Self::Rem => f.write_str("Op(%)"),
+      Self::Pow => f.write_str("Op(**)"),
+      Self::Eq => f.write_str("Op(==)"),
+      Self::Ne => f.write_str("Op(!=)"),
+      Self::Gt => f.write_str("Op(>)"),
+      Self::Lt => f.write_str("Op(<)"),
+      Self::Ge => f.write_str("Op(>=)"),
+      Self::Le => f.write_str("Op(<=)"),
+      Self::And => f.write_str("Op(&&)"),
+      Self::Or => f.write_str("Op(||)"),
+      Self::Opt => f.write_str("Op(??)"),
+    }
+  }
+}
+
+impl Debug for UnaryOp {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Minus => f.write_str("-"),
+      Self::Not => f.write_str("!"),
+      Self::Opt => f.write_str("?"),
+    }
+  }
+}
+
+impl Debug for Block<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Block")
+      .field("body", &self.body)
+      .field("tail", &self.tail)
+      .finish()
+  }
+}
+
+impl Debug for Ident<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "Ident({:?})", self.lexeme)
+  }
+}
+
+impl Debug for Literal<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::None => write!(f, "None"),
+      Self::Int(arg0) => write!(f, "Int({arg0:?})"),
+      Self::Float(arg0) => write!(f, "Float({arg0:?})"),
+      Self::Bool(arg0) => write!(f, "Bool({arg0:?})"),
+      Self::String(arg0) => write!(f, "String({arg0:?})"),
+      Self::Array(arg0) => f.debug_tuple("Array").field(arg0).finish(),
+      Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
+      Self::Map(arg0) => f.debug_tuple("Map").field(arg0).finish(),
+    }
+  }
 }

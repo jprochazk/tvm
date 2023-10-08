@@ -21,7 +21,6 @@ let v: num = 1.0;
 let v: bool = true;
 let v: str = "yo";
 let v: [int] = [1, 2, 3];
-// TODO: set type?
 let v: {str} = {"a", "b", "c"};
 let v: {str -> int} = {"a": 0, "b": 1};
 

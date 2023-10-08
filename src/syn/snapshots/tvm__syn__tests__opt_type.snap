@@ -1,0 +1,16 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    let opt: int? = 1;\n  \"#)"
+---
+error: expected token `;`
+1 |  let opt: int? = 1;
+  |              ^
+
+error: unexpected token
+1 |  let opt: int? = 1;
+  |                ^
+
+error: expected token `;`
+1 |  let opt: int? = 1;
+  |                ^
+

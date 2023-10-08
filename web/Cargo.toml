@@ -1,0 +1,9 @@
+[package]
+name = "tvm-web"
+version = "0.0.0"
+edition = "2021"
+
+
+[dependencies]
+leptos = { version = "0.5.1", features = ["csr", "nightly"] }
+tvm = { path = "../" }

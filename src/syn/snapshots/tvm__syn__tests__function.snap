@@ -1,0 +1,34 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    fn f() {}\n  \"#)"
+---
+SyntaxTree {
+    top_level: Block {
+        span: Span {
+            start: 0,
+            end: 0,
+        },
+        body: [
+            FnStmt {
+                name: Ident {
+                    span: Span {
+                        start: 3,
+                        end: 4,
+                    },
+                    lexeme: "f",
+                },
+                params: [],
+                ret: None,
+                body: Block {
+                    span: Span {
+                        start: 7,
+                        end: 9,
+                    },
+                    body: [],
+                    tail: None,
+                },
+            },
+        ],
+        tail: None,
+    },
+}

@@ -1,0 +1,12 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    fn\n  \"#)"
+---
+error: expected token `identifier`
+1 |  fn
+  |   ^
+
+error: expected token `{`
+1 |  fn
+  |   ^
+

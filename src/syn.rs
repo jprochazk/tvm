@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::ops::Not;
 
 use crate::ast::*;
 use crate::error::{Error, Result};
@@ -253,7 +254,7 @@ fn return_<'src>(p: &mut Parser<'src>) -> Expr<'src> {
   let m = p.meta();
 
   assert!(p.eat(t![return]));
-  let value = expr(&m, p);
+  let value = p.at(t![;]).not().then(|| expr(&m, p));
   let span = p.finish(m);
   Expr::make_return(span, value)
 }
@@ -262,7 +263,7 @@ fn yield_<'src>(p: &mut Parser<'src>) -> Expr<'src> {
   let m = p.meta();
 
   assert!(p.eat(t![yield]));
-  let value = expr(&m, p);
+  let value = p.at(t![;]).not().then(|| expr(&m, p));
   let span = p.finish(m);
   Expr::make_yield(span, value)
 }

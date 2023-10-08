@@ -19,9 +19,16 @@ div.split {
 
 textarea {
   font-family: monospace;
-  width: 50%;
   height: 100%;
   padding: 8px;
   border: 1px solid #ccc;
+}
+
+textarea:first-child {
+  width: 40%;
+}
+
+textarea:last-child {
+  width: 60%;
 }
 

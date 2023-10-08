@@ -8,13 +8,37 @@ fn to_ast(src: &str) -> String {
     .map(|e| format!("{}", e.with_src(src)))
     .collect::<Vec<_>>()
     .join("\n");
-  format!("{errors}\n\n{ast}")
+
+  [errors, ast].join("\n=================\n\n")
+}
+
+const LOCAL_STORAGE_KEY: &str = "state";
+
+fn set_local_state(v: &str) {
+  let Some(storage) = window().local_storage().ok().flatten() else {
+    return;
+  };
+  _ = storage.set_item(LOCAL_STORAGE_KEY, v);
+}
+
+fn get_local_state() -> String {
+  match window()
+    .local_storage()
+    .ok()
+    .flatten()
+    .and_then(|storage| storage.get_item(LOCAL_STORAGE_KEY).ok().flatten())
+  {
+    Some(value) => value,
+    None => String::new(),
+  }
 }
 
 #[component]
 fn App() -> impl IntoView {
-  let (source, set_source) = create_signal(String::new());
+  let (source, set_source) = create_signal(get_local_state());
   let ast = move || to_ast(&source());
+
+  create_effect(move |_| set_local_state(&source()));
 
   view! {
     <div class="split">

@@ -111,8 +111,8 @@ macro_rules! decl {
 
       impl<$lifetime> ::core::fmt::Debug for [<$variant $name>]<$lifetime> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-          let mut s = f.debug_struct(stringify!([<$variant $name>]));
-          $(s.field(stringify!($field), &self.$field);)*
+          let mut s = f.debug_tuple(stringify!([<$variant>]));
+          $(s.field(&self.$field);)*
           s.finish()
         }
       }
@@ -161,7 +161,7 @@ macro_rules! decl {
 
       impl<$lifetime> ::core::fmt::Debug for [<$variant $name>]<$lifetime> {
         fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
-          f.debug_struct(stringify!([<$variant $name>])).finish()
+          f.write_str(stringify!([<$variant>]))
         }
       }
 

@@ -1,6 +1,3 @@
-use std::cell::Cell;
-use std::ops::Not;
-
 use crate::ast::*;
 use crate::error::{Error, Result};
 use crate::lex::{Lexer, Span, Token, TokenKind, EOF};
@@ -12,11 +9,6 @@ pub struct Parser<'src> {
   prev: Token,
   curr: Token,
   errors: Vec<Error>,
-}
-
-struct Meta {
-  errored: Cell<bool>,
-  span_start: u32,
 }
 
 impl<'src> Parser<'src> {
@@ -47,26 +39,15 @@ impl<'src> Parser<'src> {
   }
 
   #[inline]
-  fn meta(&self) -> Meta {
-    Meta {
-      errored: Cell::new(false),
-      span_start: self.curr.span.start,
-    }
+  fn span(&self) -> Span {
+    self.curr.span
   }
 
   #[inline]
-  fn finish(&self, m: Meta) -> Span {
+  fn finish(&self, span: Span) -> Span {
     Span {
-      start: m.span_start,
+      start: span.start,
       end: self.prev.span.end,
-    }
-  }
-
-  #[inline]
-  fn error(&mut self, m: &Meta, e: Error) {
-    if !m.errored.get() {
-      m.errored.set(true);
-      self.errors.push(e);
     }
   }
 
@@ -81,8 +62,24 @@ impl<'src> Parser<'src> {
   }
 
   #[inline]
-  fn at(&mut self, kind: TokenKind) -> bool {
+  fn at(&self, kind: TokenKind) -> bool {
     self.curr.is(kind)
+  }
+
+  #[inline]
+  fn was(&self, kind: TokenKind) -> bool {
+    self.prev.is(kind)
+  }
+
+  #[inline]
+  fn at_any(&self, kinds: impl IntoIterator<Item = TokenKind>) -> bool {
+    for kind in kinds {
+      if self.curr.is(kind) {
+        return true;
+      }
+    }
+
+    false
   }
 
   #[inline]
@@ -95,25 +92,34 @@ impl<'src> Parser<'src> {
   }
 
   #[inline]
-  fn must(&mut self, m: &Meta, kind: TokenKind) -> bool {
-    if self.eat(kind) {
-      true
-    } else {
-      let span = if !self.end() {
-        self.curr.span
-      } else if self.prev.span.end > 0 {
+  fn must_if(&mut self, cond: bool, kind: TokenKind) -> Result<()> {
+    if !self.eat(kind) && cond {
+      let span = if self.prev.span.end > 0 {
         (self.prev.span.end - 1..self.prev.span.end).into()
+      } else if !self.end() {
+        self.curr.span
       } else {
         Span::empty()
       };
-      self.error(m, err!(@span, ExpectedToken, kind));
-      false
+      Err(err!(@span, ExpectedToken, kind))
+    } else {
+      Ok(())
     }
   }
 
   #[inline]
-  fn must2(&mut self, kind: TokenKind) -> bool {
-    self.must(&self.meta(), kind)
+  fn must(&mut self, kind: TokenKind) -> Result<()> {
+    if !self.eat(kind) {
+      let span = if self.prev.span.end > 0 {
+        (self.prev.span.end - 1..self.prev.span.end).into()
+      } else if !self.end() {
+        self.curr.span
+      } else {
+        Span::empty()
+      };
+      return Err(err!(@span, ExpectedToken, kind));
+    }
+    Ok(())
   }
 
   #[inline]
@@ -134,22 +140,30 @@ impl<'src> Parser<'src> {
   }
 }
 
+fn stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src>>) {
+  match stmt(p) {
+    Ok(stmt) => out.push(stmt),
+    Err(e) => sync(p, e),
+  }
+}
+
 fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src> {
-  let m = p.meta();
+  let s = p.span();
 
   let mut body = vec![];
-  while !p.end() {
-    if !body.is_empty() && !p.prev.is(t![;]) {
-      p.error(&p.meta(), err!(@p.prev.span, ExpectedToken, t![;]));
-    }
-    body.push(stmt(p));
-    if !p.eat(t![;]) {
-      p.advance();
+  if !p.end() {
+    stmt_or_sync(p, &mut body);
+    while !p.end() {
+      if let Err(e) = p.must_if(!p.was(t!["}"]), t![;]) {
+        p.errors.push(e);
+      }
+      if p.end() {
+        // trailing semicolon
+        break;
+      }
+      stmt_or_sync(p, &mut body);
     }
   }
-  // the tail of a block is the final stmt iff:
-  // - it is an expression
-  // - it is not terminated by a semicolon (`;`)
   let tail = if !p.prev.is(t![;]) && body.last().is_some_and(Stmt::is_expr) {
     Some(body.pop().unwrap().into_expr().unwrap().inner)
   } else {
@@ -157,246 +171,298 @@ fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src> {
   };
 
   Block {
-    span: p.finish(m),
+    span: p.finish(s),
     body,
     tail,
   }
 }
 
-fn stmt<'src>(p: &mut Parser<'src>) -> Stmt<'src> {
+fn sync(p: &mut Parser<'_>, e: Error) {
+  p.errors.push(e);
+
+  p.advance();
+  while !p.end() {
+    // break on these
+    if p.at_any([t![fn], t![loop], t![if], t![let], t!["{"]]) {
+      break;
+    }
+
+    // bump these
+    if p.at_any([t!["}"], t![;]]) {
+      p.advance();
+      break;
+    }
+
+    p.advance();
+  }
+}
+
+fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
   match p.kind() {
     t![fn] => fn_(p),
     t![loop] => loop_(p),
     t![let] => let_(p),
-    t![break] => break_(p).into(),
-    t![continue] => continue_(p).into(),
-    t![return] => return_(p).into(),
-    t![if] => if_(p).into(),
-    t![yield] => yield_(p).into(),
-    t!["{"] => block(p).into(),
-    _ => expr(&p.meta(), p).into(),
+    t![break] => break_(p).map(Stmt::from),
+    t![continue] => continue_(p).map(Stmt::from),
+    t![return] => return_(p).map(Stmt::from),
+    t![if] => if_(p).map(Stmt::from),
+    t![yield] => yield_(p).map(Stmt::from),
+    t!["{"] => block(p).map(Stmt::from),
+    _ => assign(p).map(Stmt::from),
   }
 }
 
-fn fn_<'src>(p: &mut Parser<'src>) -> Stmt<'src> {
-  let m = p.meta();
+fn fn_<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
+  let s = p.span();
 
   assert!(p.eat(t![fn]));
-  let name = ident(&m, p);
-  let params = params(&m, p);
-  let ret = p.eat(t![->]).then(|| type_(&m, p));
-  let body = block(p);
-  let span = p.finish(m);
-  Stmt::make_fn(span, name, params, ret, body)
+  let name = ident(p)?;
+  let params = params(p)?;
+  let ret = p.eat(t![->]).then(|| type_(p)).transpose()?;
+  let body = block(p)?;
+  Ok(Stmt::make_fn(p.finish(s), name, params, ret, body))
 }
 
-fn param<'src>(m: &Meta, p: &mut Parser<'src>) -> Param<'src> {
-  Param {
-    name: ident(m, p),
-    ty: type_(m, p),
-  }
+fn param<'src>(p: &mut Parser<'src>) -> Result<Param<'src>> {
+  let name = ident(p)?;
+  p.must(t![:])?;
+  let ty = type_(p)?;
+  Ok(Param { name, ty })
 }
 
-fn params<'src>(m: &Meta, p: &mut Parser<'src>) -> Vec<Param<'src>> {
-  paren_list(m, p, param)
+fn params<'src>(p: &mut Parser<'src>) -> Result<Vec<Param<'src>>> {
+  paren_list(p, param)
 }
 
-fn paren_list<'src, F, T>(m: &Meta, p: &mut Parser<'src>, f: F) -> Vec<T>
+fn paren_list<'src, F, T>(p: &mut Parser<'src>, f: F) -> Result<Vec<T>>
 where
-  F: Fn(&Meta, &mut Parser<'src>) -> T,
+  F: Fn(&mut Parser<'src>) -> Result<T>,
 {
-  p.must(m, t!["("]);
+  p.must(t!["("])?;
   let mut out = vec![];
   if !p.end() && !p.at(t![")"]) {
-    out.push(f(m, p));
+    out.push(f(p)?);
     while !p.end() && p.eat(t![,]) && !p.at(t![")"]) {
-      out.push(f(m, p));
+      out.push(f(p)?);
     }
   }
-  p.must(m, t![")"]);
-  out
+  p.must(t![")"])?;
+  Ok(out)
 }
 
-fn loop_<'src>(p: &mut Parser<'src>) -> Stmt<'src> {
-  let m = p.meta();
+fn loop_<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
+  let s = p.span();
 
   assert!(p.eat(t![loop]));
-  let body = block(p);
-  let span = p.finish(m);
-  Stmt::make_loop(span, body)
+  let body = block(p)?;
+  Ok(Stmt::make_loop(p.finish(s), body))
 }
 
-fn let_<'src>(p: &mut Parser<'src>) -> Stmt<'src> {
+fn let_<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
   assert!(p.eat(t![let]));
-  let m = p.meta();
+  let s = p.span();
 
-  let name = ident(&m, p);
-  let ty = p.eat(t![:]).then(|| type_(&m, p));
-  let init = p.eat(t![=]).then(|| expr(&m, p));
+  let name = ident(p)?;
+  let ty = if p.eat(t![:]) { Some(type_(p)?) } else { None };
+  p.must(t![=])?;
+  let init = expr(p)?;
 
-  let span = p.finish(m);
-  Stmt::make_let(span, name, ty, init)
+  Ok(Stmt::make_let(p.finish(s), name, ty, init))
 }
 
-fn break_<'src>(p: &mut Parser<'src>) -> Expr<'src> {
+fn break_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
   assert!(p.eat(t![break]));
-  let span = p.prev.span;
-  Expr::make_break(span)
+  Ok(Expr::make_break(p.prev.span))
 }
 
-fn continue_<'src>(p: &mut Parser<'src>) -> Expr<'src> {
+fn continue_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
   assert!(p.eat(t![continue]));
-  let span = p.prev.span;
-  Expr::make_continue(span)
+  Ok(Expr::make_continue(p.prev.span))
 }
 
-fn return_<'src>(p: &mut Parser<'src>) -> Expr<'src> {
-  let m = p.meta();
+fn return_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+  let s = p.span();
 
   assert!(p.eat(t![return]));
-  let value = p.at(t![;]).not().then(|| expr(&m, p));
-  let span = p.finish(m);
-  Expr::make_return(span, value)
+  let value = if !p.at_any([t!["}"], t![;]]) {
+    Some(expr(p)?)
+  } else {
+    None
+  };
+  Ok(Expr::make_return(p.finish(s), value))
 }
 
-fn yield_<'src>(p: &mut Parser<'src>) -> Expr<'src> {
-  let m = p.meta();
+fn yield_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+  let s = p.span();
 
   assert!(p.eat(t![yield]));
-  let value = p.at(t![;]).not().then(|| expr(&m, p));
-  let span = p.finish(m);
-  Expr::make_yield(span, value)
+  let value = if !p.at_any([t!["}"], t![;]]) {
+    Some(expr(p)?)
+  } else {
+    None
+  };
+  let span = p.finish(s);
+  Ok(Expr::make_yield(span, value))
 }
 
-fn if_<'src>(p: &mut Parser<'src>) -> Expr<'src> {
-  let m = p.meta();
+fn if_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+  let s = p.span();
 
   assert!(p.eat(t![if]));
-  let mut branches = vec![branch(&m, p)];
+  let mut branches = vec![branch(p)?];
   let mut tail = None;
   while !p.end() && p.eat(t![else]) {
     if p.eat(t![if]) {
-      branches.push(branch(&m, p));
+      branches.push(branch(p)?);
     } else {
-      tail = Some(block(p));
+      tail = Some(block(p)?);
     }
   }
 
-  let span = p.finish(m);
-  Expr::make_if(span, branches, tail)
+  Ok(Expr::make_if(p.finish(s), branches, tail))
 }
 
-fn branch<'src>(m: &Meta, p: &mut Parser<'src>) -> Branch<'src> {
-  Branch {
-    cond: expr(m, p),
-    body: block(p),
-  }
+fn branch<'src>(p: &mut Parser<'src>) -> Result<Branch<'src>> {
+  Ok(Branch {
+    cond: expr(p)?,
+    body: block(p)?,
+  })
 }
 
 // TODO: opt
-fn type_<'src>(m: &Meta, p: &mut Parser<'src>) -> Type<'src> {
+fn type_<'src>(p: &mut Parser<'src>) -> Result<Type<'src>> {
   match p.kind() {
     t![_] => {
       p.advance();
-      Type::make_empty(p.prev.span)
+      Ok(Type::make_empty(p.prev.span))
     }
     t![ident] => {
-      let ident = ident(m, p);
-      Type::make_named(ident.span, ident)
+      let ident = ident(p)?;
+      let ty = Type::make_named(ident.span, ident);
+      Ok(opt(p, ty))
     }
     t!["["] => {
       let start = p.curr.span.start;
       p.advance();
-      let element = type_(m, p);
+      let element = type_(p)?;
       let end = p.prev.span.end;
-      p.must(m, t!["]"]);
-      Type::make_array(start..end, element)
+      p.must(t!["]"])?;
+      let ty = Type::make_array(start..end, element);
+      Ok(opt(p, ty))
     }
     t!["{"] => {
       let start = p.curr.span.start;
       p.advance();
-      let key = type_(m, p);
-      if p.eat(t![->]) {
-        let value = type_(m, p);
-        p.must(m, t!["}"]);
+      let key = type_(p)?;
+      let ty = if p.eat(t![->]) {
+        let value = type_(p)?;
+        p.must(t!["}"])?;
         let end = p.prev.span.end;
         Type::make_map(start..end, key, value)
       } else {
-        p.must(m, t!["}"]);
+        p.must(t!["}"])?;
         let end = p.prev.span.end;
         Type::make_set(start..end, key)
-      }
+      };
+      Ok(opt(p, ty))
     }
     t!["("] => {
       let start = p.curr.span.start;
 
       let end = p.prev.span.end;
-      let params = paren_list(m, p, type_);
-      p.must(m, t![")"]);
-      p.must(m, t![->]);
-      let ret = type_(m, p);
-      Type::make_fn(start..end, params, ret)
+      let params = paren_list(p, type_)?;
+      p.must(t![->])?;
+      let ret = type_(p)?;
+      Ok(Type::make_fn(start..end, params, ret))
     }
-    _ => {
-      p.error(m, err!(@p.curr.span, UnexpectedToken));
-      Type::make_empty(Span::empty())
-    }
+    _ => Err(err!(@p.curr.span, UnexpectedToken)),
   }
 }
 
-fn ident<'src>(m: &Meta, p: &mut Parser<'src>) -> Ident<'src> {
-  if p.must(m, t![ident]) {
-    Ident {
-      span: p.prev.span,
-      lexeme: p.lex.lexeme(&p.prev),
-    }
+fn opt<'src>(p: &mut Parser<'src>, inner: Type<'src>) -> Type<'src> {
+  if p.eat(t![?]) {
+    Type::make_opt(inner.span.to(p.prev.span), inner)
   } else {
-    Ident {
-      span: Span::empty(),
-      lexeme: "",
-    }
+    inner
   }
 }
 
-fn block<'src>(p: &mut Parser<'src>) -> Block<'src> {
-  let m = p.meta();
+fn ident<'src>(p: &mut Parser<'src>) -> Result<Ident<'src>> {
+  p.must(t![ident])?;
 
-  if !p.must(&m, t!["{"]) {
-    return Block {
-      span: Span::empty(),
-      body: vec![],
-      tail: None,
-    };
-  }
+  Ok(Ident {
+    span: p.prev.span,
+    lexeme: p.lex.lexeme(&p.prev),
+  })
+}
 
+fn block<'src>(p: &mut Parser<'src>) -> Result<Block<'src>> {
+  let s = p.span();
+
+  p.must(t!["{"])?;
   let mut body = vec![];
-  while !p.end() && !p.at(t!["}"]) {
-    if !body.is_empty() && !p.prev.is(t![;]) {
-      p.error(&p.meta(), err!(@p.prev.span, ExpectedToken, t![;]));
-    }
-    body.push(stmt(p));
-    if !p.at(t!["}"]) && !p.eat(t![;]) {
-      p.advance();
+  if !p.end() && !p.at(t!["}"]) {
+    stmt_or_sync(p, &mut body);
+    while !p.end() && !p.at(t!["}"]) {
+      if let Err(e) = p.must_if(!p.was(t!["}"]), t![;]) {
+        p.errors.push(e);
+      }
+      if p.end() || p.at(t!["}"]) {
+        break;
+      }
+      stmt_or_sync(p, &mut body);
     }
   }
-
-  // the tail of a block is the final stmt if:
-  // - it is an expression
-  // - it is not terminated by a semicolon (`;`)
-  let tail = if !p.eat(t![;]) && body.last().is_some_and(Stmt::is_expr) {
+  let tail = if !p.was(t![;]) && body.last().is_some_and(Stmt::is_expr) {
     Some(body.pop().unwrap().into_expr().unwrap().inner)
   } else {
     None
   };
-  p.must2(t!["}"]);
+  p.must(t!["}"])?;
 
-  let span = p.finish(m);
-  Block { span, body, tail }
+  Ok(Block {
+    span: p.finish(s),
+    body,
+    tail,
+  })
+}
+
+fn assign<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+  let lhs = expr(p)?;
+  let op = match p.kind() {
+    t![=] => None,
+    t![+=] => Some(binop![+]),
+    t![-=] => Some(binop![-]),
+    t![/=] => Some(binop![/]),
+    t![*=] => Some(binop![*]),
+    t![%=] => Some(binop![%]),
+    t![**=] => Some(binop![**]),
+    t![??=] => Some(binop![??]),
+    _ => return Ok(lhs),
+  };
+  p.advance();
+  let value = expr(p)?;
+  let span = lhs.span.to(value.span);
+  let place = expr_to_place(lhs)?;
+  Ok(Expr::make_assign(span, place, op, value))
+}
+
+fn expr_to_place(v: Expr<'_>) -> Result<Place<'_>> {
+  match v.kind {
+    ExprKind::Use(inner) => Ok(inner.place),
+    _ => Err(err!(@v.span, InvalidPlace)),
+  }
 }
 
 // TODO: assignment
-fn expr<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-  expr::or(m, p)
+fn expr<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+  match p.kind() {
+    t![break] => break_(p),
+    t![continue] => continue_(p),
+    t![return] => return_(p),
+    t![yield] => yield_(p),
+    _ => expr::opt(p),
+  }
 }
 
 mod expr {
@@ -406,26 +472,35 @@ mod expr {
     Expr::make_binary(lhs.span.to(rhs.span), lhs, op, rhs)
   }
 
-  pub(super) fn or<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let mut lhs = and(m, p);
+  pub(super) fn opt<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut lhs = or(p)?;
+    while !p.end() && p.eat(t![??]) {
+      let rhs = or(p)?;
+      lhs = binary(lhs, binop![??], rhs);
+    }
+    Ok(lhs)
+  }
+
+  pub fn or<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut lhs = and(p)?;
     while !p.end() && p.eat(t![||]) {
-      let rhs = and(m, p);
+      let rhs = and(p)?;
       lhs = binary(lhs, binop![||], rhs);
     }
-    lhs
+    Ok(lhs)
   }
 
-  fn and<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let mut lhs = eq(m, p);
+  fn and<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut lhs = eq(p)?;
     while !p.end() && p.eat(t![&&]) {
-      let rhs = eq(m, p);
+      let rhs = eq(p)?;
       lhs = binary(lhs, binop![&&], rhs);
     }
-    lhs
+    Ok(lhs)
   }
 
-  fn eq<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let mut lhs = cmp(m, p);
+  fn eq<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut lhs = cmp(p)?;
     while !p.end() {
       let op = match p.kind() {
         t![==] => binop![==],
@@ -433,14 +508,14 @@ mod expr {
         _ => break,
       };
       p.advance(); // op
-      let rhs = cmp(m, p);
+      let rhs = cmp(p)?;
       lhs = binary(lhs, op, rhs);
     }
-    lhs
+    Ok(lhs)
   }
 
-  fn cmp<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let mut lhs = add(m, p);
+  fn cmp<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut lhs = add(p)?;
     while !p.end() {
       let op = match p.kind() {
         t![>] => binop![>],
@@ -450,14 +525,14 @@ mod expr {
         _ => break,
       };
       p.advance(); // op
-      let rhs = add(m, p);
+      let rhs = add(p)?;
       lhs = binary(lhs, op, rhs);
     }
-    lhs
+    Ok(lhs)
   }
 
-  fn add<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let mut lhs = mul(m, p);
+  fn add<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut lhs = mul(p)?;
     while !p.end() {
       let op = match p.kind() {
         t![+] => binop![+],
@@ -465,14 +540,14 @@ mod expr {
         _ => break,
       };
       p.advance(); // op
-      let rhs = mul(m, p);
+      let rhs = mul(p)?;
       lhs = binary(lhs, op, rhs);
     }
-    lhs
+    Ok(lhs)
   }
 
-  fn mul<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let mut lhs = pow(m, p);
+  fn mul<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut lhs = pow(p)?;
     while !p.end() {
       let op = match p.kind() {
         t![*] => binop![*],
@@ -481,234 +556,241 @@ mod expr {
         _ => break,
       };
       p.advance(); // op
-      let rhs = pow(m, p);
+      let rhs = pow(p)?;
       lhs = binary(lhs, op, rhs);
     }
-    lhs
+    Ok(lhs)
   }
 
-  fn pow<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let mut lhs = pre(m, p);
+  fn pow<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut lhs = pre(p)?;
     while !p.end() && p.eat(t![**]) {
-      let rhs = pre(m, p);
+      let rhs = pre(p)?;
       lhs = binary(lhs, binop![**], rhs);
     }
-    lhs
+    Ok(lhs)
   }
 
-  fn pre<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn pre<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let op = match p.kind() {
       t![-] => unop![-],
       t![!] => unop![!],
       t![?] => unop![?],
-      _ => return post(m, p),
+      _ => return post(p),
     };
     let tok = p.advance();
-    let rhs = pre(m, p);
-    Expr::make_unary(tok.span.to(rhs.span), op, rhs)
+    let rhs = pre(p)?;
+    Ok(Expr::make_unary(tok.span.to(rhs.span), op, rhs))
   }
 
-  fn post<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let mut expr = primary(m, p);
+  fn post<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let mut expr = primary(p)?;
     while !p.end() {
       match p.kind() {
-        t!["("] => expr = call(m, p, expr),
-        t!["["] => expr = index(m, p, expr),
-        t![.] => expr = field(m, p, expr),
+        t!["("] => expr = call(p, expr)?,
+        t!["["] => expr = index(p, expr)?,
+        t![.] => expr = field(p, expr)?,
         _ => break,
       };
     }
-    expr
+    Ok(expr)
   }
 
-  fn call<'src>(m: &Meta, p: &mut Parser<'src>, target: Expr<'src>) -> Expr<'src> {
-    let f = p.meta();
+  fn call<'src>(p: &mut Parser<'src>, target: Expr<'src>) -> Result<Expr<'src>> {
+    let s = p.span();
 
     assert!(p.eat(t!["("]));
     let mut args = vec![];
     if !p.end() && !p.at(t![")"]) {
-      args.push(arg(m, p))
+      args.push(arg(p)?);
+      while !p.end() && p.eat(t![,]) && !p.at(t![")"]) {
+        args.push(arg(p)?);
+      }
     }
-    while !p.end() && p.eat(t![,]) && !p.at(t![")"]) {
-      args.push(arg(m, p))
-    }
-    p.must(m, t![")"]);
+    p.must(t![")"])?;
 
-    let span = p.finish(f);
-    Expr::make_call(span, target, args)
+    let span = p.finish(s);
+    Ok(Expr::make_call(span, target, args))
   }
 
-  fn arg<'src>(m: &Meta, p: &mut Parser<'src>) -> Arg<'src> {
-    let value = expr(m, p);
+  fn arg<'src>(p: &mut Parser<'src>) -> Result<Arg<'src>> {
+    let value = expr(p)?;
     let (key, value) = if value.as_use().is_some_and(|v| v.place.is_var()) {
       let key = Some(value.into_use().unwrap().place.into_var().unwrap());
-      let value = expr(m, p);
+      p.must(t![:])?;
+      let value = expr(p)?;
       (key, value)
     } else {
       (None, value)
     };
-    Arg { key, value }
+    Ok(Arg { key, value })
   }
 
-  fn index<'src>(m: &Meta, p: &mut Parser<'src>, parent: Expr<'src>) -> Expr<'src> {
-    let f = p.meta();
+  fn index<'src>(p: &mut Parser<'src>, parent: Expr<'src>) -> Result<Expr<'src>> {
+    let s = p.span();
 
     assert!(p.eat(t!["["]));
-    let key = expr(m, p);
-    p.must(m, t!["]"]);
+    let key = expr(p)?;
+    p.must(t!["]"])?;
 
-    let span = p.finish(f);
-    Expr::make_use(span, Place::Index { parent, key })
+    Ok(Expr::make_use(p.finish(s), Place::Index { parent, key }))
   }
 
-  fn field<'src>(m: &Meta, p: &mut Parser<'src>, parent: Expr<'src>) -> Expr<'src> {
-    let f = p.meta();
+  fn field<'src>(p: &mut Parser<'src>, parent: Expr<'src>) -> Result<Expr<'src>> {
+    let s = p.span();
 
     assert!(p.eat(t![.]));
-    let name = ident(m, p);
+    let name = ident(p)?;
 
-    let span = p.finish(f);
-    Expr::make_use(span, Place::Field { parent, name })
+    Ok(Expr::make_use(p.finish(s), Place::Field { parent, name }))
   }
 
-  fn primary<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn primary<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     match p.kind() {
-      t![int] => int(m, p),
-      t![float] => float(m, p),
-      t![bool] => bool(m, p),
-      t![none] => none(m, p),
-      t![str] => str(m, p),
+      t![int] => int(p),
+      t![float] => float(p),
+      t![bool] => bool(p),
+      t![none] => none(p),
+      t![str] => str(p),
       t![if] => if_(p),
-      t![do] => do_(m, p),
-      t!["["] => array(m, p),
-      t!["{"] => set_or_map(m, p),
-      t![ident] => use_(m, p),
-      _ => {
-        let span = p.curr.span;
-        p.error(m, err!(@span, UnexpectedToken));
-        Expr::make_never(span)
-      }
+      t![do] => do_(p),
+      t!["["] => array(p),
+      t!["{"] => set_or_map(p),
+      t!["("] => group(p),
+      t![ident] => use_(p),
+      _ => Err(err!(@p.curr.span, UnexpectedToken)),
     }
   }
 
-  fn int<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn int<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![int]));
     let span = p.prev.span;
-    let v = p.lexeme(&p.prev).parse::<i64>().unwrap_or_else(|_| {
-      p.error(m, err!(@span, InvalidInt));
-      0i64
-    });
-    Expr::make_literal(span, lit!(int, v))
+    let v = p
+      .lexeme(&p.prev)
+      .parse::<i64>()
+      .map_err(|_| err!(@span, InvalidInt))?;
+    Ok(Expr::make_literal(span, lit!(int, v)))
   }
 
-  fn float<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn float<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![float]));
     let span = p.prev.span;
-    let v = p.lexeme(&p.prev).parse::<f64>().unwrap_or_else(|_| {
-      p.error(m, err!(@span, InvalidFloat));
-      0f64
-    });
-    Expr::make_literal(span, lit!(float, v))
+    let v = p
+      .lexeme(&p.prev)
+      .parse::<f64>()
+      .map_err(|_| err!(@span, InvalidInt))?;
+    Ok(Expr::make_literal(span, lit!(float, v)))
   }
 
-  fn bool<'src>(_: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn bool<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![bool]));
     let v = match p.lexeme(&p.prev) {
       "true" => true,
       "false" => false,
       _ => unreachable!(),
     };
-    Expr::make_literal(p.prev.span, lit!(bool, v))
+    Ok(Expr::make_literal(p.prev.span, lit!(bool, v)))
   }
 
-  fn none<'src>(_: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn none<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![none]));
-    Expr::make_literal(p.prev.span, lit!(none))
+    Ok(Expr::make_literal(p.prev.span, lit!(none)))
   }
 
-  fn str<'src>(_: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn str<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![str]));
     // TODO: unescape
     // TODO: fmt
-    Expr::make_literal(p.prev.span, lit!(str, p.lexeme(&p.prev)))
+    Ok(Expr::make_literal(
+      p.prev.span,
+      lit!(str, p.lexeme(&p.prev)),
+    ))
   }
 
-  fn do_<'src>(_: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn do_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![do]));
-    let body = block(p);
-    Expr::make_block(body.span, body)
+    let s = p.prev.span;
+    let body = block(p)?;
+    Ok(Expr::make_block(s.to(body.span), body))
   }
 
-  fn array<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let f = p.meta();
+  fn array<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let s = p.span();
 
     assert!(p.eat(t!["["]));
     let mut elems = vec![];
     if !p.end() && !p.at(t!["]"]) {
-      elems.push(expr(m, p));
+      elems.push(expr(p)?);
+      while !p.end() && p.eat(t![,]) && !p.at(t!["]"]) {
+        elems.push(expr(p)?);
+      }
     }
-    while !p.end() && p.eat(t![,]) && !p.at(t!["]"]) {
-      elems.push(expr(m, p));
-    }
-    p.must(m, t!["]"]);
+    p.must(t!["]"])?;
 
-    Expr::make_literal(p.finish(f), lit!(array, elems))
+    Ok(Expr::make_literal(p.finish(s), lit!(array, elems)))
   }
 
-  fn set_or_map<'src>(m: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
-    let f = p.meta();
+  fn set_or_map<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let s = p.span();
 
     assert!(p.eat(t!["{"]));
     if p.end() {
-      p.must(m, t!["}"]);
-      return Expr::make_literal(p.finish(f), lit!(map, vec![]));
+      p.must(t!["}"])?;
+      return Ok(Expr::make_literal(p.finish(s), lit!(map, vec![])));
     }
 
     if p.eat(t!["}"]) {
-      return Expr::make_literal(p.finish(f), lit!(map, vec![]));
+      return Ok(Expr::make_literal(p.finish(s), lit!(map, vec![])));
     }
 
-    let first_key = expr(m, p);
+    let s = p.span();
+    let first_key = expr(p)?;
     if p.eat(t![:]) {
-      let first_value = expr(m, p);
-      map(m, p, f, first_key, first_value)
+      let first_value = expr(p)?;
+      map(p, s, first_key, first_value)
     } else {
-      set(m, p, f, first_key)
+      set(p, s, first_key)
     }
   }
 
   fn map<'src>(
-    m: &Meta,
     p: &mut Parser<'src>,
-    f: Meta,
+    s: Span,
     first_key: Expr<'src>,
     first_value: Expr<'src>,
-  ) -> Expr<'src> {
+  ) -> Result<Expr<'src>> {
     let mut items = vec![(first_key, first_value)];
     while !p.end() && p.eat(t![,]) && !p.at(t!["}"]) {
-      let key = expr(m, p);
-      p.must(m, t![:]);
-      let value = expr(m, p);
+      let key = expr(p)?;
+      p.must(t![:])?;
+      let value = expr(p)?;
       items.push((key, value));
     }
-    p.must(m, t!["}"]);
-    Expr::make_literal(p.finish(f), lit!(map, items))
+    p.must(t!["}"])?;
+    Ok(Expr::make_literal(p.finish(s), lit!(map, items)))
   }
 
-  fn set<'src>(m: &Meta, p: &mut Parser<'src>, f: Meta, first_key: Expr<'src>) -> Expr<'src> {
+  fn set<'src>(p: &mut Parser<'src>, s: Span, first_key: Expr<'src>) -> Result<Expr<'src>> {
     let mut items = vec![first_key];
     while !p.end() && p.eat(t![,]) && !p.at(t!["}"]) {
-      let key = expr(m, p);
+      let key = expr(p)?;
       items.push(key);
     }
-    p.must(m, t!["}"]);
-    Expr::make_literal(p.finish(f), lit!(set, items))
+    p.must(t!["}"])?;
+    Ok(Expr::make_literal(p.finish(s), lit!(set, items)))
   }
 
-  fn use_<'src>(_: &Meta, p: &mut Parser<'src>) -> Expr<'src> {
+  fn group<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    assert!(p.eat(t!["("]));
+    let inner = expr(p)?;
+    p.must(t![")"])?;
+    Ok(inner)
+  }
+
+  fn use_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![ident]));
     let name = Ident::from_token(&p.lex, &p.prev);
-    Expr::make_use(p.prev.span, Place::Var { name })
+    Ok(Expr::make_use(p.prev.span, Place::Var { name }))
   }
 }
 

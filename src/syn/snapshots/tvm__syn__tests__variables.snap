@@ -1,41 +1,28 @@
 ---
 source: src/syn/tests.rs
-expression: "parse!(r#\"\n    let v: int = 0;\n  \"#)"
+expression: "parse!(r#\"\n    let v = 0;\n    let v: int = 0;\n  \"#)"
 ---
 SyntaxTree {
     top_level: Block {
-        span: Span {
-            start: 0,
-            end: 15,
-        },
         body: [
-            LetStmt {
-                name: Ident {
-                    span: Span {
-                        start: 4,
-                        end: 5,
-                    },
-                    lexeme: "v",
-                },
-                ty: Some(
-                    NamedType {
-                        name: Ident {
-                            span: Span {
-                                start: 7,
-                                end: 10,
-                            },
-                            lexeme: "int",
-                        },
-                    },
+            Let(
+                Ident("v"),
+                None,
+                Literal(
+                    Int(0),
                 ),
-                init: Some(
-                    LiteralExpr {
-                        value: Int(
-                            0,
-                        ),
-                    },
+            ),
+            Let(
+                Ident("v"),
+                Some(
+                    Named(
+                        Ident("int"),
+                    ),
                 ),
-            },
+                Literal(
+                    Int(0),
+                ),
+            ),
         ],
         tail: None,
     },

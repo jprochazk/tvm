@@ -1,0 +1,8 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    f()\n    f(); // still parsed\n  \"#)"
+---
+error: expected token `;`
+1 |  f()
+  |    ^
+

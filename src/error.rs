@@ -101,6 +101,7 @@ pub enum ErrorKind {
   InvalidFloat,
   InvalidInt,
   InvalidEscape,
+  InvalidPlace,
 }
 
 impl Display for ErrorKind {
@@ -111,6 +112,7 @@ impl Display for ErrorKind {
       ErrorKind::InvalidFloat => f.write_str("invalid float literal"),
       ErrorKind::InvalidInt => f.write_str("invalid integer literal"),
       ErrorKind::InvalidEscape => f.write_str("invalid string escape"),
+      ErrorKind::InvalidPlace => f.write_str("invalid assingment target"),
     }
   }
 }

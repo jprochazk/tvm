@@ -6,7 +6,3 @@ error: expected token `identifier`
 1 |  fn
   |   ^
 
-error: expected token `{`
-1 |  fn
-  |   ^
-

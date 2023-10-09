@@ -400,7 +400,7 @@ macro_rules! t {
   [=] => ($crate::lex::TokenKind::Equal);
   [==] => ($crate::lex::TokenKind::EqualEqual);
   [!=] => ($crate::lex::TokenKind::BangEqual);
-  [==] => ($crate::lex::TokenKind::PlusEqual);
+  [+=] => ($crate::lex::TokenKind::PlusEqual);
   [-=] => ($crate::lex::TokenKind::MinusEqual);
   [/=] => ($crate::lex::TokenKind::SlashEqual);
   [*=] => ($crate::lex::TokenKind::StarEqual);

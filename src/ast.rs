@@ -18,7 +18,7 @@ decl! {
     Let {
       name: Ident<'src>,
       ty: Option<Type<'src>>,
-      init: Option<Expr<'src>>,
+      init: Expr<'src>,
     },
     Loop {
       body: Block<'src>,
@@ -59,6 +59,9 @@ decl! {
       params: Vec<Type<'src>>,
       ret: Type<'src>,
     },
+    Opt {
+      inner: Type<'src>,
+    },
   }
 }
 
@@ -97,12 +100,13 @@ decl! {
     },
     Assign {
       place: Place<'src>,
+      op: Option<BinaryOp>,
       value: Expr<'src>,
     },
     Call {
       callee: Expr<'src>,
       args: Vec<Arg<'src>>,
-    },
+    }
   }
 }
 
@@ -365,9 +369,9 @@ impl Debug for BinaryOp {
 impl Debug for UnaryOp {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::Minus => f.write_str("-"),
-      Self::Not => f.write_str("!"),
-      Self::Opt => f.write_str("?"),
+      Self::Minus => f.write_str("Op(-)"),
+      Self::Not => f.write_str("Op(!)"),
+      Self::Opt => f.write_str("Op(?)"),
     }
   }
 }

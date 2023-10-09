@@ -1,0 +1,112 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    let v = do {};\n    let v = do {1};\n    let v = do {1;};\n    let v = do {do {}};\n    let v = do {do {1}};\n    let v = do {do {1;}};\n  \"#)"
+---
+SyntaxTree {
+    top_level: Block {
+        body: [
+            Let(
+                Ident("v"),
+                None,
+                Block(
+                    Block {
+                        body: [],
+                        tail: None,
+                    },
+                ),
+            ),
+            Let(
+                Ident("v"),
+                None,
+                Block(
+                    Block {
+                        body: [],
+                        tail: Some(
+                            Literal(
+                                Int(1),
+                            ),
+                        ),
+                    },
+                ),
+            ),
+            Let(
+                Ident("v"),
+                None,
+                Block(
+                    Block {
+                        body: [
+                            Expr(
+                                Literal(
+                                    Int(1),
+                                ),
+                            ),
+                        ],
+                        tail: None,
+                    },
+                ),
+            ),
+            Let(
+                Ident("v"),
+                None,
+                Block(
+                    Block {
+                        body: [],
+                        tail: Some(
+                            Block(
+                                Block {
+                                    body: [],
+                                    tail: None,
+                                },
+                            ),
+                        ),
+                    },
+                ),
+            ),
+            Let(
+                Ident("v"),
+                None,
+                Block(
+                    Block {
+                        body: [],
+                        tail: Some(
+                            Block(
+                                Block {
+                                    body: [],
+                                    tail: Some(
+                                        Literal(
+                                            Int(1),
+                                        ),
+                                    ),
+                                },
+                            ),
+                        ),
+                    },
+                ),
+            ),
+            Let(
+                Ident("v"),
+                None,
+                Block(
+                    Block {
+                        body: [],
+                        tail: Some(
+                            Block(
+                                Block {
+                                    body: [
+                                        Expr(
+                                            Literal(
+                                                Int(1),
+                                            ),
+                                        ),
+                                    ],
+                                    tail: None,
+                                },
+                            ),
+                        ),
+                    },
+                ),
+            ),
+        ],
+        tail: None,
+    },
+}

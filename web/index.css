@@ -25,10 +25,23 @@ textarea {
 }
 
 textarea:first-child {
-  width: 40%;
+  width: 50%;
 }
 
 textarea:last-child {
-  width: 60%;
+  width: 50%;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root,
+  body {
+    background-color: rgb(40, 40, 40);
+    color: rgb(242, 242, 242);
+  }
+
+  textarea {
+    border-color: rgb(28, 28, 28);
+    background-color: rgb(40, 40, 40);
+    color: rgb(227, 227, 227);
+  }
+}

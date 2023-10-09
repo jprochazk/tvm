@@ -9,7 +9,11 @@ fn to_ast(src: &str) -> String {
     .collect::<Vec<_>>()
     .join("\n");
 
-  [errors, ast].join("\n=================\n\n")
+  if errors.is_empty() {
+    ast
+  } else {
+    [errors, ast].join("\n=================\n\n")
+  }
 }
 
 const LOCAL_STORAGE_KEY: &str = "state";

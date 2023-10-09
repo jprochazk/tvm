@@ -15,7 +15,6 @@ v.push(10);  // type of `v` is `[int]`
 ## Literals
 
 ```rust
-let v: _; // the empty type
 let v: int = 1;
 let v: num = 1.0;
 let v: bool = true;
@@ -102,7 +101,9 @@ loop {}
 
 ```rust
 return value;
+return;
 yield value;
+yield;
 break;
 continue;
 

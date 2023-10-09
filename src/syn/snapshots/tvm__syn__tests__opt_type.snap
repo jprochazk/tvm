@@ -2,15 +2,23 @@
 source: src/syn/tests.rs
 expression: "parse!(r#\"\n    let opt: int? = 1;\n  \"#)"
 ---
-error: expected token `;`
-1 |  let opt: int? = 1;
-  |              ^
-
-error: unexpected token
-1 |  let opt: int? = 1;
-  |                ^
-
-error: expected token `;`
-1 |  let opt: int? = 1;
-  |                ^
-
+SyntaxTree {
+    top_level: Block {
+        body: [
+            Let(
+                Ident("opt"),
+                Some(
+                    Opt(
+                        Named(
+                            Ident("int"),
+                        ),
+                    ),
+                ),
+                Literal(
+                    Int(1),
+                ),
+            ),
+        ],
+        tail: None,
+    },
+}

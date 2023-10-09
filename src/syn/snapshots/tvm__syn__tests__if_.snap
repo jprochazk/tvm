@@ -1,0 +1,129 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    if a {0}\n    else if b {1}\n    else if c {2}\n    else {0}\n\n    let v: int? = if true {0};\n    let v: int = if true {0} else {1};\n  \"#)"
+---
+SyntaxTree {
+    top_level: Block {
+        body: [
+            Expr(
+                If(
+                    [
+                        Branch(
+                            Use(
+                                Var(Ident("a")),
+                            ),
+                            Block {
+                                body: [],
+                                tail: Some(
+                                    Literal(
+                                        Int(0),
+                                    ),
+                                ),
+                            },
+                        ),
+                        Branch(
+                            Use(
+                                Var(Ident("b")),
+                            ),
+                            Block {
+                                body: [],
+                                tail: Some(
+                                    Literal(
+                                        Int(1),
+                                    ),
+                                ),
+                            },
+                        ),
+                        Branch(
+                            Use(
+                                Var(Ident("c")),
+                            ),
+                            Block {
+                                body: [],
+                                tail: Some(
+                                    Literal(
+                                        Int(2),
+                                    ),
+                                ),
+                            },
+                        ),
+                    ],
+                    Some(
+                        Block {
+                            body: [],
+                            tail: Some(
+                                Literal(
+                                    Int(0),
+                                ),
+                            ),
+                        },
+                    ),
+                ),
+            ),
+            Let(
+                Ident("v"),
+                Some(
+                    Opt(
+                        Named(
+                            Ident("int"),
+                        ),
+                    ),
+                ),
+                If(
+                    [
+                        Branch(
+                            Literal(
+                                Bool(true),
+                            ),
+                            Block {
+                                body: [],
+                                tail: Some(
+                                    Literal(
+                                        Int(0),
+                                    ),
+                                ),
+                            },
+                        ),
+                    ],
+                    None,
+                ),
+            ),
+            Let(
+                Ident("v"),
+                Some(
+                    Named(
+                        Ident("int"),
+                    ),
+                ),
+                If(
+                    [
+                        Branch(
+                            Literal(
+                                Bool(true),
+                            ),
+                            Block {
+                                body: [],
+                                tail: Some(
+                                    Literal(
+                                        Int(0),
+                                    ),
+                                ),
+                            },
+                        ),
+                    ],
+                    Some(
+                        Block {
+                            body: [],
+                            tail: Some(
+                                Literal(
+                                    Int(1),
+                                ),
+                            ),
+                        },
+                    ),
+                ),
+            ),
+        ],
+        tail: None,
+    },
+}

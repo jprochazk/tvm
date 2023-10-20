@@ -102,6 +102,13 @@ pub enum ErrorKind {
   InvalidInt,
   InvalidEscape,
   InvalidPlace,
+  NoNestedFunctions,
+
+  // TODO: better error messages
+  NoSuchTypeInScope,
+  VarAlreadyDefined,
+  WrongParamCount,
+  TypeError,
 }
 
 impl Display for ErrorKind {
@@ -112,7 +119,15 @@ impl Display for ErrorKind {
       ErrorKind::InvalidFloat => f.write_str("invalid float literal"),
       ErrorKind::InvalidInt => f.write_str("invalid integer literal"),
       ErrorKind::InvalidEscape => f.write_str("invalid string escape"),
-      ErrorKind::InvalidPlace => f.write_str("invalid assingment target"),
+      ErrorKind::InvalidPlace => f.write_str("invalid assignment target"),
+      ErrorKind::NoNestedFunctions => f.write_str("functions may not be nested"),
+
+      ErrorKind::NoSuchTypeInScope => f.write_str("this type is not in the current scope"),
+      ErrorKind::VarAlreadyDefined => {
+        f.write_str("this variable is already defined in the current scope")
+      }
+      ErrorKind::WrongParamCount => f.write_str("mismatched number of params"),
+      ErrorKind::TypeError => f.write_str("type error"),
     }
   }
 }

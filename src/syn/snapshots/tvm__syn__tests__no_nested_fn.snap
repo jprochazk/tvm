@@ -1,0 +1,8 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    fn test() {\n      fn inner() {}\n    }\n  \"#)"
+---
+error: functions may not be nested
+2 |    fn inner() {}
+  |    ^^
+

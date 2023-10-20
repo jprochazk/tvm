@@ -2,7 +2,8 @@
 source: src/syn/tests.rs
 expression: "parse!(r#\"\n    return value;\n    return;\n    yield value;\n    yield;\n    break;\n    continue;\n\n    let v = return value;\n    let v = return;\n    let v = yield value;\n    let v = yield;\n    let v = break;\n    let v = continue;\n\n    let v = (yield 5) + (yield 5);\n  \"#)"
 ---
-SyntaxTree {
+Ast {
+    decls: [],
     top_level: Block {
         body: [
             Expr(

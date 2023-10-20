@@ -1,0 +1,8 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    0 = 1;\n  \"#)"
+---
+error: invalid assignment target
+1 |  0 = 1;
+  |  ^
+

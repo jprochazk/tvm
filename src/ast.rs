@@ -3,17 +3,32 @@
 #[macro_use]
 mod macros;
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
 
 use crate::lex::{Lexer, Span, Token, TokenKind};
+use crate::ty::TypeId;
 use crate::Cow;
 
-#[derive(Clone, Debug)]
-pub struct SyntaxTree<'src> {
+#[derive(Clone)]
+pub struct Ast<'src> {
+  pub src: &'src str,
+  pub decls: Vec<Decl<'src>>,
   pub top_level: Block<'src>,
 }
 
-decl! {
+syntax_node! {
+  Decl<'src> {
+    Fn {
+      name: Ident<'src>,
+      params: Vec<Param<'src>>,
+      ret: Option<Type<'src>>,
+      body: Block<'src>,
+    }
+  }
+}
+
+syntax_node! {
   Stmt<'src> {
     Let {
       name: Ident<'src>,
@@ -23,30 +38,20 @@ decl! {
     Loop {
       body: Block<'src>,
     },
-    Fn {
-      name: Ident<'src>,
-      params: Vec<Param<'src>>,
-      ret: Option<Type<'src>>,
-      body: Block<'src>,
-    },
-    Record {
-      name: Ident<'src>,
-      fields: Vec<LetStmt<'src>>,
-    },
     Expr {
       inner: Expr<'src>,
     },
   }
 }
 
-decl! {
+syntax_node! {
   Type<'src> {
     Empty,
     Named {
       name: Ident<'src>,
     },
     Array {
-      element: Type<'src>,
+      item: Type<'src>,
     },
     Set {
       value: Type<'src>,
@@ -65,9 +70,8 @@ decl! {
   }
 }
 
-decl! {
-  Expr<'src> {
-    Never,
+syntax_node! {
+  Expr<'src> (ty: TypeId) {
     Return {
       value: Option<Expr<'src>>,
     },
@@ -110,7 +114,7 @@ decl! {
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 pub struct Param<'src> {
   pub name: Ident<'src>,
   pub ty: Type<'src>,
@@ -220,10 +224,16 @@ pub enum Literal<'src> {
   Float(f64),
   Bool(bool),
   String(Cow<'src, str>),
-  Array(Vec<Expr<'src>>),
+  Array(Array<'src>),
   // TODO: during type check, empty `map` can coerce to `set`
   Set(Vec<Expr<'src>>),
   Map(Vec<(Expr<'src>, Expr<'src>)>),
+}
+
+#[derive(Clone)]
+pub enum Array<'src> {
+  List(Vec<Expr<'src>>),
+  Copy(Expr<'src>, Expr<'src>),
 }
 
 macro_rules! lit {
@@ -259,7 +269,7 @@ impl Default for Literal<'_> {
   }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Block<'src> {
   pub span: Span,
   pub body: Vec<Stmt<'src>>,
@@ -278,7 +288,7 @@ impl<'src> From<Expr<'src>> for Stmt<'src> {
   }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Ident<'src> {
   pub span: Span,
   pub lexeme: &'src str,
@@ -290,6 +300,13 @@ impl<'src> Ident<'src> {
     Self {
       span: t.span,
       lexeme: l.lexeme(t),
+    }
+  }
+
+  pub fn raw(s: &'src str) -> Self {
+    Self {
+      span: Span::empty(),
+      lexeme: s,
     }
   }
 }
@@ -304,6 +321,15 @@ trait UnwrapBox {
   type Unboxed;
 
   fn unwrap_box(self) -> Self::Unboxed;
+}
+
+impl Debug for Ast<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Ast")
+      .field("decls", &self.decls)
+      .field("top_level", &self.top_level)
+      .finish()
+  }
 }
 
 impl Debug for Param<'_> {
@@ -399,9 +425,125 @@ impl Debug for Literal<'_> {
       Self::Float(arg0) => write!(f, "Float({arg0:?})"),
       Self::Bool(arg0) => write!(f, "Bool({arg0:?})"),
       Self::String(arg0) => write!(f, "String({arg0:?})"),
-      Self::Array(arg0) => f.debug_tuple("Array").field(arg0).finish(),
+      Self::Array(arg0) => Debug::fmt(arg0, f),
       Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
       Self::Map(arg0) => f.debug_tuple("Map").field(arg0).finish(),
     }
+  }
+}
+
+impl Debug for Array<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::List(arg0) => f.debug_tuple("Array").field(arg0).finish(),
+      Self::Copy(arg0, arg1) => f
+        .debug_struct("Array")
+        .field("item", arg0)
+        .field("len", arg1)
+        .finish(),
+    }
+  }
+}
+
+impl Hash for Type<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.kind.hash(state);
+  }
+}
+
+impl Hash for TypeKind<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    core::mem::discriminant(self).hash(state);
+    match self {
+      TypeKind::Empty(ty) => ty.hash(state),
+      TypeKind::Named(ty) => ty.hash(state),
+      TypeKind::Array(ty) => ty.hash(state),
+      TypeKind::Set(ty) => ty.hash(state),
+      TypeKind::Map(ty) => ty.hash(state),
+      TypeKind::Fn(ty) => ty.hash(state),
+      TypeKind::Opt(ty) => ty.hash(state),
+    }
+  }
+}
+
+impl Hash for EmptyType<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.0.hash(state);
+  }
+}
+
+impl Hash for NamedType<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.name.hash(state);
+  }
+}
+
+impl Hash for ArrayType<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.item.hash(state);
+  }
+}
+
+impl Hash for SetType<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.value.hash(state);
+  }
+}
+
+impl Hash for MapType<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.key.hash(state);
+    self.value.hash(state);
+  }
+}
+
+impl Hash for FnType<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.params.hash(state);
+    self.ret.hash(state);
+  }
+}
+
+impl Hash for OptType<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.inner.hash(state);
+  }
+}
+
+impl Hash for Ident<'_> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.lexeme.hash(state);
+  }
+}
+
+impl Display for BinaryOp {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match self {
+      BinaryOp::Add => "+",
+      BinaryOp::Sub => "-",
+      BinaryOp::Mul => "*",
+      BinaryOp::Div => "/",
+      BinaryOp::Rem => "%",
+      BinaryOp::Pow => "**",
+      BinaryOp::Eq => "==",
+      BinaryOp::Ne => "!=",
+      BinaryOp::Gt => ">",
+      BinaryOp::Lt => "<",
+      BinaryOp::Ge => ">=",
+      BinaryOp::Le => "<=",
+      BinaryOp::And => "&&",
+      BinaryOp::Or => "||",
+      BinaryOp::Opt => "??",
+    })
+  }
+}
+
+impl Display for UnaryOp {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(match self {
+      UnaryOp::Minus => "-",
+      UnaryOp::Not => "!",
+      UnaryOp::Opt => "?",
+    })
   }
 }

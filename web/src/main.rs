@@ -1,7 +1,7 @@
 use leptos::*;
 
-fn to_ast(src: &str) -> String {
-  let (ast, errors) = tvm::syn::Parser::new(src).parse();
+fn print_ast(src: &str) -> String {
+  let (ast, errors) = tvm::syn::parse(src);
   let ast = format!("{ast:#?}");
   let errors = errors
     .into_iter()
@@ -13,6 +13,23 @@ fn to_ast(src: &str) -> String {
     ast
   } else {
     [errors, ast].join("\n=================\n\n")
+  }
+}
+
+fn print_hir(src: &str) -> String {
+  let (ast, parse_errors) = tvm::syn::parse(src);
+
+  if parse_errors.is_empty() {
+    match tvm::ty::check(ast) {
+      Ok(hir) => format!("{hir}"),
+      Err(e) => format!("{}", e.with_src(src)),
+    }
+  } else {
+    parse_errors
+      .into_iter()
+      .map(|e| format!("{}", e.with_src(src)))
+      .collect::<Vec<_>>()
+      .join("\n")
   }
 }
 
@@ -40,7 +57,7 @@ fn get_local_state() -> String {
 #[component]
 fn App() -> impl IntoView {
   let (source, set_source) = create_signal(get_local_state());
-  let ast = move || to_ast(&source());
+  let print = create_memo(move |_| print_hir(&source()));
 
   create_effect(move |_| set_local_state(&source()));
 
@@ -48,15 +65,18 @@ fn App() -> impl IntoView {
     <div class="split">
       <textarea
         on:input=move |ev| {
+          logging::log!("value changed");
           set_source(event_target_value(&ev));
         }
         prop:value=source
       />
-      <textarea readonly prop:value=ast />
+      <textarea readonly prop:value=print />
     </div>
   }
 }
 
 fn main() {
+  _ = console_log::init_with_level(log::Level::Debug);
+  console_error_panic_hook::set_once();
   mount_to_body(|| view! { <App /> })
 }

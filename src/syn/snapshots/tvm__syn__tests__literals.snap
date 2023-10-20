@@ -1,8 +1,9 @@
 ---
 source: src/syn/tests.rs
-expression: "parse!(r#\"\n    let v: int = 1;\n    let v: int? = none;\n    let v: num = 1.0;\n    let v: bool = true;\n    let v: str = \"yo\";\n    let v: [int] = [1, 2, 3];\n    let v: {str} = {\"a\", \"b\", \"c\"};\n    let v: {str -> int} = {\"a\": 0, \"b\": 1};\n  \"#)"
+expression: "parse!(r#\"\n    let v: int = 1;\n    let v: int? = none;\n    let v: num = 1.0;\n    let v: bool = true;\n    let v: str = \"yo\";\n    let v: [int] = [1, 2, 3];\n    let v: [int] = [0; 10];\n    let v: [_] = [0; 10];\n    let v: {str} = {\"a\", \"b\", \"c\"};\n    let v: {str -> int} = {\"a\": 0, \"b\": 1};\n  \"#)"
 ---
-SyntaxTree {
+Ast {
+    decls: [],
     top_level: Block {
         body: [
             Let(
@@ -85,6 +86,44 @@ SyntaxTree {
                             ),
                         ],
                     ),
+                ),
+            ),
+            Let(
+                Ident("v"),
+                Some(
+                    Array(
+                        Named(
+                            Ident("int"),
+                        ),
+                    ),
+                ),
+                Literal(
+                    Array {
+                        item: Literal(
+                            Int(0),
+                        ),
+                        len: Literal(
+                            Int(10),
+                        ),
+                    },
+                ),
+            ),
+            Let(
+                Ident("v"),
+                Some(
+                    Array(
+                        Empty,
+                    ),
+                ),
+                Literal(
+                    Array {
+                        item: Literal(
+                            Int(0),
+                        ),
+                        len: Literal(
+                            Int(10),
+                        ),
+                    },
                 ),
             ),
             Let(

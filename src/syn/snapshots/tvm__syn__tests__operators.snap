@@ -2,7 +2,8 @@
 source: src/syn/tests.rs
 expression: "parse!(r#\"\n    2 + 2;\n    2 - 2;\n    2 / 2;\n    2 * 2;\n    2 % 2;\n    2 ** 2;\n    2 == 2;\n    2 != 2;\n    2 > 2;\n    2 >= 2;\n    2 < 2;\n    2 <= 2;\n    -2;\n    !true;\n    true && true;\n    false || true;\n    a ?? b;\n    ?a.b\n  \"#)"
 ---
-SyntaxTree {
+Ast {
+    decls: [],
     top_level: Block {
         body: [
             Expr(

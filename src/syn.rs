@@ -2,9 +2,23 @@ use crate::ast::*;
 use crate::error::{Error, Result};
 use crate::lex::{Lexer, Span, Token, TokenKind, EOF};
 
-// TODO: do not emit errors in the middle of a broken syntax node
+pub fn parse(s: &str) -> (Ast<'_>, Vec<Error>) {
+  Parser::new(s).parse()
+}
+
+pub fn try_parse(s: &str) -> Result<Ast<'_>, Vec<Error>> {
+  Parser::new(s).try_parse()
+}
+
+// TODO: top-level "block" exprs are not primary
+//       they should instead be parsed eagerly
+//       and if you enter grouping, you can use
+//       them as a subexpression in binary, unary, etc.
+// TODO: declarations may only exist at the top level
 
 pub struct Parser<'src> {
+  decls: Vec<Decl<'src>>,
+
   lex: Lexer<'src>,
   prev: Token,
   curr: Token,
@@ -15,6 +29,8 @@ impl<'src> Parser<'src> {
   #[inline]
   pub fn new(src: &'src str) -> Parser<'src> {
     Parser {
+      decls: Vec::new(),
+
       lex: Lexer::new(src),
       prev: EOF,
       curr: EOF,
@@ -22,19 +38,28 @@ impl<'src> Parser<'src> {
     }
   }
 
-  pub fn parse(mut self) -> (Block<'src>, Vec<Error>) {
+  pub fn parse(mut self) -> (Ast<'src>, Vec<Error>) {
     self.advance();
 
-    (top_level(&mut self), self.errors)
+    let top_level = top_level(&mut self);
+    let decls = self.decls;
+    (
+      Ast {
+        src: self.lex.src(),
+        decls,
+        top_level,
+      },
+      self.errors,
+    )
   }
 
-  pub fn try_parse(self) -> Result<SyntaxTree<'src>, Vec<Error>> {
-    let (top_level, errors) = self.parse();
+  pub fn try_parse(self) -> Result<Ast<'src>, Vec<Error>> {
+    let (ast, errors) = self.parse();
 
     if !errors.is_empty() {
       Err(errors)
     } else {
-      Ok(SyntaxTree { top_level })
+      Ok(ast)
     }
   }
 
@@ -140,19 +165,12 @@ impl<'src> Parser<'src> {
   }
 }
 
-fn stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src>>) {
-  match stmt(p) {
-    Ok(stmt) => out.push(stmt),
-    Err(e) => sync(p, e),
-  }
-}
-
 fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src> {
   let s = p.span();
 
   let mut body = vec![];
   if !p.end() {
-    stmt_or_sync(p, &mut body);
+    top_level_stmt_or_sync(p, &mut body);
     while !p.end() {
       if let Err(e) = p.must_if(!p.was(t!["}"]), t![;]) {
         p.errors.push(e);
@@ -161,7 +179,7 @@ fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src> {
         // trailing semicolon
         break;
       }
-      stmt_or_sync(p, &mut body);
+      top_level_stmt_or_sync(p, &mut body);
     }
   }
   let tail = if !p.prev.is(t![;]) && body.last().is_some_and(Stmt::is_expr) {
@@ -177,8 +195,34 @@ fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src> {
   }
 }
 
-fn sync(p: &mut Parser<'_>, e: Error) {
+fn top_level_stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src>>) {
+  match top_level_stmt(p) {
+    Ok(StmtOrDecl::Stmt(stmt)) => out.push(stmt),
+    Ok(StmtOrDecl::Decl(decl)) => p.decls.push(decl),
+    Err(e) => sync(p, e, SyncCtx::TopLevel),
+  }
+}
+
+fn stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src>>) {
+  match stmt(p) {
+    Ok(stmt) => out.push(stmt),
+    Err(e) => sync(p, e, SyncCtx::Inner),
+  }
+}
+
+#[derive(Clone, Copy)]
+enum SyncCtx {
+  TopLevel,
+  Inner,
+}
+
+fn sync(p: &mut Parser<'_>, e: Error, kind: SyncCtx) {
   p.errors.push(e);
+
+  // something else is likely to bump this curly brace
+  if matches!(kind, SyncCtx::Inner) && p.at(t!["}"]) {
+    return;
+  }
 
   p.advance();
   while !p.end() {
@@ -197,9 +241,36 @@ fn sync(p: &mut Parser<'_>, e: Error) {
   }
 }
 
+enum StmtOrDecl<'src> {
+  Stmt(Stmt<'src>),
+  Decl(Decl<'src>),
+}
+
+fn top_level_stmt<'src>(p: &mut Parser<'src>) -> Result<StmtOrDecl<'src>> {
+  match p.kind() {
+    t![fn] => fn_(p).map(StmtOrDecl::Decl),
+    _ => stmt(p).map(StmtOrDecl::Stmt),
+  }
+}
+
+fn fn_<'src>(p: &mut Parser<'src>) -> Result<Decl<'src>> {
+  let s = p.span();
+
+  assert!(p.eat(t![fn]));
+  let name = ident(p)?;
+  let params = params(p)?;
+  let ret = p.eat(t![->]).then(|| type_(p)).transpose()?;
+  let body = block(p)?;
+  Ok(Decl::make_fn(p.finish(s), name, params, ret, body))
+}
+
 fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
   match p.kind() {
-    t![fn] => fn_(p),
+    t![fn] => {
+      let span = p.curr.span;
+      let _ = fn_(p)?;
+      Err(err!(@span, NoNestedFunctions))
+    }
     t![loop] => loop_(p),
     t![let] => let_(p),
     t![break] => break_(p).map(Stmt::from),
@@ -210,17 +281,6 @@ fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
     t!["{"] => block(p).map(Stmt::from),
     _ => assign(p).map(Stmt::from),
   }
-}
-
-fn fn_<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
-  let s = p.span();
-
-  assert!(p.eat(t![fn]));
-  let name = ident(p)?;
-  let params = params(p)?;
-  let ret = p.eat(t![->]).then(|| type_(p)).transpose()?;
-  let body = block(p)?;
-  Ok(Stmt::make_fn(p.finish(s), name, params, ret, body))
 }
 
 fn param<'src>(p: &mut Parser<'src>) -> Result<Param<'src>> {
@@ -329,7 +389,6 @@ fn branch<'src>(p: &mut Parser<'src>) -> Result<Branch<'src>> {
   })
 }
 
-// TODO: opt
 fn type_<'src>(p: &mut Parser<'src>) -> Result<Type<'src>> {
   match p.kind() {
     t![_] => {
@@ -454,7 +513,6 @@ fn expr_to_place(v: Expr<'_>) -> Result<Place<'_>> {
   }
 }
 
-// TODO: assignment
 fn expr<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
   match p.kind() {
     t![break] => break_(p),
@@ -615,9 +673,8 @@ mod expr {
 
   fn arg<'src>(p: &mut Parser<'src>) -> Result<Arg<'src>> {
     let value = expr(p)?;
-    let (key, value) = if value.as_use().is_some_and(|v| v.place.is_var()) {
+    let (key, value) = if value.as_use().is_some_and(|v| v.place.is_var()) && p.eat(t![:]) {
       let key = Some(value.into_use().unwrap().place.into_var().unwrap());
-      p.must(t![:])?;
       let value = expr(p)?;
       (key, value)
     } else {
@@ -718,16 +775,23 @@ mod expr {
     let s = p.span();
 
     assert!(p.eat(t!["["]));
-    let mut elems = vec![];
+    let mut array = Array::List(vec![]);
     if !p.end() && !p.at(t!["]"]) {
-      elems.push(expr(p)?);
-      while !p.end() && p.eat(t![,]) && !p.at(t!["]"]) {
-        elems.push(expr(p)?);
+      let first_item = expr(p)?;
+      if p.eat(t![;]) {
+        let len = expr(p)?;
+        array = Array::Copy(first_item, len);
+      } else {
+        let mut elems = vec![first_item];
+        while !p.end() && p.eat(t![,]) && !p.at(t!["]"]) {
+          elems.push(expr(p)?);
+        }
+        array = Array::List(elems);
       }
-    }
+    };
     p.must(t!["]"])?;
 
-    Ok(Expr::make_literal(p.finish(s), lit!(array, elems)))
+    Ok(Expr::make_literal(p.finish(s), lit!(array, array)))
   }
 
   fn set_or_map<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {

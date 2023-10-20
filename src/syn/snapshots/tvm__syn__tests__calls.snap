@@ -2,7 +2,8 @@
 source: src/syn/tests.rs
 expression: "parse!(r#\"\n    f();\n    f(0);\n    f(0,);\n    f(0, 1, 2);\n    f(0, 1, 2,);\n    f(a: 0);\n    f(a: 0,);\n    f(a: 0, b: 1, c: 2);\n    f(a: 0, b: 1, c: 2,);\n  \"#)"
 ---
-SyntaxTree {
+Ast {
+    decls: [],
     top_level: Block {
         body: [
             Expr(

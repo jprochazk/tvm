@@ -1,0 +1,90 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    v.a = 1;\n    v[a] = 2;\n    v(a).a = 3;\n    v(a)[a] = 4;\n  \"#)"
+---
+Ast {
+    decls: [],
+    top_level: Block {
+        body: [
+            Expr(
+                Assign(
+                    Field(
+                        Use(
+                            Var(Ident("v")),
+                        ),
+                        Ident("a"),
+                    ),
+                    None,
+                    Literal(
+                        Int(1),
+                    ),
+                ),
+            ),
+            Expr(
+                Assign(
+                    Index(
+                        Use(
+                            Var(Ident("v")),
+                        ),
+                        Use(
+                            Var(Ident("a")),
+                        ),
+                    ),
+                    None,
+                    Literal(
+                        Int(2),
+                    ),
+                ),
+            ),
+            Expr(
+                Assign(
+                    Field(
+                        Call(
+                            Use(
+                                Var(Ident("v")),
+                            ),
+                            [
+                                Arg(
+                                    Use(
+                                        Var(Ident("a")),
+                                    ),
+                                ),
+                            ],
+                        ),
+                        Ident("a"),
+                    ),
+                    None,
+                    Literal(
+                        Int(3),
+                    ),
+                ),
+            ),
+            Expr(
+                Assign(
+                    Index(
+                        Call(
+                            Use(
+                                Var(Ident("v")),
+                            ),
+                            [
+                                Arg(
+                                    Use(
+                                        Var(Ident("a")),
+                                    ),
+                                ),
+                            ],
+                        ),
+                        Use(
+                            Var(Ident("a")),
+                        ),
+                    ),
+                    None,
+                    Literal(
+                        Int(4),
+                    ),
+                ),
+            ),
+        ],
+        tail: None,
+    },
+}

@@ -2,7 +2,8 @@
 source: src/syn/tests.rs
 expression: "parse!(r#\"\n    name = 1;\n    name += 1;\n    name -= 1;\n    name /= 1;\n    name *= 1;\n    name %= 1;\n    name **= 1;\n    name ??= 1;\n  \"#)"
 ---
-SyntaxTree {
+Ast {
+    decls: [],
     top_level: Block {
         body: [
             Expr(

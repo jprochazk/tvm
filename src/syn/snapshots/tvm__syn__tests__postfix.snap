@@ -1,0 +1,64 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n    v.a[a](a);\n    v(a)[a].a;\n  \"#)"
+---
+Ast {
+    decls: [],
+    top_level: Block {
+        body: [
+            Expr(
+                Call(
+                    Use(
+                        Index(
+                            Use(
+                                Field(
+                                    Use(
+                                        Var(Ident("v")),
+                                    ),
+                                    Ident("a"),
+                                ),
+                            ),
+                            Use(
+                                Var(Ident("a")),
+                            ),
+                        ),
+                    ),
+                    [
+                        Arg(
+                            Use(
+                                Var(Ident("a")),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            Expr(
+                Use(
+                    Field(
+                        Use(
+                            Index(
+                                Call(
+                                    Use(
+                                        Var(Ident("v")),
+                                    ),
+                                    [
+                                        Arg(
+                                            Use(
+                                                Var(Ident("a")),
+                                            ),
+                                        ),
+                                    ],
+                                ),
+                                Use(
+                                    Var(Ident("a")),
+                                ),
+                            ),
+                        ),
+                        Ident("a"),
+                    ),
+                ),
+            ),
+        ],
+        tail: None,
+    },
+}

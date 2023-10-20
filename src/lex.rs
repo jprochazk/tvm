@@ -363,7 +363,6 @@ pub enum TokenKind {
   Eof,
 }
 
-// TODO: wrapper macro for at!, eat!, must!, must2!
 macro_rules! t {
   [fn] => ($crate::lex::TokenKind::Fn);
   [class] => ($crate::lex::TokenKind::Class);

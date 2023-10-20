@@ -1,6 +1,6 @@
-macro_rules! decl {
+macro_rules! syntax_node {
   (
-    $name:ident<$lifetime:lifetime> {
+    $name:ident<$lifetime:lifetime> $(($($extra:ident : $extra_ty:ty),*))? {
       $(
         $variant:ident $({
           $($field:ident : $ty:ty),* $(,)?
@@ -11,8 +11,22 @@ macro_rules! decl {
     paste::paste! {
       #[derive(Clone)]
       pub struct $name<$lifetime> {
+        $($(pub $extra : $extra_ty,)*)?
         pub kind: [<$name Kind>]<$lifetime>,
         pub span: Span,
+      }
+
+      impl<$lifetime> $name<$lifetime> {
+        pub fn new(
+          kind: [<$name Kind>]<$lifetime>,
+          span: Span,
+        ) -> Self {
+          Self {
+            $($($extra: <$extra_ty>::default(),)*)?
+            kind,
+            span,
+          }
+        }
       }
 
       impl<$lifetime> ::core::fmt::Debug for $name<$lifetime> {
@@ -29,21 +43,21 @@ macro_rules! decl {
             span: impl Into<crate::lex::Span>,
             $($($field : $ty),*)?
           ) -> Self {
-            Self {
-              kind: [<$name Kind>]::$variant(
+            Self::new(
+              [<$name Kind>]::$variant(
                 [<$variant $name>]::new(
                   $($($field),*)?
                 ).wrap_box()
               ),
-              span: span.into(),
-            }
+              span.into(),
+            )
           }
 
           pub fn [<is_ $variant:snake>](&self) -> bool {
             matches!(self.kind, [<$name Kind>]::$variant(..))
           }
 
-          #[allow(unused_parens)]
+          #[allow(unused_parens, unreachable_patterns)]
           pub fn [<into_ $variant:snake>](self) -> Option<([<$variant $name>]<$lifetime>)> {
             match self.kind {
               [<$name Kind>]::$variant(inner) => Some(inner.unwrap_box()),
@@ -51,7 +65,7 @@ macro_rules! decl {
             }
           }
 
-          #[allow(unused_parens)]
+          #[allow(unused_parens, unreachable_patterns)]
           pub fn [<as_ $variant:snake>](&self) -> Option<&([<$variant $name>]<$lifetime>)> {
             match &self.kind {
               [<$name Kind>]::$variant(inner) => Some(&*inner),
@@ -65,14 +79,14 @@ macro_rules! decl {
       pub enum [<$name Kind>]<$lifetime> {
         $(
           $variant(
-            decl!(@maybe_box $variant $name $lifetime $({ $($field : $ty),* })?)
+            syntax_node!(@maybe_box $variant $name $lifetime $({ $($field : $ty),* })?)
           )
         ),*
       }
     }
 
     $(
-      decl!(@variant_struct $variant $name $lifetime $({ $($field : $ty),* })?);
+      syntax_node!(@variant_struct $variant $name $lifetime $({ $($field : $ty),* })?);
     )*
   };
 

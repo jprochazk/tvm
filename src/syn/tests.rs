@@ -1,7 +1,5 @@
-use super::Parser;
-
 fn _parse(input: &str) -> String {
-  match Parser::new(input).try_parse() {
+  match super::try_parse(input) {
     Ok(ast) => format!("{ast:#?}"),
     Err(e) => e
       .into_iter()
@@ -45,6 +43,11 @@ test! {
   function,
   r#"
     fn f() {}
+    fn f(a: A) {}
+    fn f(a: A, b: B, c: C) {}
+    fn f() -> R {}
+    fn f(a: A) -> R {}
+    fn f(a: A, b: B, c: C) -> R {}
   "#
 }
 
@@ -76,6 +79,8 @@ test! {
     let v: bool = true;
     let v: str = "yo";
     let v: [int] = [1, 2, 3];
+    let v: [int] = [0; 10];
+    let v: [_] = [0; 10];
     let v: {str} = {"a", "b", "c"};
     let v: {str -> int} = {"a": 0, "b": 1};
   "#
@@ -173,5 +178,39 @@ test! {
     let v = continue;
 
     let v = (yield 5) + (yield 5);
+  "#
+}
+
+test! {
+  postfix,
+  r#"
+    v.a[a](a);
+    v(a)[a].a;
+  "#
+}
+
+test! {
+  postfix_assign,
+  r#"
+    v.a = 1;
+    v[a] = 2;
+    v(a).a = 3;
+    v(a)[a] = 4;
+  "#
+}
+
+test! {
+  bad_assign,
+  r#"
+    0 = 1;
+  "#
+}
+
+test! {
+  no_nested_fn,
+  r#"
+    fn test() {
+      fn inner() {}
+    }
   "#
 }

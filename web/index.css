@@ -22,6 +22,9 @@ textarea {
   height: 100%;
   padding: 8px;
   border: 1px solid #ccc;
+  text-wrap: nowrap;
+  overflow-y: scroll;
+  overflow-x: scroll;
 }
 
 textarea:first-child {
@@ -45,3 +48,4 @@ textarea:last-child {
     color: rgb(227, 227, 227);
   }
 }
+

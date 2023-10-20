@@ -153,9 +153,9 @@ print(v.b);
 
 // Unions
 union Bar {
-  Lorem
-  Ipsum { a: int, b: str }
-  Dolor
+  Lorem,
+  Ipsum { a: int, b: str },
+  Dolor,
 }
 
 // union constructor, match
@@ -191,7 +191,7 @@ fn greet(user: User) {
 let v = User(name: "😂", age: 100);
 
 // both of these are equivalent function calls:
-v.greet();
+v.greet(); // -> greet(v)
 greet(v);
 
 // the above also applies for unions
@@ -295,7 +295,7 @@ fn win(game: TicTacToe) -> str? {
   let scan = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
     [0, 3, 6], [1, 4, 7], [2, 5, 8], // cols
-    [0, 4, 8], [2, 4, 6],             // diag
+    [0, 4, 8], [2, 4, 6],            // diag
   ];
 
   for line in scan {
@@ -343,3 +343,49 @@ fn main() {
 main();
 ```
 
+## Parsing / type checking
+
+Semantic changes:
+- Top level scope may only contain:
+  - Unique declarations (may not be shadowed)
+  - Expression statements
+
+
+```rust
+fn f() {
+  print(v)
+}
+
+// # type checking
+// 1: collect and check all declaration signatures
+// - records:
+//   - 1: assign each record a UserTypeId if it doesn't have on already
+//     2: check fields (does the name exist in the current scope -> get its TypeId and store that)
+//                     assign offset as (field_index * 8)
+//     3: add record to the decl pool
+// - function signatures
+//   - 1: check parameters and return types (do named types exist? are all generic instantiations valid?)
+//     2: add function to the decl pool
+// 2: check top-level code
+// - traverse each stmt
+//   - let -> unify Lty with Rty
+//   recursively check each subexpression
+//
+// # codegen
+// result:
+//   fn `f`:
+//     .data
+//     .code
+//       mov   m0, r1       ; print(v)
+//       call  #print, r1   ;
+//   
+//   main:
+//     .data
+//       [0] = function_prototype { name: "f", module_idx: 0 }
+//     .code
+//       mov   [0], r1    ; fn f() {
+//       mov   0, m0      ; let v = 0;
+//       call  [0]        ; f()
+//       mov   10, m0     ; v = 10;
+//       call  [0]        ; f()
+```

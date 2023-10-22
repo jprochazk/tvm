@@ -17,19 +17,13 @@ fn print_ast(src: &str) -> String {
 }
 
 fn print_hir(src: &str) -> String {
-  let (ast, parse_errors) = tvm::syn::parse(src);
-
-  if parse_errors.is_empty() {
-    match tvm::ty::check(ast) {
-      Ok(hir) => format!("{hir}"),
-      Err(e) => format!("{}", e.with_src(src)),
-    }
-  } else {
-    parse_errors
+  match tvm::syn::try_parse(src).and_then(tvm::ty::check) {
+    Ok(hir) => format!("{hir}"),
+    Err(e) => e
       .into_iter()
       .map(|e| format!("{}", e.with_src(src)))
       .collect::<Vec<_>>()
-      .join("\n")
+      .join("\n"),
   }
 }
 

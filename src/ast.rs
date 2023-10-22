@@ -132,12 +132,6 @@ pub struct Arg<'src> {
   pub value: Expr<'src>,
 }
 
-impl<'src> UseExpr<'src> {
-  pub fn place(&self) -> &Place {
-    &self.place
-  }
-}
-
 #[derive(Clone)]
 pub enum Place<'src> {
   Var {

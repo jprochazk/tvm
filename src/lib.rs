@@ -16,5 +16,5 @@ pub mod ty;
 mod util;
 
 use beef::lean::Cow;
-use rustc_hash::FxHashMap as HashMap;
-type PreHash<T> = std::collections::HashMap<u64, T, nohash_hasher::BuildNoHashHasher<u64>>;
+pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
+pub type HashSet<T> = rustc_hash::FxHashSet<T>;

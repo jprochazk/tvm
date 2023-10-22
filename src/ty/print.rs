@@ -2,24 +2,17 @@ use std::fmt::{Display, Write};
 
 use super::*;
 
-macro_rules! ty {
-  ($hir:ident, $id:expr) => {
-    &$hir.types.by_id[($id).to_index()]
-  };
-}
-
-impl Display for Hir<'_> {
+impl<'src> Display for Hir<'src> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    writeln!(f, "/*\ntypes:")?;
-    print_types(self, f)?;
-    writeln!(f, "*/")?;
-
-    let top_level_tail_ty = match &self.top_level.tail {
-      Some(tail) => tail.ty,
-      None => TypeId::None,
-    };
-    print_function(self, f, "__main__", &[], top_level_tail_ty, &self.top_level)?;
-    for decl in &self.decls.array {
+    print_function(
+      self,
+      f,
+      "__main__",
+      /* &[], */
+      self.top_level.tail.as_ref().map(|tail| tail.ty),
+      &self.top_level,
+    )?;
+    /* for decl in &self.decls.array {
       #[allow(irrefutable_let_patterns)]
       if let Decl::Fn(decl) = decl {
         print_function(
@@ -31,59 +24,48 @@ impl Display for Hir<'_> {
           &decl.body,
         )?;
       }
-    }
+    } */
     Ok(())
   }
 }
 
-fn print_types(hir: &Hir<'_>, f: &mut impl Write) -> std::fmt::Result {
-  let indent = 2;
-  for ty in &hir.types.by_id {
-    write!(f, "{:indent$}", "")?;
-    print_type(hir, f, ty)?;
-    writeln!(f)?;
-  }
-  Ok(())
-}
+fn print_type(hir: &Hir<'_>, f: &mut impl Write, ty: TypeId) -> std::fmt::Result {
+  match hir.types.resolve(ty) {
+    Type::Infer(var) => write!(f, "'{}", var.0)?,
+    Type::Error => write!(f, "/*ERROR*/")?,
 
-fn print_type(hir: &Hir<'_>, f: &mut impl Write, ty: &Type) -> std::fmt::Result {
-  match ty {
-    Type::Unknown => write!(f, "unknown")?,
-    Type::None => write!(f, "none")?,
     Type::Int => write!(f, "int")?,
-    Type::Num => write!(f, "num")?,
-    Type::Bool => write!(f, "bool")?,
-    Type::Str => write!(f, "str")?,
     Type::Array(item) => {
       write!(f, "[")?;
-      print_type(hir, f, ty!(hir, item))?;
+      print_type(hir, f, item)?;
       write!(f, "]")?;
-    }
-    Type::Set(key) => {
-      write!(f, "{{")?;
-      print_type(hir, f, ty!(hir, key))?;
-      write!(f, "}}")?;
-    }
-    Type::Map(key, val) => {
-      write!(f, "{{")?;
-      print_type(hir, f, ty!(hir, key))?;
-      write!(f, " -> ")?;
-      print_type(hir, f, ty!(hir, val))?;
-      write!(f, "}}")?;
-    }
-    Type::Fn(params, ret) => {
-      write!(f, "(")?;
-      for param in params {
-        print_type(hir, f, ty!(hir, param))?;
-      }
-      write!(f, ")")?;
-      write!(f, " -> ")?;
-      print_type(hir, f, ty!(hir, ret))?;
-    }
-    Type::Opt(inner) => {
-      print_type(hir, f, ty!(hir, inner))?;
-      write!(f, "?")?;
-    }
+    } /*
+      Type::Set(key) => {
+          write!(f, "{{")?;
+          print_type(hir, f, &hir.types[key])?;
+          write!(f, "}}")?;
+        }
+        Type::Map(key, val) => {
+          write!(f, "{{")?;
+          print_type(hir, f, &hir.types[key])?;
+          write!(f, " -> ")?;
+          print_type(hir, f, &hir.types[val])?;
+          write!(f, "}}")?;
+        }
+        Type::Fn(params, ret) => {
+          write!(f, "(")?;
+          for param in params {
+            print_type(hir, f, &hir.types[param])?;
+          }
+          write!(f, ")")?;
+          write!(f, " -> ")?;
+          print_type(hir, f, &hir.types[ret])?;
+        }
+        Type::Opt(inner) => {
+          print_type(hir, f, &hir.types[inner])?;
+          write!(f, "?")?;
+        }
+      */
   }
 
   Ok(())
@@ -93,7 +75,7 @@ fn print_block(
   hir: &Hir<'_>,
   f: &mut impl Write,
   indent: usize,
-  block: &Block<'_>,
+  block: &ast::Block<'_>,
 ) -> std::fmt::Result {
   writeln!(f, "{{")?;
   for stmt in &block.body {
@@ -122,15 +104,8 @@ fn print_stmt(
 ) -> std::fmt::Result {
   match &stmt.kind {
     ast::StmtKind::Let(node) => {
-      write!(f, "/*inferred: ")?;
-      print_type(hir, f, ty!(hir, node.init.ty))?;
-      writeln!(f, "*/")?;
-
-      write!(f, "{:indent$}", "")?;
-      write!(f, "let {}", node.name.lexeme)?;
-      if let Some(ty) = &node.ty {
-        write!(f, ": {}", &hir.src[ty.span])?;
-      }
+      write!(f, "let {}: ", node.name.lexeme)?;
+      print_type(hir, f, node.init.ty)?;
       write!(f, " = ")?;
       print_expr_top_level(hir, f, indent, &node.init)?;
       write!(f, ";")?;
@@ -354,7 +329,7 @@ fn _print_expr(
   }
   if print_ty {
     write!(f, "/*:")?;
-    print_type(hir, f, ty!(hir, expr.ty))?;
+    print_type(hir, f, expr.ty)?;
     write!(f, "*/)")?;
   }
   Ok(())
@@ -364,21 +339,24 @@ fn print_function(
   hir: &Hir<'_>,
   f: &mut impl Write,
   name: &str,
-  params: &[FnParam<'_>],
-  ret: TypeId,
-  body: &Block<'_>,
+  // params: &[FnParam<'_>],
+  ret: Option<TypeId>,
+  body: &ast::Block<'_>,
 ) -> std::fmt::Result {
   write!(f, "fn {name}(")?;
-  if !params.is_empty() {
+  /* if !params.is_empty() {
     writeln!(f)?;
   }
   for param in params {
     write!(f, "  {}: ", param.name.lexeme)?;
-    print_type(hir, f, ty!(hir, param.ty))?;
+    print_type(hir, f, &hir.types[param.ty])?;
     writeln!(f, ",")?;
+  } */
+  write!(f, ")")?;
+  if let Some(ret) = ret {
+    write!(f, " -> ")?;
+    print_type(hir, f, ret)?;
   }
-  write!(f, ") -> ")?;
-  print_type(hir, f, ty!(hir, ret))?;
   write!(f, " ")?;
   print_block(hir, f, 0, body)?;
   Ok(())

@@ -108,6 +108,8 @@ pub enum ErrorKind {
   NoSuchTypeInScope,
   VarAlreadyDefined,
   WrongParamCount,
+  UndefinedVar,
+  NotIndexable,
   TypeError,
 }
 
@@ -127,6 +129,8 @@ impl Display for ErrorKind {
         f.write_str("this variable is already defined in the current scope")
       }
       ErrorKind::WrongParamCount => f.write_str("mismatched number of params"),
+      ErrorKind::UndefinedVar => f.write_str("undefined variable"),
+      ErrorKind::NotIndexable => f.write_str("not an indexable collection"),
       ErrorKind::TypeError => f.write_str("type error"),
     }
   }

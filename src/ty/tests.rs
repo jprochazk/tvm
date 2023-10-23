@@ -38,10 +38,67 @@ macro_rules! test {
 }
 
 test! {
-  array_push,
+  literal_none,
+  r#"
+    let v = none;
+  "#
+}
+
+test! {
+  literal_int,
+  r#"
+    let v = 10;
+  "#
+}
+
+test! {
+  literal_num,
+  r#"
+    let v = 10.5;
+  "#
+}
+
+test! {
+  literal_bool,
+  r#"
+    let a = true;
+    let b = false;
+  "#
+}
+
+test! {
+  literal_str,
+  r#"
+    let v = "test";
+  "#
+}
+
+test! {
+  literal_array_empty,
+  r#"
+    let v = [];
+  "#
+}
+
+test! {
+  literal_array_single_item,
+  r#"
+    let v = [0];
+  "#
+}
+
+test! {
+  literal_array_len,
+  r#"
+    let v = [0; 16];
+  "#
+}
+
+test! {
+  literal_array_type_inference,
   r#"
     let a = [];
-    (a[0] + 10);
+    let b = a[0] + 10;
   "#
 }
 

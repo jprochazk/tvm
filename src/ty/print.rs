@@ -34,38 +34,28 @@ fn print_type(hir: &Hir<'_>, f: &mut impl Write, ty: TypeId) -> std::fmt::Result
     Type::Infer(var) => write!(f, "'{}", var.0)?,
     Type::Error => write!(f, "/*ERROR*/")?,
 
+    Type::None => write!(f, "none")?,
     Type::Int => write!(f, "int")?,
+    Type::Num => write!(f, "num")?,
+    Type::Bool => write!(f, "bool")?,
+    Type::Str => write!(f, "str")?,
     Type::Array(item) => {
       write!(f, "[")?;
       print_type(hir, f, item)?;
       write!(f, "]")?;
-    } /*
-      Type::Set(key) => {
-          write!(f, "{{")?;
-          print_type(hir, f, &hir.types[key])?;
-          write!(f, "}}")?;
+    } /* Type::Fn(params, ret) => {
+        write!(f, "(")?;
+        for param in params {
+          print_type(hir, f, &hir.types[param])?;
         }
-        Type::Map(key, val) => {
-          write!(f, "{{")?;
-          print_type(hir, f, &hir.types[key])?;
-          write!(f, " -> ")?;
-          print_type(hir, f, &hir.types[val])?;
-          write!(f, "}}")?;
-        }
-        Type::Fn(params, ret) => {
-          write!(f, "(")?;
-          for param in params {
-            print_type(hir, f, &hir.types[param])?;
-          }
-          write!(f, ")")?;
-          write!(f, " -> ")?;
-          print_type(hir, f, &hir.types[ret])?;
-        }
-        Type::Opt(inner) => {
-          print_type(hir, f, &hir.types[inner])?;
-          write!(f, "?")?;
-        }
-      */
+        write!(f, ")")?;
+        write!(f, " -> ")?;
+        print_type(hir, f, &hir.types[ret])?;
+      }
+      Type::Opt(inner) => {
+        print_type(hir, f, &hir.types[inner])?;
+        write!(f, "?")?;
+      } */
   }
 
   Ok(())
@@ -230,52 +220,6 @@ fn _print_expr(
           write!(f, "]")?;
         }
       },
-      ast::Literal::Set(v) => {
-        if v.len() > 4 {
-          writeln!(f, "{{")?;
-          for item in v {
-            write!(f, "{:indent$}", "")?;
-            print_expr(hir, f, indent + 2, item)?;
-            writeln!(f, ",")?;
-          }
-          write!(f, "}}")?;
-        } else {
-          write!(f, "{{")?;
-          let mut items = v.iter().peekable();
-          while let Some(item) = items.next() {
-            print_expr(hir, f, indent, item)?;
-            if items.peek().is_some() {
-              write!(f, ", ")?;
-            }
-          }
-          write!(f, "}}")?;
-        }
-      }
-      ast::Literal::Map(v) => {
-        if v.len() > 4 {
-          writeln!(f, "{{")?;
-          for (key, val) in v {
-            write!(f, "{:indent$}", "")?;
-            print_expr(hir, f, indent + 2, key)?;
-            write!(f, ": ")?;
-            print_expr(hir, f, indent + 2, val)?;
-            writeln!(f, ",")?;
-          }
-          write!(f, "}}")?;
-        } else {
-          write!(f, "{{")?;
-          let mut items = v.iter().peekable();
-          while let Some((key, val)) = items.next() {
-            print_expr(hir, f, indent, key)?;
-            write!(f, ": ")?;
-            print_expr(hir, f, indent, val)?;
-            if items.peek().is_some() {
-              write!(f, ", ")?;
-            }
-          }
-          write!(f, "}}")?;
-        }
-      }
     },
     ast::ExprKind::Use(node) => match &node.place {
       ast::Place::Var { name } => write!(f, "{}", name.lexeme)?,

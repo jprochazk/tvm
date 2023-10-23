@@ -53,13 +53,6 @@ syntax_node! {
     Array {
       item: Type<'src>,
     },
-    Set {
-      value: Type<'src>,
-    },
-    Map {
-      key: Type<'src>,
-      value: Type<'src>,
-    },
     Fn {
       params: Vec<Type<'src>>,
       ret: Type<'src>,
@@ -219,9 +212,6 @@ pub enum Literal<'src> {
   Bool(bool),
   String(Cow<'src, str>),
   Array(Array<'src>),
-  // TODO: during type check, empty `map` can coerce to `set`
-  Set(Vec<Expr<'src>>),
-  Map(Vec<(Expr<'src>, Expr<'src>)>),
 }
 
 #[derive(Clone)]
@@ -248,12 +238,6 @@ macro_rules! lit {
   };
   (array, $v:expr) => {
     $crate::ast::Literal::Array(($v).into())
-  };
-  (set, $v:expr) => {
-    $crate::ast::Literal::Set(($v).into())
-  };
-  (map, $v:expr) => {
-    $crate::ast::Literal::Map(($v).into())
   };
 }
 
@@ -420,8 +404,6 @@ impl Debug for Literal<'_> {
       Self::Bool(arg0) => write!(f, "Bool({arg0:?})"),
       Self::String(arg0) => write!(f, "String({arg0:?})"),
       Self::Array(arg0) => Debug::fmt(arg0, f),
-      Self::Set(arg0) => f.debug_tuple("Set").field(arg0).finish(),
-      Self::Map(arg0) => f.debug_tuple("Map").field(arg0).finish(),
     }
   }
 }
@@ -452,8 +434,6 @@ impl Hash for TypeKind<'_> {
       TypeKind::Empty(ty) => ty.hash(state),
       TypeKind::Named(ty) => ty.hash(state),
       TypeKind::Array(ty) => ty.hash(state),
-      TypeKind::Set(ty) => ty.hash(state),
-      TypeKind::Map(ty) => ty.hash(state),
       TypeKind::Fn(ty) => ty.hash(state),
       TypeKind::Opt(ty) => ty.hash(state),
     }
@@ -475,19 +455,6 @@ impl Hash for NamedType<'_> {
 impl Hash for ArrayType<'_> {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.item.hash(state);
-  }
-}
-
-impl Hash for SetType<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.value.hash(state);
-  }
-}
-
-impl Hash for MapType<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.key.hash(state);
-    self.value.hash(state);
   }
 }
 

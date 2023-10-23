@@ -1,0 +1,8 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n    let a = true;\n    let b = false;\n  \"#)"
+---
+fn __main__() {
+  let a: bool = true;
+  let b: bool = false;
+}

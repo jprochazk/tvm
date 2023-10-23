@@ -6,6 +6,8 @@ use crate::error::{Error, Result};
 use crate::lex::Span;
 use crate::HashMap;
 
+// TODO: pre-intern primitives
+
 pub fn check(mut ast: Ast<'_>) -> Result<Hir<'_>, Vec<Error>> {
   let mut ctx = Ctx::new();
 
@@ -77,12 +79,13 @@ impl<'src> Ctx<'src> {
   }
 
   fn ann_to_ty(&mut self, ast: &ast::Type<'src>) -> TypeId {
-    match ast.kind {
-      ast::TypeKind::Empty(_) => todo!(),
+    match &ast.kind {
+      ast::TypeKind::Empty(_) => self.fresh(),
       ast::TypeKind::Named(_) => todo!(),
-      ast::TypeKind::Array(_) => todo!(),
-      ast::TypeKind::Set(_) => todo!(),
-      ast::TypeKind::Map(_) => todo!(),
+      ast::TypeKind::Array(inner) => {
+        let item_ty = self.ann_to_ty(&inner.item);
+        self.intern(Type::Array(item_ty))
+      }
       ast::TypeKind::Fn(_) => todo!(),
       ast::TypeKind::Opt(_) => todo!(),
     }
@@ -121,6 +124,39 @@ impl<'src> Ctx<'src> {
 }
 
 fn infer<'src>(ctx: &mut Ctx<'src>, e: &mut ast::Expr<'src>) -> TypeId {
+  fn lit<'src>(ctx: &mut Ctx<'src>, e: &mut ast::Literal<'src>) -> TypeId {
+    match e {
+      ast::Literal::None => ctx.intern(Type::None),
+      ast::Literal::Int(_) => ctx.intern(Type::Int),
+      ast::Literal::Float(_) => ctx.intern(Type::Num),
+      ast::Literal::Bool(_) => ctx.intern(Type::Bool),
+      ast::Literal::String(_) => ctx.intern(Type::Str),
+      ast::Literal::Array(node) => match node {
+        ast::Array::List(items) => {
+          let item_ty = match &mut items[..] {
+            [] => ctx.fresh(),
+            [f, ..] => {
+              let item_ty = infer(ctx, f);
+              for item in &mut items[1..] {
+                let ty = infer(ctx, item);
+                unify(ctx, item.span, item_ty, ty);
+              }
+              item_ty
+            }
+          };
+          ctx.intern(Type::Array(item_ty))
+        }
+        ast::Array::Copy(item, len) => {
+          let item_ty = infer(ctx, item);
+          let len_ty = infer(ctx, len);
+          let expected_len_ty = ctx.intern(Type::Int);
+          unify(ctx, len.span, len_ty, expected_len_ty);
+          ctx.intern(Type::Array(item_ty))
+        }
+      },
+    }
+  }
+
   let ty = match &mut e.kind {
     ast::ExprKind::Return(_) => todo!(),
     ast::ExprKind::Yield(_) => todo!(),
@@ -135,26 +171,7 @@ fn infer<'src>(ctx: &mut Ctx<'src>, e: &mut ast::Expr<'src>) -> TypeId {
       left
     }
     ast::ExprKind::Unary(_) => todo!(),
-    ast::ExprKind::Literal(node) => match &mut node.value {
-      ast::Literal::None => todo!(),
-      ast::Literal::Int(_) => ctx.intern(Type::Int),
-      ast::Literal::Float(_) => todo!(),
-      ast::Literal::Bool(_) => todo!(),
-      ast::Literal::String(_) => todo!(),
-      ast::Literal::Array(node) => match node {
-        ast::Array::List(items) => {
-          let item = if items.is_empty() {
-            ctx.fresh()
-          } else {
-            todo!()
-          };
-          ctx.intern(Type::Array(item))
-        }
-        ast::Array::Copy(_, _) => todo!(),
-      },
-      ast::Literal::Set(_) => todo!(),
-      ast::Literal::Map(_) => todo!(),
-    },
+    ast::ExprKind::Literal(node) => lit(ctx, &mut node.value),
     ast::ExprKind::Use(node) => match &mut node.place {
       ast::Place::Var { name } => ctx.binding(*name),
       ast::Place::Field { .. } => todo!(),
@@ -180,7 +197,9 @@ fn infer<'src>(ctx: &mut Ctx<'src>, e: &mut ast::Expr<'src>) -> TypeId {
 }
 
 fn unify(ctx: &mut Ctx<'_>, span: Span, l: TypeId, r: TypeId) {
-  match (ctx.resolve(l), ctx.resolve(r)) {
+  let lty = ctx.resolve(l);
+  let rty = ctx.resolve(r);
+  match (lty, rty) {
     (Type::Error, _) => (),
     (_, Type::Error) => (),
 
@@ -194,6 +213,9 @@ fn unify(ctx: &mut Ctx<'_>, span: Span, l: TypeId, r: TypeId) {
     },
 
     (Type::Int, Type::Int) => (),
+    (Type::Num, Type::Num) => (),
+    (Type::Bool, Type::Bool) => (),
+    (Type::Str, Type::Str) => (),
     (Type::Array(l), Type::Array(r)) => unify(ctx, span, l, r),
 
     _ => ctx.errors.push(err!(@span, TypeError)),
@@ -241,7 +263,11 @@ pub enum Type {
   #[default]
   Error,
 
+  None,
   Int,
+  Num,
+  Bool,
+  Str,
   Array(TypeId),
 
   Infer(VarId),

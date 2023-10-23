@@ -409,22 +409,6 @@ fn type_<'src>(p: &mut Parser<'src>) -> Result<Type<'src>> {
       let ty = Type::make_array(start..end, element);
       Ok(opt(p, ty))
     }
-    t!["{"] => {
-      let start = p.curr.span.start;
-      p.advance();
-      let key = type_(p)?;
-      let ty = if p.eat(t![->]) {
-        let value = type_(p)?;
-        p.must(t!["}"])?;
-        let end = p.prev.span.end;
-        Type::make_map(start..end, key, value)
-      } else {
-        p.must(t!["}"])?;
-        let end = p.prev.span.end;
-        Type::make_set(start..end, key)
-      };
-      Ok(opt(p, ty))
-    }
     t!["("] => {
       let start = p.curr.span.start;
 
@@ -712,7 +696,6 @@ mod expr {
       t![if] => if_(p),
       t![do] => do_(p),
       t!["["] => array(p),
-      t!["{"] => set_or_map(p),
       t!["("] => group(p),
       t![ident] => use_(p),
       _ => Err(err!(@p.curr.span, UnexpectedToken)),
@@ -792,56 +775,6 @@ mod expr {
     p.must(t!["]"])?;
 
     Ok(Expr::make_literal(p.finish(s), lit!(array, array)))
-  }
-
-  fn set_or_map<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
-    let s = p.span();
-
-    assert!(p.eat(t!["{"]));
-    if p.end() {
-      p.must(t!["}"])?;
-      return Ok(Expr::make_literal(p.finish(s), lit!(map, vec![])));
-    }
-
-    if p.eat(t!["}"]) {
-      return Ok(Expr::make_literal(p.finish(s), lit!(map, vec![])));
-    }
-
-    let s = p.span();
-    let first_key = expr(p)?;
-    if p.eat(t![:]) {
-      let first_value = expr(p)?;
-      map(p, s, first_key, first_value)
-    } else {
-      set(p, s, first_key)
-    }
-  }
-
-  fn map<'src>(
-    p: &mut Parser<'src>,
-    s: Span,
-    first_key: Expr<'src>,
-    first_value: Expr<'src>,
-  ) -> Result<Expr<'src>> {
-    let mut items = vec![(first_key, first_value)];
-    while !p.end() && p.eat(t![,]) && !p.at(t!["}"]) {
-      let key = expr(p)?;
-      p.must(t![:])?;
-      let value = expr(p)?;
-      items.push((key, value));
-    }
-    p.must(t!["}"])?;
-    Ok(Expr::make_literal(p.finish(s), lit!(map, items)))
-  }
-
-  fn set<'src>(p: &mut Parser<'src>, s: Span, first_key: Expr<'src>) -> Result<Expr<'src>> {
-    let mut items = vec![first_key];
-    while !p.end() && p.eat(t![,]) && !p.at(t!["}"]) {
-      let key = expr(p)?;
-      items.push(key);
-    }
-    p.must(t!["}"])?;
-    Ok(Expr::make_literal(p.finish(s), lit!(set, items)))
   }
 
   fn group<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {

@@ -81,8 +81,6 @@ test! {
     let v: [int] = [1, 2, 3];
     let v: [int] = [0; 10];
     let v: [_] = [0; 10];
-    let v: {str} = {"a", "b", "c"};
-    let v: {str -> int} = {"a": 0, "b": 1};
   "#
 }
 

@@ -1,0 +1,8 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n    let a = [];\n    let b = a[0] + 10;\n  \"#)"
+---
+fn __main__() {
+  let a: [int] = [];
+  let b: int = ((a/*:[int]*/)[(0/*:int*/)]/*:int*/) + (10/*:int*/);
+}

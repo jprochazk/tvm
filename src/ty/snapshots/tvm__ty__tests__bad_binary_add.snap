@@ -1,0 +1,8 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n    10 + \"test\";\n  \"#)"
+---
+error: type error
+1 |  10 + "test";
+  |  ^^^^^^^^^^^
+

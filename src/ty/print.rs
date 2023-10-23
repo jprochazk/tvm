@@ -34,7 +34,6 @@ fn print_type(hir: &Hir<'_>, f: &mut impl Write, ty: TypeId) -> std::fmt::Result
     Type::Infer(var) => write!(f, "'{}", var.0)?,
     Type::Error => write!(f, "/*ERROR*/")?,
 
-    Type::None => write!(f, "none")?,
     Type::Int => write!(f, "int")?,
     Type::Num => write!(f, "num")?,
     Type::Bool => write!(f, "bool")?,
@@ -43,19 +42,20 @@ fn print_type(hir: &Hir<'_>, f: &mut impl Write, ty: TypeId) -> std::fmt::Result
       write!(f, "[")?;
       print_type(hir, f, item)?;
       write!(f, "]")?;
-    } /* Type::Fn(params, ret) => {
-        write!(f, "(")?;
-        for param in params {
-          print_type(hir, f, &hir.types[param])?;
-        }
-        write!(f, ")")?;
-        write!(f, " -> ")?;
-        print_type(hir, f, &hir.types[ret])?;
-      }
-      Type::Opt(inner) => {
-        print_type(hir, f, &hir.types[inner])?;
-        write!(f, "?")?;
-      } */
+    }
+    Type::Opt(inner) => {
+      print_type(hir, f, inner)?;
+      write!(f, "?")?;
+    }
+     /* Type::Fn(params, ret) => { */
+    //write!(f, "(")?;
+    //for param in params {
+    //print_type(hir, f, &hir.types[param])?;
+    //}
+    //write!(f, ")")?;
+    //write!(f, " -> ")?;
+    //print_type(hir, f, &hir.types[ret])?;
+    //}
   }
 
   Ok(())

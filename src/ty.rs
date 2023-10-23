@@ -114,19 +114,48 @@ impl<'src> Ctx<'src> {
       }
     }
 
-    self.errors.push(err!(@name.span, UndefinedVar));
-    TypeId::ERROR
+    self.error(err!(@name.span, UndefinedVar))
   }
 
   fn intern(&mut self, ty: Type) -> TypeId {
     self.types.intern(ty)
   }
+
+  fn error(&mut self, e: Error) -> TypeId {
+    self.errors.push(e);
+    TypeId::ERROR
+  }
 }
 
 fn infer<'src>(ctx: &mut Ctx<'src>, e: &mut ast::Expr<'src>) -> TypeId {
-  fn lit<'src>(ctx: &mut Ctx<'src>, e: &mut ast::Literal<'src>) -> TypeId {
-    match e {
-      ast::Literal::None => ctx.intern(Type::None),
+  fn binary<'src>(ctx: &mut Ctx<'src>, span: Span, e: &mut ast::BinaryExpr<'src>) -> TypeId {
+    let left = infer(ctx, &mut e.left);
+    let right = infer(ctx, &mut e.right);
+    unify(ctx, span, left, right);
+
+    if !supports_binop(e.op, &ctx.resolve(left)) {
+      return ctx.error(err!(@span, TypeError));
+    }
+
+    left
+  }
+
+  fn unary<'src>(ctx: &mut Ctx<'src>, span: Span, e: &mut ast::UnaryExpr<'src>) -> TypeId {
+    let right = infer(ctx, &mut e.right);
+
+    if !supports_unop(e.op, &ctx.resolve(right)) {
+      return ctx.error(err!(@span, TypeError));
+    }
+
+    right
+  }
+
+  fn lit<'src>(ctx: &mut Ctx<'src>, e: &mut ast::LiteralExpr<'src>) -> TypeId {
+    match &mut e.value {
+      ast::Literal::None => {
+        let inner = ctx.fresh();
+        ctx.intern(Type::Opt(inner))
+      }
       ast::Literal::Int(_) => ctx.intern(Type::Int),
       ast::Literal::Float(_) => ctx.intern(Type::Num),
       ast::Literal::Bool(_) => ctx.intern(Type::Bool),
@@ -164,14 +193,9 @@ fn infer<'src>(ctx: &mut Ctx<'src>, e: &mut ast::Expr<'src>) -> TypeId {
     ast::ExprKind::Continue(_) => todo!(),
     ast::ExprKind::Block(_) => todo!(),
     ast::ExprKind::If(_) => todo!(),
-    ast::ExprKind::Binary(node) => {
-      let left = infer(ctx, &mut node.left);
-      let right = infer(ctx, &mut node.right);
-      unify(ctx, e.span, left, right);
-      left
-    }
-    ast::ExprKind::Unary(_) => todo!(),
-    ast::ExprKind::Literal(node) => lit(ctx, &mut node.value),
+    ast::ExprKind::Binary(node) => binary(ctx, e.span, node),
+    ast::ExprKind::Unary(node) => unary(ctx, e.span, node),
+    ast::ExprKind::Literal(node) => lit(ctx, node),
     ast::ExprKind::Use(node) => match &mut node.place {
       ast::Place::Var { name } => ctx.binding(*name),
       ast::Place::Field { .. } => todo!(),
@@ -217,8 +241,33 @@ fn unify(ctx: &mut Ctx<'_>, span: Span, l: TypeId, r: TypeId) {
     (Type::Bool, Type::Bool) => (),
     (Type::Str, Type::Str) => (),
     (Type::Array(l), Type::Array(r)) => unify(ctx, span, l, r),
+    (Type::Opt(l), Type::Opt(r)) => unify(ctx, span, l, r),
 
     _ => ctx.errors.push(err!(@span, TypeError)),
+  }
+}
+
+fn supports_binop(op: ast::BinaryOp, ty: &Type) -> bool {
+  match (op, ty) {
+    (
+      binop![+] | binop![>] | binop![<] | binop![>=] | binop![<=],
+      Type::Int | Type::Num | Type::Str,
+    ) => true,
+    (binop![-] | binop![*] | binop![/] | binop![%] | binop![**], Type::Int | Type::Num) => true,
+    (binop![==] | binop![!=], _) => true,
+    (binop![&&], Type::Bool) => true,
+    (binop![||], Type::Bool) => true,
+    (binop![??], _) => todo!(),
+    _ => false,
+  }
+}
+
+fn supports_unop(op: ast::UnaryOp, ty: &Type) -> bool {
+  match (op, ty) {
+    (unop![-], Type::Int | Type::Num) => true,
+    (unop![!], Type::Bool) => true,
+    (unop![?], _) => todo!(),
+    _ => false,
   }
 }
 
@@ -263,12 +312,12 @@ pub enum Type {
   #[default]
   Error,
 
-  None,
   Int,
   Num,
   Bool,
   Str,
   Array(TypeId),
+  Opt(TypeId),
 
   Infer(VarId),
 }

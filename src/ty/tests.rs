@@ -102,6 +102,42 @@ test! {
   "#
 }
 
+test! {
+  binary_ops,
+  r#"
+    1 + 1; 1.5 + 1.5; "a" + "b";
+    1 < 1; 1.5 < 1.5; "a" < "b";
+    1 > 1; 1.5 > 1.5; "a" > "b";
+    1 <= 1; 1.5 <= 1.5; "a" <= "b";
+    1 >= 1; 1.5 >= 1.5; "a" >= "b";
+    
+    1 + 1; 1.5 + 1.5;
+    1 - 1; 1.5 - 1.5;
+    1 * 1; 1.5 * 1.5;
+    1 / 1; 1.5 / 1.5;
+    1 % 1; 1.5 % 1.5;
+    1 ** 1; 1.5 ** 1.5;
+
+    true && true; false && false;
+    true || true; false || false;
+
+    1 == 1; 1.5 == 1.5; "a" == "b";
+    true == true; false == false;
+    [] == []; none == none;
+    
+    1 != 1; 1.5 != 1.5; "a" != "b";
+    true != true; false != false;
+    [] != []; none != none;
+  "#
+}
+
+test! {
+  bad_binary_add,
+  r#"
+    10 + "test";
+  "#
+}
+
 /*
 test! {
   let_stmt,

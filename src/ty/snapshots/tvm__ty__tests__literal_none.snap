@@ -3,5 +3,5 @@ source: src/ty/tests.rs
 expression: "check!(r#\"\n    let v = none;\n  \"#)"
 ---
 fn __main__() {
-  let v: none = none;
+  let v: '1? = none;
 }

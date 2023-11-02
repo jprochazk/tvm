@@ -102,8 +102,6 @@ loop {}
 ```rust
 return value;
 return;
-yield value;
-yield;
 break;
 continue;
 
@@ -111,8 +109,6 @@ continue;
 let v = return none;
 let v = break;
 let v = continue;
-// `yield` produces whatever `resume` is called with
-let v = yield none;
 ```
 
 ## Functions
@@ -125,6 +121,10 @@ fn name(a: A, b: B, c: C) {}
 fn name() -> R {}
 fn name(a: A) -> R {}
 fn name(a: A, b: B, c: C) -> R {}
+
+fn name(a: A, b: B, c: C) -> R {
+
+}
 ```
 
 ## Function calls

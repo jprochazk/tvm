@@ -1,6 +1,6 @@
 ---
 source: src/syn/tests.rs
-expression: "parse!(r#\"\n    let v: int = 1;\n    let v: int? = none;\n    let v: num = 1.0;\n    let v: bool = true;\n    let v: str = \"yo\";\n    let v: [int] = [1, 2, 3];\n    let v: [int] = [0; 10];\n    let v: [_] = [0; 10];\n  \"#)"
+expression: "parse!(r#\"\n    let v: int = 1;\n    let v: num = 1.0;\n    let v: bool = true;\n    let v: str = \"yo\";\n    let v: [int] = [1, 2, 3];\n    let v: [int] = [0; 10];\n    let v: [_] = [0; 10];\n  \"#)"
 ---
 Ast {
     decls: [],
@@ -15,19 +15,6 @@ Ast {
                 ),
                 Literal(
                     Int(1),
-                ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
-                    Opt(
-                        Named(
-                            Ident("int"),
-                        ),
-                    ),
-                ),
-                Literal(
-                    None,
                 ),
             ),
             Let(

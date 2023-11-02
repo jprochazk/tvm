@@ -7,13 +7,11 @@ Ast {
     top_level: Block {
         body: [
             Expr(
-                Assign(
-                    Field(
-                        Use(
-                            Var(Ident("v")),
-                        ),
-                        Ident("a"),
+                AssignField(
+                    UseVar(
+                        Ident("v"),
                     ),
+                    Ident("a"),
                     None,
                     Literal(
                         Int(1),
@@ -21,14 +19,12 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Index(
-                        Use(
-                            Var(Ident("v")),
-                        ),
-                        Use(
-                            Var(Ident("a")),
-                        ),
+                AssignIndex(
+                    UseVar(
+                        Ident("v"),
+                    ),
+                    UseVar(
+                        Ident("a"),
                     ),
                     None,
                     Literal(
@@ -37,22 +33,20 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Field(
-                        Call(
-                            Use(
-                                Var(Ident("v")),
-                            ),
-                            [
-                                Arg(
-                                    Use(
-                                        Var(Ident("a")),
-                                    ),
-                                ),
-                            ],
+                AssignField(
+                    Call(
+                        UseVar(
+                            Ident("v"),
                         ),
-                        Ident("a"),
+                        [
+                            Arg(
+                                UseVar(
+                                    Ident("a"),
+                                ),
+                            ),
+                        ],
                     ),
+                    Ident("a"),
                     None,
                     Literal(
                         Int(3),
@@ -60,23 +54,21 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Index(
-                        Call(
-                            Use(
-                                Var(Ident("v")),
-                            ),
-                            [
-                                Arg(
-                                    Use(
-                                        Var(Ident("a")),
-                                    ),
+                AssignIndex(
+                    Call(
+                        UseVar(
+                            Ident("v"),
+                        ),
+                        [
+                            Arg(
+                                UseVar(
+                                    Ident("a"),
                                 ),
-                            ],
-                        ),
-                        Use(
-                            Var(Ident("a")),
-                        ),
+                            ),
+                        ],
+                    ),
+                    UseVar(
+                        Ident("a"),
                     ),
                     None,
                     Literal(

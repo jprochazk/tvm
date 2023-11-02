@@ -1,6 +1,6 @@
 ---
 source: src/syn/tests.rs
-expression: "parse!(r#\"\n    return value;\n    return;\n    yield value;\n    yield;\n    break;\n    continue;\n\n    let v = return value;\n    let v = return;\n    let v = yield value;\n    let v = yield;\n    let v = break;\n    let v = continue;\n\n    let v = (yield 5) + (yield 5);\n  \"#)"
+expression: "parse!(r#\"\n    return value;\n    return;\n    break;\n    continue;\n\n    let v = return value;\n    let v = return;\n    let v = break;\n    let v = continue;\n  \"#)"
 ---
 Ast {
     decls: [],
@@ -9,28 +9,14 @@ Ast {
             Expr(
                 Return(
                     Some(
-                        Use(
-                            Var(Ident("value")),
+                        UseVar(
+                            Ident("value"),
                         ),
                     ),
                 ),
             ),
             Expr(
                 Return(
-                    None,
-                ),
-            ),
-            Expr(
-                Yield(
-                    Some(
-                        Use(
-                            Var(Ident("value")),
-                        ),
-                    ),
-                ),
-            ),
-            Expr(
-                Yield(
                     None,
                 ),
             ),
@@ -45,8 +31,8 @@ Ast {
                 None,
                 Return(
                     Some(
-                        Use(
-                            Var(Ident("value")),
+                        UseVar(
+                            Ident("value"),
                         ),
                     ),
                 ),
@@ -61,51 +47,12 @@ Ast {
             Let(
                 Ident("v"),
                 None,
-                Yield(
-                    Some(
-                        Use(
-                            Var(Ident("value")),
-                        ),
-                    ),
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Yield(
-                    None,
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
                 Break,
             ),
             Let(
                 Ident("v"),
                 None,
                 Continue,
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Binary(
-                    Yield(
-                        Some(
-                            Literal(
-                                Int(5),
-                            ),
-                        ),
-                    ),
-                    Op(+),
-                    Yield(
-                        Some(
-                            Literal(
-                                Int(5),
-                            ),
-                        ),
-                    ),
-                ),
             ),
         ],
         tail: None,

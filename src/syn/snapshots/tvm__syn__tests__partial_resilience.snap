@@ -2,7 +2,7 @@
 source: src/syn/tests.rs
 expression: "parse!(r#\"\n    f()\n    f(); // still parsed\n  \"#)"
 ---
-error: expected token `;`
+error: expected `;`
 1 |  f()
   |    ^
 

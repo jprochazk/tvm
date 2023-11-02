@@ -7,8 +7,8 @@ Ast {
     top_level: Block {
         body: [
             Expr(
-                Assign(
-                    Var(Ident("name")),
+                AssignVar(
+                    Ident("name"),
                     None,
                     Literal(
                         Int(1),
@@ -16,8 +16,8 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Var(Ident("name")),
+                AssignVar(
+                    Ident("name"),
                     Some(
                         Op(+),
                     ),
@@ -27,8 +27,8 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Var(Ident("name")),
+                AssignVar(
+                    Ident("name"),
                     Some(
                         Op(-),
                     ),
@@ -38,8 +38,8 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Var(Ident("name")),
+                AssignVar(
+                    Ident("name"),
                     Some(
                         Op(/),
                     ),
@@ -49,8 +49,8 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Var(Ident("name")),
+                AssignVar(
+                    Ident("name"),
                     Some(
                         Op(*),
                     ),
@@ -60,8 +60,8 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Var(Ident("name")),
+                AssignVar(
+                    Ident("name"),
                     Some(
                         Op(%),
                     ),
@@ -71,8 +71,8 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Var(Ident("name")),
+                AssignVar(
+                    Ident("name"),
                     Some(
                         Op(**),
                     ),
@@ -82,8 +82,8 @@ Ast {
                 ),
             ),
             Expr(
-                Assign(
-                    Var(Ident("name")),
+                AssignVar(
+                    Ident("name"),
                     Some(
                         Op(??),
                     ),

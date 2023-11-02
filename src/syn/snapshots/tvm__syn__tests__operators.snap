@@ -178,12 +178,12 @@ Ast {
             ),
             Expr(
                 Binary(
-                    Use(
-                        Var(Ident("a")),
+                    UseVar(
+                        Ident("a"),
                     ),
                     Op(??),
-                    Use(
-                        Var(Ident("b")),
+                    UseVar(
+                        Ident("b"),
                     ),
                 ),
             ),
@@ -191,13 +191,11 @@ Ast {
         tail: Some(
             Unary(
                 Op(?),
-                Use(
-                    Field(
-                        Use(
-                            Var(Ident("a")),
-                        ),
-                        Ident("b"),
+                UseField(
+                    UseVar(
+                        Ident("a"),
                     ),
+                    Ident("b"),
                 ),
             ),
         ),

@@ -15,6 +15,6 @@ pub mod ty;
 
 mod util;
 
-use beef::lean::Cow;
+pub type Str<'a> = beef::lean::Cow<'a, str>;
 pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;

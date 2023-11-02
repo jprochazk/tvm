@@ -2,6 +2,6 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n    let v = [];\n  \"#)"
 ---
-fn __main__() {
-  let v: ['1] = [];
-}
+let v = /*[!]*/[
+];
+

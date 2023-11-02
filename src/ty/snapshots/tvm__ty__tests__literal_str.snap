@@ -2,6 +2,5 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n    let v = \"test\";\n  \"#)"
 ---
-fn __main__() {
-  let v: str = "\"test\"";
-}
+let v = /*str*/"\"test\"";
+

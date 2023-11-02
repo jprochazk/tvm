@@ -7,8 +7,22 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use crate::lex::{Lexer, Span, Token, TokenKind};
-use crate::ty::TypeId;
-use crate::Cow;
+use crate::util::JoinIter;
+use crate::Str;
+
+pub(crate) struct IdGen<T: Next>(T);
+
+impl<T: Copy + Next + Default> IdGen<T> {
+  pub fn new() -> Self {
+    Self(T::default())
+  }
+
+  pub fn next(&mut self) -> T {
+    let v = self.0;
+    self.0 = self.0.next();
+    v
+  }
+}
 
 #[derive(Clone)]
 pub struct Ast<'src> {
@@ -64,13 +78,13 @@ syntax_node! {
 }
 
 syntax_node! {
-  Expr<'src> (ty: TypeId) {
+  Expr<'src> {
     Return {
       value: Option<Expr<'src>>,
     },
-    Yield {
+    /* Yield {
       value: Option<Expr<'src>>,
-    },
+    }, */
     Break,
     Continue,
     Block {
@@ -92,16 +106,41 @@ syntax_node! {
     Literal {
       value: Literal<'src>,
     },
-    Use {
-      place: Place<'src>,
+    UseVar {
+      name: Ident<'src>,
     },
-    Assign {
-      place: Place<'src>,
+    UseField {
+      parent: Expr<'src>,
+      name: Ident<'src>,
+    },
+    UseIndex {
+      parent: Expr<'src>,
+      key: Expr<'src>,
+    },
+    AssignVar {
+      name: Ident<'src>,
+      op: Option<BinaryOp>,
+      value: Expr<'src>,
+    },
+    AssignField {
+      parent: Expr<'src>,
+      name: Ident<'src>,
+      op: Option<BinaryOp>,
+      value: Expr<'src>,
+    },
+    AssignIndex {
+      parent: Expr<'src>,
+      key: Expr<'src>,
       op: Option<BinaryOp>,
       value: Expr<'src>,
     },
     Call {
       callee: Expr<'src>,
+      args: Vec<Arg<'src>>,
+    },
+    MethodCall {
+      receiver: Expr<'src>,
+      method: Ident<'src>,
       args: Vec<Arg<'src>>,
     }
   }
@@ -123,35 +162,6 @@ pub struct Branch<'src> {
 pub struct Arg<'src> {
   pub key: Option<Ident<'src>>,
   pub value: Expr<'src>,
-}
-
-#[derive(Clone)]
-pub enum Place<'src> {
-  Var {
-    name: Ident<'src>,
-  },
-  Field {
-    parent: Expr<'src>,
-    name: Ident<'src>,
-  },
-  Index {
-    parent: Expr<'src>,
-    key: Expr<'src>,
-  },
-}
-
-impl<'src> Place<'src> {
-  pub fn is_var(&self) -> bool {
-    matches!(self, Self::Var { .. })
-  }
-
-  pub fn into_var(self) -> Option<Ident<'src>> {
-    if let Self::Var { name } = self {
-      Some(name)
-    } else {
-      None
-    }
-  }
 }
 
 #[derive(Clone, Copy)]
@@ -206,11 +216,10 @@ macro_rules! unop {
 
 #[derive(Clone)]
 pub enum Literal<'src> {
-  None,
   Int(i64),
   Float(f64),
   Bool(bool),
-  String(Cow<'src, str>),
+  String(Str<'src>),
   Array(Array<'src>),
 }
 
@@ -221,9 +230,6 @@ pub enum Array<'src> {
 }
 
 macro_rules! lit {
-  (none) => {
-    $crate::ast::Literal::None
-  };
   (int, $v:expr) => {
     $crate::ast::Literal::Int(($v).into())
   };
@@ -254,19 +260,7 @@ pub struct Block<'src> {
   pub tail: Option<Expr<'src>>,
 }
 
-impl<'src> From<Block<'src>> for Stmt<'src> {
-  fn from(block: Block<'src>) -> Self {
-    Stmt::make_expr(block.span, Expr::make_block(block.span, block))
-  }
-}
-
-impl<'src> From<Expr<'src>> for Stmt<'src> {
-  fn from(value: Expr<'src>) -> Self {
-    Stmt::make_expr(value.span, value)
-  }
-}
-
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Ident<'src> {
   pub span: Span,
   pub lexeme: &'src str,
@@ -281,12 +275,20 @@ impl<'src> Ident<'src> {
     }
   }
 
-  pub fn raw(s: &'src str) -> Self {
+  pub fn raw(lexeme: &'src str) -> Self {
     Self {
       span: Span::empty(),
-      lexeme: s,
+      lexeme,
     }
   }
+
+  pub fn as_str(&self) -> &'src str {
+    self.lexeme
+  }
+}
+
+pub(crate) trait Next: Sized {
+  fn next(&self) -> Self;
 }
 
 trait WrapBox {
@@ -334,16 +336,6 @@ impl Debug for Arg<'_> {
     match &self.key {
       Some(key) => t.field(key).field(&self.value).finish(),
       None => t.field(&self.value).finish(),
-    }
-  }
-}
-
-impl Debug for Place<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::Var { name } => write!(f, "Var({name:?})"),
-      Self::Field { parent, name } => f.debug_tuple("Field").field(parent).field(name).finish(),
-      Self::Index { parent, key } => f.debug_tuple("Index").field(parent).field(key).finish(),
     }
   }
 }
@@ -398,7 +390,6 @@ impl Debug for Ident<'_> {
 impl Debug for Literal<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::None => write!(f, "None"),
       Self::Int(arg0) => write!(f, "Int({arg0:?})"),
       Self::Float(arg0) => write!(f, "Float({arg0:?})"),
       Self::Bool(arg0) => write!(f, "Bool({arg0:?})"),
@@ -506,5 +497,23 @@ impl Display for UnaryOp {
       UnaryOp::Not => "!",
       UnaryOp::Opt => "?",
     })
+  }
+}
+
+impl Display for Ident<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(self.lexeme)
+  }
+}
+
+impl Display for Type<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match &self.kind {
+      TypeKind::Empty(_) => f.write_str("_"),
+      TypeKind::Named(ty) => f.write_str(ty.name.lexeme),
+      TypeKind::Array(ty) => write!(f, "[{}]", ty.item),
+      TypeKind::Fn(ty) => write!(f, "({}) -> {}", ty.params.iter().join(", "), ty.ret),
+      TypeKind::Opt(ty) => write!(f, "{}?", ty.inner),
+    }
   }
 }

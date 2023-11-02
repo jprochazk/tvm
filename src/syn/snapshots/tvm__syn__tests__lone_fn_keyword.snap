@@ -2,7 +2,7 @@
 source: src/syn/tests.rs
 expression: "parse!(r#\"\n    fn\n  \"#)"
 ---
-error: expected token `identifier`
+error: expected `identifier`
 1 |  fn
   |   ^
 

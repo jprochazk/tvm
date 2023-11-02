@@ -1,307 +1,272 @@
 use std::fmt::{Display, Write};
 
-use super::*;
+use super::TypeDb;
+use crate::ast;
+use crate::ast::Ast;
 
-impl<'src> Display for Hir<'src> {
+pub struct TypedAst<'a> {
+  ast: &'a Ast<'a>,
+  db: &'a TypeDb,
+}
+
+impl<'a> TypedAst<'a> {
+  pub fn new(ast: &'a Ast, db: &'a TypeDb) -> Self {
+    Self { ast, db }
+  }
+}
+
+#[derive(Clone, Copy)]
+struct Indent {
+  level: usize,
+}
+
+impl Indent {
+  fn next(mut self) -> Self {
+    self.level += 2;
+    self
+  }
+}
+
+impl Display for Indent {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    print_function(
-      self,
-      f,
-      "__main__",
-      /* &[], */
-      self.top_level.tail.as_ref().map(|tail| tail.ty),
-      &self.top_level,
-    )?;
-    /* for decl in &self.decls.array {
-      #[allow(irrefutable_let_patterns)]
-      if let Decl::Fn(decl) = decl {
-        print_function(
-          self,
-          f,
-          decl.name.lexeme,
-          &decl.params,
-          decl.ret,
-          &decl.body,
-        )?;
+    let indent = self.level;
+    write!(f, "{:indent$}", "")
+  }
+}
+
+impl<'a> Display for TypedAst<'a> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let db = self.db;
+    let i = Indent { level: 0 };
+
+    for decl in &self.ast.decls {
+      match &decl.kind {
+        crate::ast::DeclKind::Fn(decl) => {
+          print_function_header(f, i, db, decl)?;
+          print_block(f, i, db, &decl.body)?;
+        }
       }
-    } */
+    }
+
+    {
+      let b = &self.ast.top_level;
+      for stmt in &b.body {
+        write!(f, "{i}")?;
+        print_stmt(f, i, db, stmt)?;
+        writeln!(f, ";")?;
+      }
+      if let Some(tail) = &b.tail {
+        print_expr(f, i, db, tail)?;
+      }
+    }
+
     Ok(())
   }
 }
 
-fn print_type(hir: &Hir<'_>, f: &mut impl Write, ty: TypeId) -> std::fmt::Result {
-  match hir.types.resolve(ty) {
-    Type::Infer(var) => write!(f, "'{}", var.0)?,
-    Type::Error => write!(f, "/*ERROR*/")?,
-
-    Type::Int => write!(f, "int")?,
-    Type::Num => write!(f, "num")?,
-    Type::Bool => write!(f, "bool")?,
-    Type::Str => write!(f, "str")?,
-    Type::Array(item) => {
-      write!(f, "[")?;
-      print_type(hir, f, item)?;
-      write!(f, "]")?;
-    }
-    Type::Opt(inner) => {
-      print_type(hir, f, inner)?;
-      write!(f, "?")?;
-    }
-     /* Type::Fn(params, ret) => { */
-    //write!(f, "(")?;
-    //for param in params {
-    //print_type(hir, f, &hir.types[param])?;
-    //}
-    //write!(f, ")")?;
-    //write!(f, " -> ")?;
-    //print_type(hir, f, &hir.types[ret])?;
-    //}
+fn print_function_header(
+  f: &mut impl Write,
+  i: Indent,
+  db: &TypeDb,
+  decl: &ast::FnDecl<'_>,
+) -> std::fmt::Result {
+  writeln!(f, "fn {}(", decl.name)?;
+  for param in &decl.params {
+    let i = i.next();
+    writeln!(f, "{i}{}: {},", param.name, param.ty)?;
   }
-
+  write!(f, "{i}) ")?;
+  if let Some(ret) = &decl.ret {
+    write!(f, "-> {ret} ")?;
+  }
+  print_block(f, i, db, &decl.body)?;
   Ok(())
 }
 
-fn print_block(
-  hir: &Hir<'_>,
-  f: &mut impl Write,
-  indent: usize,
-  block: &ast::Block<'_>,
-) -> std::fmt::Result {
+fn print_block(f: &mut impl Write, i: Indent, db: &TypeDb, b: &ast::Block<'_>) -> std::fmt::Result {
   writeln!(f, "{{")?;
-  for stmt in &block.body {
-    let indent = indent + 2;
-    write!(f, "{:indent$}", "")?;
-    print_stmt(hir, f, indent, stmt)?;
-    writeln!(f)?;
+  {
+    let i = i.next();
+    for stmt in &b.body {
+      write!(f, "{i}")?;
+      print_stmt(f, i, db, stmt)?;
+      writeln!(f, ";")?;
+    }
+    if let Some(tail) = &b.tail {
+      print_expr(f, i, db, tail)?;
+    }
   }
-  if let Some(tail) = &block.tail {
-    let indent = indent + 2;
-    write!(f, "{:indent$}", "")?;
-    print_expr_top_level(hir, f, indent, tail)?;
-    writeln!(f)?;
-  }
-  write!(f, "{:indent$}", "")?;
-  write!(f, "}}")?;
+  writeln!(f, "}}")?;
 
   Ok(())
 }
 
-fn print_stmt(
-  hir: &Hir<'_>,
-  f: &mut impl Write,
-  indent: usize,
-  stmt: &ast::Stmt<'_>,
-) -> std::fmt::Result {
-  match &stmt.kind {
-    ast::StmtKind::Let(node) => {
-      write!(f, "let {}: ", node.name.lexeme)?;
-      print_type(hir, f, node.init.ty)?;
+fn print_stmt(f: &mut impl Write, i: Indent, db: &TypeDb, s: &ast::Stmt<'_>) -> std::fmt::Result {
+  match &s.kind {
+    ast::StmtKind::Let(s) => {
+      write!(f, "let {}", s.name)?;
+      if let Some(ty) = &s.ty {
+        write!(f, ": {}", ty)?;
+      }
       write!(f, " = ")?;
-      print_expr_top_level(hir, f, indent, &node.init)?;
-      write!(f, ";")?;
+      print_expr(f, i, db, &s.init)?;
     }
-    ast::StmtKind::Loop(node) => {
+    ast::StmtKind::Loop(s) => {
       write!(f, "loop ")?;
-      print_block(hir, f, indent, &node.body)?;
+      print_block(f, i, db, &s.body)?;
     }
-    ast::StmtKind::Expr(node) => {
-      print_expr_top_level(hir, f, indent, &node.inner)?;
-      write!(f, ";")?;
+    ast::StmtKind::Expr(s) => {
+      print_expr(f, i, db, &s.inner)?;
     }
   }
+
   Ok(())
 }
 
-fn print_expr(
-  hir: &Hir<'_>,
-  f: &mut impl Write,
-  indent: usize,
-  expr: &ast::Expr<'_>,
-) -> std::fmt::Result {
-  _print_expr(hir, f, indent, expr, true)
-}
-
-fn print_expr_top_level(
-  hir: &Hir<'_>,
-  f: &mut impl Write,
-  indent: usize,
-  expr: &ast::Expr<'_>,
-) -> std::fmt::Result {
-  _print_expr(hir, f, indent, expr, false)
-}
-
-fn _print_expr(
-  hir: &Hir<'_>,
-  f: &mut impl Write,
-  indent: usize,
-  expr: &ast::Expr<'_>,
-  print_ty: bool,
-) -> std::fmt::Result {
-  if print_ty {
-    write!(f, "(")?;
+fn print_expr(f: &mut impl Write, i: Indent, db: &TypeDb, e: &ast::Expr<'_>) -> std::fmt::Result {
+  if let Some(ty) = db.expr_to_ty.get(&e.id) {
+    write!(f, "/*{ty}*/")?;
+  } else {
+    write!(f, "/*{{unknown}}*/")?;
   }
-  match &expr.kind {
-    ast::ExprKind::Return(node) => {
-      write!(f, "return")?;
-      if let Some(value) = &node.value {
-        write!(f, " ")?;
-        print_expr(hir, f, indent, value)?;
+  match &e.kind {
+    ast::ExprKind::Return(e) => {
+      write!(f, "return ")?;
+      if let Some(e) = &e.value {
+        print_expr(f, i, db, e)?;
       }
     }
-    ast::ExprKind::Yield(node) => {
-      write!(f, "return")?;
-      if let Some(value) = &node.value {
-        write!(f, " ")?;
-        print_expr(hir, f, indent, value)?;
+    /* ast::ExprKind::Yield(e) => {
+      write!(f, "yield ")?;
+      if let Some(e) = &e.value {
+        print_expr(f, i, db, e)?;
       }
+    } */
+    ast::ExprKind::Break(_) => {
+      write!(f, "break")?;
     }
-    ast::ExprKind::Break(_) => write!(f, "break")?,
-    ast::ExprKind::Continue(_) => write!(f, "continue")?,
-    ast::ExprKind::Block(node) => print_block(hir, f, indent, &node.inner)?,
-    ast::ExprKind::If(node) => {
-      let mut branches = node.branches.iter().peekable();
-      while let Some(branch) = branches.next() {
-        write!(f, "if ")?;
-        print_expr(hir, f, indent, &branch.cond)?;
-        write!(f, " ")?;
-        print_block(hir, f, indent, &branch.body)?;
-        if branches.peek().is_some() {
-          writeln!(f, " else ")?;
+    ast::ExprKind::Continue(_) => {
+      write!(f, "continue")?;
+    }
+    ast::ExprKind::Block(e) => {
+      print_block(f, i, db, &e.inner)?;
+    }
+    ast::ExprKind::If(e) => {
+      let mut first = true;
+      for branch in &e.branches {
+        if !first {
+          write!(f, " else ")?;
         }
+        first = false;
+        write!(f, "if ")?;
+        print_expr(f, i, db, &branch.cond)?;
+        write!(f, " ")?;
+        print_block(f, i, db, &branch.body)?;
       }
-      if let Some(tail) = &node.tail {
+      if let Some(tail) = &e.tail {
         write!(f, " else ")?;
-        print_block(hir, f, indent, tail)?;
+        print_block(f, i, db, tail)?;
       }
     }
-    ast::ExprKind::Binary(node) => {
-      print_expr(hir, f, indent, &node.left)?;
-      write!(f, " {} ", node.op)?;
-      print_expr(hir, f, indent, &node.right)?;
+    ast::ExprKind::Binary(e) => {
+      print_expr(f, i, db, &e.left)?;
+      write!(f, " {} ", e.op)?;
+      print_expr(f, i, db, &e.right)?;
     }
-    ast::ExprKind::Unary(node) => {
-      write!(f, "{}", node.op)?;
-      print_expr(hir, f, indent, &node.right)?;
+    ast::ExprKind::Unary(e) => {
+      write!(f, "{} ", e.op)?;
+      print_expr(f, i, db, &e.right)?;
     }
-    ast::ExprKind::Literal(node) => match &node.value {
-      ast::Literal::None => write!(f, "none")?,
+    ast::ExprKind::Literal(e) => match &e.value {
       ast::Literal::Int(v) => write!(f, "{v}")?,
       ast::Literal::Float(v) => write!(f, "{v}")?,
       ast::Literal::Bool(v) => write!(f, "{v}")?,
       ast::Literal::String(v) => write!(f, "{v:?}")?,
       ast::Literal::Array(v) => match v {
         ast::Array::List(v) => {
-          if v.len() > 4 {
-            writeln!(f, "[")?;
-            for item in v {
-              write!(f, "{:indent$}", "")?;
-              print_expr(hir, f, indent + 2, item)?;
-              writeln!(f, ",")?;
-            }
-            write!(f, "{:indent$}", "")?;
-            write!(f, "]")?;
-          } else {
-            write!(f, "[")?;
-            let mut items = v.iter().peekable();
-            while let Some(item) = items.next() {
-              print_expr(hir, f, indent, item)?;
-              if items.peek().is_some() {
-                write!(f, ", ")?;
-              }
-            }
-            write!(f, "]")?;
+          writeln!(f, "[")?;
+          for e in v {
+            let i = i.next();
+            write!(f, "{i}")?;
+            print_expr(f, i, db, e)?;
+            writeln!(f, ",")?;
           }
+          write!(f, "]")?;
         }
-        ast::Array::Copy(item, len) => {
+        ast::Array::Copy(v, l) => {
           write!(f, "[")?;
-          print_expr(hir, f, indent, item)?;
+          print_expr(f, i, db, v)?;
           write!(f, ";")?;
-          print_expr(hir, f, indent, len)?;
+          print_expr(f, i, db, l)?;
           write!(f, "]")?;
         }
       },
     },
-    ast::ExprKind::Use(node) => match &node.place {
-      ast::Place::Var { name } => write!(f, "{}", name.lexeme)?,
-      ast::Place::Field { parent, name } => {
-        print_expr(hir, f, indent, parent)?;
-        write!(f, ".{}", name.lexeme)?;
-      }
-      ast::Place::Index { parent, key } => {
-        print_expr(hir, f, indent, parent)?;
-        write!(f, "[")?;
-        print_expr(hir, f, indent, key)?;
-        write!(f, "]")?;
-      }
-    },
-    ast::ExprKind::Assign(node) => {
-      match &node.place {
-        ast::Place::Var { name } => write!(f, "{}", name.lexeme)?,
-        ast::Place::Field { parent, name } => {
-          print_expr(hir, f, indent, parent)?;
-          write!(f, ".{}", name.lexeme)?;
-        }
-        ast::Place::Index { parent, key } => {
-          print_expr(hir, f, indent, parent)?;
-          write!(f, "[")?;
-          print_expr(hir, f, indent, key)?;
-          write!(f, "]")?;
-        }
-      }
-      write!(f, " ")?;
-      if let Some(op) = node.op {
-        write!(f, "{op}")?;
-      }
-      write!(f, "= ")?;
-      print_expr(hir, f, indent, &node.value)?;
+    ast::ExprKind::UseVar(e) => write!(f, "{}", e.name)?,
+    ast::ExprKind::UseField(e) => {
+      print_expr(f, i, db, &e.parent)?;
+      write!(f, ".{}", e.name)?;
     }
-    ast::ExprKind::Call(node) => {
-      print_expr(hir, f, indent, &node.callee)?;
+    ast::ExprKind::UseIndex(e) => {
+      print_expr(f, i, db, &e.parent)?;
+      write!(f, "[")?;
+      print_expr(f, i, db, &e.key)?;
+      write!(f, "]")?;
+    }
+    ast::ExprKind::AssignVar(e) => {
+      write!(f, "{}", e.name)?;
+      match e.op {
+        Some(op) => write!(f, " {op}= ")?,
+        None => write!(f, " = ")?,
+      }
+      print_expr(f, i, db, &e.value)?;
+    }
+    ast::ExprKind::AssignField(e) => {
+      print_expr(f, i, db, &e.parent)?;
+      write!(f, ".{}", e.name)?;
+      match e.op {
+        Some(op) => write!(f, " {op}= ")?,
+        None => write!(f, " = ")?,
+      }
+      print_expr(f, i, db, &e.value)?;
+    }
+    ast::ExprKind::AssignIndex(e) => {
+      print_expr(f, i, db, &e.parent)?;
+      write!(f, "[")?;
+      print_expr(f, i, db, &e.key)?;
+      write!(f, "]")?;
+      match e.op {
+        Some(op) => write!(f, " {op}= ")?,
+        None => write!(f, " = ")?,
+      }
+      print_expr(f, i, db, &e.value)?;
+    }
+    ast::ExprKind::Call(e) => {
+      print_expr(f, i, db, &e.callee)?;
       write!(f, "(")?;
-      let mut args = node.args.iter().peekable();
-      while let Some(arg) = args.next() {
+      for arg in &e.args {
         if let Some(key) = &arg.key {
-          write!(f, "{}: ", key.lexeme)?;
+          write!(f, "{key}: ")?;
         }
-        print_expr(hir, f, indent, &arg.value)?;
-        if args.peek().is_some() {
-          write!(f, ", ")?;
+        print_expr(f, i, db, &arg.value)?;
+        write!(f, ",")?;
+      }
+      write!(f, ")")?;
+    }
+    ast::ExprKind::MethodCall(e) => {
+      print_expr(f, i, db, &e.receiver)?;
+      write!(f, ".{}", e.method)?;
+      write!(f, "(")?;
+      for arg in &e.args {
+        if let Some(key) = &arg.key {
+          write!(f, "{key}: ")?;
         }
+        print_expr(f, i, db, &arg.value)?;
+        write!(f, ",")?;
       }
       write!(f, ")")?;
     }
   }
-  if print_ty {
-    write!(f, "/*:")?;
-    print_type(hir, f, expr.ty)?;
-    write!(f, "*/)")?;
-  }
-  Ok(())
-}
 
-fn print_function(
-  hir: &Hir<'_>,
-  f: &mut impl Write,
-  name: &str,
-  // params: &[FnParam<'_>],
-  ret: Option<TypeId>,
-  body: &ast::Block<'_>,
-) -> std::fmt::Result {
-  write!(f, "fn {name}(")?;
-  /* if !params.is_empty() {
-    writeln!(f)?;
-  }
-  for param in params {
-    write!(f, "  {}: ", param.name.lexeme)?;
-    print_type(hir, f, &hir.types[param.ty])?;
-    writeln!(f, ",")?;
-  } */
-  write!(f, ")")?;
-  if let Some(ret) = ret {
-    write!(f, " -> ")?;
-    print_type(hir, f, ret)?;
-  }
-  write!(f, " ")?;
-  print_block(hir, f, 0, body)?;
   Ok(())
 }

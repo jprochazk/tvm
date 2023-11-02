@@ -10,8 +10,8 @@ Ast {
                 If(
                     [
                         Branch(
-                            Use(
-                                Var(Ident("a")),
+                            UseVar(
+                                Ident("a"),
                             ),
                             Block {
                                 body: [],
@@ -23,8 +23,8 @@ Ast {
                             },
                         ),
                         Branch(
-                            Use(
-                                Var(Ident("b")),
+                            UseVar(
+                                Ident("b"),
                             ),
                             Block {
                                 body: [],
@@ -36,8 +36,8 @@ Ast {
                             },
                         ),
                         Branch(
-                            Use(
-                                Var(Ident("c")),
+                            UseVar(
+                                Ident("c"),
                             ),
                             Block {
                                 body: [],

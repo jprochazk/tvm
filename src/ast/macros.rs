@@ -1,6 +1,6 @@
 macro_rules! syntax_node {
   (
-    $name:ident<$lifetime:lifetime> $(($($extra:ident : $extra_ty:ty),*))? {
+    $name:ident<$lifetime:lifetime> {
       $(
         $variant:ident $({
           $($field:ident : $ty:ty),* $(,)?
@@ -9,20 +9,36 @@ macro_rules! syntax_node {
     }
   ) => {
     paste::paste! {
+      #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+      pub struct [<$name Id>](u32);
+
+      impl Default for [<$name Id>] {
+        fn default() -> Self {
+          Self(0)
+        }
+      }
+
+      impl Next for [<$name Id>] {
+        fn next(&self) -> Self {
+          Self(self.0 + 1)
+        }
+      }
+
       #[derive(Clone)]
       pub struct $name<$lifetime> {
-        $($(pub $extra : $extra_ty,)*)?
+        pub id: [<$name Id>],
         pub kind: [<$name Kind>]<$lifetime>,
         pub span: Span,
       }
 
       impl<$lifetime> $name<$lifetime> {
         pub fn new(
+          id: [<$name Id>],
           kind: [<$name Kind>]<$lifetime>,
           span: Span,
         ) -> Self {
           Self {
-            $($($extra: <$extra_ty>::default(),)*)?
+            id,
             kind,
             span,
           }
@@ -40,10 +56,12 @@ macro_rules! syntax_node {
       impl<$lifetime> $name<$lifetime> {
         $(
           pub fn [<make_ $variant:snake>](
+            id: [<$name Id>],
             span: impl Into<crate::lex::Span>,
             $($($field : $ty),*)?
           ) -> Self {
             Self::new(
+              id,
               [<$name Kind>]::$variant(
                 [<$variant $name>]::new(
                   $($($field),*)?
@@ -58,10 +76,10 @@ macro_rules! syntax_node {
           }
 
           #[allow(unused_parens, unreachable_patterns)]
-          pub fn [<into_ $variant:snake>](self) -> Option<([<$variant $name>]<$lifetime>)> {
+          pub fn [<into_ $variant:snake>](self) -> Result<[<$variant $name>]<$lifetime>, $name<$lifetime>> {
             match self.kind {
-              [<$name Kind>]::$variant(inner) => Some(inner.unwrap_box()),
-              _ => None,
+              [<$name Kind>]::$variant(inner) => Ok(inner.unwrap_box()),
+              _ => Err(self),
             }
           }
 

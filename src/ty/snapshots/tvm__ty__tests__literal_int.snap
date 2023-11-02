@@ -2,6 +2,5 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n    let v = 10;\n  \"#)"
 ---
-fn __main__() {
-  let v: int = 10;
-}
+let v = /*int*/10;
+

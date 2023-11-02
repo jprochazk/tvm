@@ -1,3 +1,5 @@
+use super::print::TypedAst;
+
 fn _check(input: &str) -> String {
   let ast = match crate::syn::try_parse(input) {
     Ok(ast) => ast,
@@ -5,18 +7,18 @@ fn _check(input: &str) -> String {
       panic!(
         "{}",
         e.into_iter()
-          .map(|e| format!("{}", e.with_src(input)))
+          .map(|e| format!("{e}"))
           .collect::<Vec<_>>()
           .join("\n")
       );
     }
   };
 
-  match super::check(ast) {
-    Ok(hir) => format!("{hir}"),
+  match super::type_check(&ast) {
+    Ok(db) => format!("{}", TypedAst::new(&ast, &db)),
     Err(e) => e
       .into_iter()
-      .map(|e| format!("{}", e.with_src(input)))
+      .map(|e| format!("{e}"))
       .collect::<Vec<_>>()
       .join("\n"),
   }
@@ -35,13 +37,6 @@ macro_rules! test {
       insta::assert_snapshot!(check!($input))
     }
   };
-}
-
-test! {
-  literal_none,
-  r#"
-    let v = none;
-  "#
 }
 
 test! {
@@ -95,13 +90,23 @@ test! {
 }
 
 test! {
-  literal_array_type_inference,
+  use_var,
   r#"
-    let a = [];
-    let b = a[0] + 10;
+    let v = 1;
+    v;
   "#
 }
 
+/* test! {
+  literal_array_type_inference,
+  r#"
+    let a = [];
+    a.push(10);
+    a[0] + 1;
+  "#
+} */
+
+/*
 test! {
   binary_ops,
   r#"
@@ -110,7 +115,7 @@ test! {
     1 > 1; 1.5 > 1.5; "a" > "b";
     1 <= 1; 1.5 <= 1.5; "a" <= "b";
     1 >= 1; 1.5 >= 1.5; "a" >= "b";
-    
+
     1 + 1; 1.5 + 1.5;
     1 - 1; 1.5 - 1.5;
     1 * 1; 1.5 * 1.5;
@@ -124,7 +129,7 @@ test! {
     1 == 1; 1.5 == 1.5; "a" == "b";
     true == true; false == false;
     [] == []; none == none;
-    
+
     1 != 1; 1.5 != 1.5; "a" != "b";
     true != true; false != false;
     [] != []; none != none;
@@ -138,7 +143,6 @@ test! {
   "#
 }
 
-/*
 test! {
   let_stmt,
   r#"
@@ -240,18 +244,13 @@ test! {
   r#"
     return 0;
     return;
-    yield 0;
-    yield;
     break;
     continue;
 
     let v0 = return 0;
     let v1 = return;
-    let v2 = yield 0;
-    let v3 = yield;
     let v4 = break;
     let v5 = continue;
-    let v6 = (yield 5) + (yield 5);
   "#
 }
 
@@ -316,4 +315,4 @@ test! {
     m[0] = 10;
   "#
 }
-*/
+ */

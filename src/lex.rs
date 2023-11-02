@@ -5,7 +5,7 @@ use std::ops::Deref;
 
 use logos::{FilterResult, Logos};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 pub struct Lexer<'src> {
   src: &'src str,
@@ -45,14 +45,27 @@ impl<'src> Lexer<'src> {
   }
 
   #[inline]
-  pub fn bump(&mut self) -> Result<Token> {
+  pub fn bump(&mut self) -> Result<Token, UnexpectedToken> {
     match self.inner.next() {
       Some((Ok(tok), span)) => Ok(Token::new(tok, span)),
-      Some((Err(_), span)) => Err(err!(@span, UnexpectedToken)),
+      Some((Err(_), span)) => Err(UnexpectedToken { span: span.into() }),
       None => Ok(EOF),
     }
   }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct UnexpectedToken {
+  pub span: Span,
+}
+
+impl Display for UnexpectedToken {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str("unexpected token")
+  }
+}
+
+impl std::error::Error for UnexpectedToken {}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
@@ -340,8 +353,6 @@ pub enum TokenKind {
   #[token("true")]
   #[token("false")]
   Bool,
-  #[token("none")]
-  None,
   #[regex(r#""([^"\\]|\\.)*""#)]
   String,
 
@@ -433,7 +444,6 @@ macro_rules! t {
   [int] => ($crate::lex::TokenKind::Int);
   [float] => ($crate::lex::TokenKind::Float);
   [bool] => ($crate::lex::TokenKind::Bool);
-  [none] => ($crate::lex::TokenKind::None);
   [str] => ($crate::lex::TokenKind::String);
   [ident] => ($crate::lex::TokenKind::Ident);
   [EOF] => ($crate::lex::TokenKind::Eof);
@@ -523,7 +533,6 @@ impl TokenKind {
       T::Int => s!("int"),
       T::Float => s!("float"),
       T::Bool => s!("bool"),
-      T::None => s!("none"),
       T::String => s!("string"),
       T::Ident => s!("identifier"),
       T::Label => s!("label"),
@@ -542,7 +551,7 @@ impl TokenKind {
 pub struct Tokens<'src>(pub Lexer<'src>);
 
 impl<'src> Iterator for Tokens<'src> {
-  type Item = Result<(&'src str, Token), Error>;
+  type Item = Result<(&'src str, Token), UnexpectedToken>;
 
   fn next(&mut self) -> Option<Self::Item> {
     match self.0.bump() {

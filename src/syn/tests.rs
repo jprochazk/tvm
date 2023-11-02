@@ -3,7 +3,7 @@ fn _parse(input: &str) -> String {
     Ok(ast) => format!("{ast:#?}"),
     Err(e) => e
       .into_iter()
-      .map(|e| format!("{}", e.with_src(input)))
+      .map(|e| format!("{e}"))
       .collect::<Vec<_>>()
       .join("\n"),
   }
@@ -74,7 +74,6 @@ test! {
   literals,
   r#"
     let v: int = 1;
-    let v: int? = none;
     let v: num = 1.0;
     let v: bool = true;
     let v: str = "yo";
@@ -163,19 +162,13 @@ test! {
   r#"
     return value;
     return;
-    yield value;
-    yield;
     break;
     continue;
 
     let v = return value;
     let v = return;
-    let v = yield value;
-    let v = yield;
     let v = break;
     let v = continue;
-
-    let v = (yield 5) + (yield 5);
   "#
 }
 
@@ -184,6 +177,7 @@ test! {
   r#"
     v.a[a](a);
     v(a)[a].a;
+    v.a();
   "#
 }
 

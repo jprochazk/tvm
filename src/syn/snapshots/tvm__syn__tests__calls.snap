@@ -8,16 +8,16 @@ Ast {
         body: [
             Expr(
                 Call(
-                    Use(
-                        Var(Ident("f")),
+                    UseVar(
+                        Ident("f"),
                     ),
                     [],
                 ),
             ),
             Expr(
                 Call(
-                    Use(
-                        Var(Ident("f")),
+                    UseVar(
+                        Ident("f"),
                     ),
                     [
                         Arg(
@@ -30,8 +30,8 @@ Ast {
             ),
             Expr(
                 Call(
-                    Use(
-                        Var(Ident("f")),
+                    UseVar(
+                        Ident("f"),
                     ),
                     [
                         Arg(
@@ -44,32 +44,8 @@ Ast {
             ),
             Expr(
                 Call(
-                    Use(
-                        Var(Ident("f")),
-                    ),
-                    [
-                        Arg(
-                            Literal(
-                                Int(0),
-                            ),
-                        ),
-                        Arg(
-                            Literal(
-                                Int(1),
-                            ),
-                        ),
-                        Arg(
-                            Literal(
-                                Int(2),
-                            ),
-                        ),
-                    ],
-                ),
-            ),
-            Expr(
-                Call(
-                    Use(
-                        Var(Ident("f")),
+                    UseVar(
+                        Ident("f"),
                     ),
                     [
                         Arg(
@@ -92,8 +68,32 @@ Ast {
             ),
             Expr(
                 Call(
-                    Use(
-                        Var(Ident("f")),
+                    UseVar(
+                        Ident("f"),
+                    ),
+                    [
+                        Arg(
+                            Literal(
+                                Int(0),
+                            ),
+                        ),
+                        Arg(
+                            Literal(
+                                Int(1),
+                            ),
+                        ),
+                        Arg(
+                            Literal(
+                                Int(2),
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            Expr(
+                Call(
+                    UseVar(
+                        Ident("f"),
                     ),
                     [
                         Arg(
@@ -107,8 +107,8 @@ Ast {
             ),
             Expr(
                 Call(
-                    Use(
-                        Var(Ident("f")),
+                    UseVar(
+                        Ident("f"),
                     ),
                     [
                         Arg(
@@ -122,8 +122,8 @@ Ast {
             ),
             Expr(
                 Call(
-                    Use(
-                        Var(Ident("f")),
+                    UseVar(
+                        Ident("f"),
                     ),
                     [
                         Arg(
@@ -149,8 +149,8 @@ Ast {
             ),
             Expr(
                 Call(
-                    Use(
-                        Var(Ident("f")),
+                    UseVar(
+                        Ident("f"),
                     ),
                     [
                         Arg(

@@ -1,0 +1,7 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n    let a = [];\n    a.push(10);\n  \"#)"
+---
+let a = []/*[int]*/;
+a/*[int]*/.push(10/*int*/,)/*'1*/;
+

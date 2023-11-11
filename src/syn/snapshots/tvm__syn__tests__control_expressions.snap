@@ -6,54 +6,46 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Expr(
-                Return(
-                    Some(
-                        UseVar(
-                            Ident("value"),
-                        ),
+            Return {
+                value: Some(
+                    UseVar {
+                        name: Ident("value"),
+                    },
+                ),
+            },
+            Return {
+                value: None,
+            },
+            Break,
+            Continue,
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Return {
+                    value: Some(
+                        UseVar {
+                            name: Ident("value"),
+                        },
                     ),
-                ),
-            ),
-            Expr(
-                Return(
-                    None,
-                ),
-            ),
-            Expr(
-                Break,
-            ),
-            Expr(
-                Continue,
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Return(
-                    Some(
-                        UseVar(
-                            Ident("value"),
-                        ),
-                    ),
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Return(
-                    None,
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Break,
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Continue,
-            ),
+                },
+            },
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Return {
+                    value: None,
+                },
+            },
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Break,
+            },
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Continue,
+            },
         ],
         tail: None,
     },

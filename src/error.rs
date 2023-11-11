@@ -26,8 +26,21 @@ impl<'src> ErrorCtx<'src> {
     self.errors.push(e);
   }
 
+  pub fn num_errors(&self) -> usize {
+    self.errors.len()
+  }
+
   pub fn finish(&mut self) -> Vec<Error> {
     std::mem::take(&mut self.errors)
+  }
+
+  pub fn finish_result(&mut self) -> Result<(), Vec<Error>> {
+    let errors = self.finish();
+    if errors.is_empty() {
+      Ok(())
+    } else {
+      Err(errors)
+    }
   }
 
   pub fn src(&mut self) -> Arc<str> {
@@ -363,6 +376,26 @@ impl<'src> ErrorCtx<'src> {
   #[inline]
   pub fn undefined_var(&mut self, span: impl Into<Span>) -> Error {
     Error::spanned("undefined variable", span, self.src()).into()
+  }
+
+  #[inline]
+  pub fn unknown_type(&mut self, span: impl Into<Span>) -> Error {
+    Error::spanned("type must be known at this point", span, self.src()).into()
+  }
+
+  #[inline]
+  pub fn unknown_method(
+    &mut self,
+    span: impl Into<Span>,
+    receiver: impl Display,
+    name: &str,
+  ) -> Error {
+    Error::spanned(
+      format!("the type `{receiver}` has no method named `{name}`"),
+      span,
+      self.src(),
+    )
+    .into()
   }
 
   /* #[inline]

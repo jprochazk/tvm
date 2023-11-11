@@ -6,24 +6,26 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Let(
-                Ident("v"),
-                None,
-                Literal(
-                    Int(0),
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Int(
+                    0,
                 ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Named(
-                        Ident("int"),
+                        Named {
+                            name: Ident("int"),
+                        },
                     ),
                 ),
-                Literal(
-                    Int(0),
+                init: Int(
+                    0,
                 ),
-            ),
+            },
         ],
         tail: None,
     },

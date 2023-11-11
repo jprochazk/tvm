@@ -2,5 +2,5 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n    let v = 10.5;\n  \"#)"
 ---
-let v = /*num*/10.5;
+let v = 10.5/*num*/;
 

@@ -6,92 +6,76 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Expr(
-                AssignVar(
-                    Ident("name"),
-                    None,
-                    Literal(
-                        Int(1),
-                    ),
+            AssignVar {
+                name: Ident("name"),
+                op: None,
+                value: Int(
+                    1,
                 ),
-            ),
-            Expr(
-                AssignVar(
-                    Ident("name"),
-                    Some(
-                        Op(+),
-                    ),
-                    Literal(
-                        Int(1),
-                    ),
+            },
+            AssignVar {
+                name: Ident("name"),
+                op: Some(
+                    Op(+),
                 ),
-            ),
-            Expr(
-                AssignVar(
-                    Ident("name"),
-                    Some(
-                        Op(-),
-                    ),
-                    Literal(
-                        Int(1),
-                    ),
+                value: Int(
+                    1,
                 ),
-            ),
-            Expr(
-                AssignVar(
-                    Ident("name"),
-                    Some(
-                        Op(/),
-                    ),
-                    Literal(
-                        Int(1),
-                    ),
+            },
+            AssignVar {
+                name: Ident("name"),
+                op: Some(
+                    Op(-),
                 ),
-            ),
-            Expr(
-                AssignVar(
-                    Ident("name"),
-                    Some(
-                        Op(*),
-                    ),
-                    Literal(
-                        Int(1),
-                    ),
+                value: Int(
+                    1,
                 ),
-            ),
-            Expr(
-                AssignVar(
-                    Ident("name"),
-                    Some(
-                        Op(%),
-                    ),
-                    Literal(
-                        Int(1),
-                    ),
+            },
+            AssignVar {
+                name: Ident("name"),
+                op: Some(
+                    Op(/),
                 ),
-            ),
-            Expr(
-                AssignVar(
-                    Ident("name"),
-                    Some(
-                        Op(**),
-                    ),
-                    Literal(
-                        Int(1),
-                    ),
+                value: Int(
+                    1,
                 ),
-            ),
-            Expr(
-                AssignVar(
-                    Ident("name"),
-                    Some(
-                        Op(??),
-                    ),
-                    Literal(
-                        Int(1),
-                    ),
+            },
+            AssignVar {
+                name: Ident("name"),
+                op: Some(
+                    Op(*),
                 ),
-            ),
+                value: Int(
+                    1,
+                ),
+            },
+            AssignVar {
+                name: Ident("name"),
+                op: Some(
+                    Op(%),
+                ),
+                value: Int(
+                    1,
+                ),
+            },
+            AssignVar {
+                name: Ident("name"),
+                op: Some(
+                    Op(**),
+                ),
+                value: Int(
+                    1,
+                ),
+            },
+            AssignVar {
+                name: Ident("name"),
+                op: Some(
+                    Op(??),
+                ),
+                value: Int(
+                    1,
+                ),
+            },
         ],
         tail: None,
     },

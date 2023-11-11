@@ -6,107 +6,85 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Let(
-                Ident("v"),
-                None,
-                Block(
-                    Block {
-                        body: [],
-                        tail: None,
-                    },
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Block(
-                    Block {
-                        body: [],
-                        tail: Some(
-                            Literal(
-                                Int(1),
-                            ),
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Block {
+                    body: [],
+                    tail: None,
+                },
+            },
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Block {
+                    body: [],
+                    tail: Some(
+                        Int(
+                            1,
                         ),
-                    },
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Block(
-                    Block {
-                        body: [
-                            Expr(
-                                Literal(
-                                    Int(1),
+                    ),
+                },
+            },
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Block {
+                    body: [
+                        Int(
+                            1,
+                        ),
+                    ],
+                    tail: None,
+                },
+            },
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Block {
+                    body: [],
+                    tail: Some(
+                        Block {
+                            body: [],
+                            tail: None,
+                        },
+                    ),
+                },
+            },
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Block {
+                    body: [],
+                    tail: Some(
+                        Block {
+                            body: [],
+                            tail: Some(
+                                Int(
+                                    1,
                                 ),
                             ),
-                        ],
-                        tail: None,
-                    },
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Block(
-                    Block {
-                        body: [],
-                        tail: Some(
-                            Block(
-                                Block {
-                                    body: [],
-                                    tail: None,
-                                },
-                            ),
-                        ),
-                    },
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Block(
-                    Block {
-                        body: [],
-                        tail: Some(
-                            Block(
-                                Block {
-                                    body: [],
-                                    tail: Some(
-                                        Literal(
-                                            Int(1),
-                                        ),
-                                    ),
-                                },
-                            ),
-                        ),
-                    },
-                ),
-            ),
-            Let(
-                Ident("v"),
-                None,
-                Block(
-                    Block {
-                        body: [],
-                        tail: Some(
-                            Block(
-                                Block {
-                                    body: [
-                                        Expr(
-                                            Literal(
-                                                Int(1),
-                                            ),
-                                        ),
-                                    ],
-                                    tail: None,
-                                },
-                            ),
-                        ),
-                    },
-                ),
-            ),
+                        },
+                    ),
+                },
+            },
+            Let {
+                name: Ident("v"),
+                ty: None,
+                init: Block {
+                    body: [],
+                    tail: Some(
+                        Block {
+                            body: [
+                                Int(
+                                    1,
+                                ),
+                            ],
+                            tail: None,
+                        },
+                    ),
+                },
+            },
         ],
         tail: None,
     },

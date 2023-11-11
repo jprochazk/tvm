@@ -6,198 +6,164 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(+),
-                    Literal(
-                        Int(2),
-                    ),
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(-),
-                    Literal(
-                        Int(2),
-                    ),
+                op: Op(+),
+                right: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(/),
-                    Literal(
-                        Int(2),
-                    ),
+            },
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(*),
-                    Literal(
-                        Int(2),
-                    ),
+                op: Op(-),
+                right: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(%),
-                    Literal(
-                        Int(2),
-                    ),
+            },
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(**),
-                    Literal(
-                        Int(2),
-                    ),
+                op: Op(/),
+                right: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(==),
-                    Literal(
-                        Int(2),
-                    ),
+            },
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(!=),
-                    Literal(
-                        Int(2),
-                    ),
+                op: Op(*),
+                right: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(>),
-                    Literal(
-                        Int(2),
-                    ),
+            },
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(>=),
-                    Literal(
-                        Int(2),
-                    ),
+                op: Op(%),
+                right: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(<),
-                    Literal(
-                        Int(2),
-                    ),
+            },
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Int(2),
-                    ),
-                    Op(<=),
-                    Literal(
-                        Int(2),
-                    ),
+                op: Op(**),
+                right: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Unary(
-                    Op(-),
-                    Literal(
-                        Int(2),
-                    ),
+            },
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Unary(
-                    Op(!),
-                    Literal(
-                        Bool(true),
-                    ),
+                op: Op(==),
+                right: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Bool(true),
-                    ),
-                    Op(&&),
-                    Literal(
-                        Bool(true),
-                    ),
+            },
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    Literal(
-                        Bool(false),
-                    ),
-                    Op(||),
-                    Literal(
-                        Bool(true),
-                    ),
+                op: Op(!=),
+                right: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                Binary(
-                    UseVar(
-                        Ident("a"),
-                    ),
-                    Op(??),
-                    UseVar(
-                        Ident("b"),
-                    ),
+            },
+            Binary {
+                left: Int(
+                    2,
                 ),
-            ),
+                op: Op(>),
+                right: Int(
+                    2,
+                ),
+            },
+            Binary {
+                left: Int(
+                    2,
+                ),
+                op: Op(>=),
+                right: Int(
+                    2,
+                ),
+            },
+            Binary {
+                left: Int(
+                    2,
+                ),
+                op: Op(<),
+                right: Int(
+                    2,
+                ),
+            },
+            Binary {
+                left: Int(
+                    2,
+                ),
+                op: Op(<=),
+                right: Int(
+                    2,
+                ),
+            },
+            Unary {
+                op: Op(-),
+                right: Int(
+                    2,
+                ),
+            },
+            Unary {
+                op: Op(!),
+                right: Bool(
+                    true,
+                ),
+            },
+            Binary {
+                left: Bool(
+                    true,
+                ),
+                op: Op(&&),
+                right: Bool(
+                    true,
+                ),
+            },
+            Binary {
+                left: Bool(
+                    false,
+                ),
+                op: Op(||),
+                right: Bool(
+                    true,
+                ),
+            },
+            Binary {
+                left: UseVar {
+                    name: Ident("a"),
+                },
+                op: Op(??),
+                right: UseVar {
+                    name: Ident("b"),
+                },
+            },
         ],
         tail: Some(
-            Unary(
-                Op(?),
-                UseField(
-                    UseVar(
-                        Ident("a"),
-                    ),
-                    Ident("b"),
-                ),
-            ),
+            Unary {
+                op: Op(?),
+                right: UseField {
+                    parent: UseVar {
+                        name: Ident("a"),
+                    },
+                    name: Ident("b"),
+                },
+            },
         ),
     },
 }

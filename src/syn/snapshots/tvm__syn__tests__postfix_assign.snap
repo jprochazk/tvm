@@ -6,76 +6,68 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Expr(
-                AssignField(
-                    UseVar(
-                        Ident("v"),
-                    ),
-                    Ident("a"),
-                    None,
-                    Literal(
-                        Int(1),
-                    ),
+            AssignField {
+                parent: UseVar {
+                    name: Ident("v"),
+                },
+                name: Ident("a"),
+                op: None,
+                value: Int(
+                    1,
                 ),
-            ),
-            Expr(
-                AssignIndex(
-                    UseVar(
-                        Ident("v"),
-                    ),
-                    UseVar(
-                        Ident("a"),
-                    ),
-                    None,
-                    Literal(
-                        Int(2),
-                    ),
+            },
+            AssignIndex {
+                parent: UseVar {
+                    name: Ident("v"),
+                },
+                key: UseVar {
+                    name: Ident("a"),
+                },
+                op: None,
+                value: Int(
+                    2,
                 ),
-            ),
-            Expr(
-                AssignField(
-                    Call(
-                        UseVar(
-                            Ident("v"),
+            },
+            AssignField {
+                parent: Call {
+                    callee: UseVar {
+                        name: Ident("v"),
+                    },
+                    args: [
+                        Arg(
+                            UseVar {
+                                name: Ident("a"),
+                            },
                         ),
-                        [
-                            Arg(
-                                UseVar(
-                                    Ident("a"),
-                                ),
-                            ),
-                        ],
-                    ),
-                    Ident("a"),
-                    None,
-                    Literal(
-                        Int(3),
-                    ),
+                    ],
+                },
+                name: Ident("a"),
+                op: None,
+                value: Int(
+                    3,
                 ),
-            ),
-            Expr(
-                AssignIndex(
-                    Call(
-                        UseVar(
-                            Ident("v"),
+            },
+            AssignIndex {
+                parent: Call {
+                    callee: UseVar {
+                        name: Ident("v"),
+                    },
+                    args: [
+                        Arg(
+                            UseVar {
+                                name: Ident("a"),
+                            },
                         ),
-                        [
-                            Arg(
-                                UseVar(
-                                    Ident("a"),
-                                ),
-                            ),
-                        ],
-                    ),
-                    UseVar(
-                        Ident("a"),
-                    ),
-                    None,
-                    Literal(
-                        Int(4),
-                    ),
+                    ],
+                },
+                key: UseVar {
+                    name: Ident("a"),
+                },
+                op: None,
+                value: Int(
+                    4,
                 ),
-            ),
+            },
         ],
         tail: None,
     },

@@ -2,6 +2,5 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n    let v = [];\n  \"#)"
 ---
-let v = /*[!]*/[
-];
+let v = []/*['0]*/;
 

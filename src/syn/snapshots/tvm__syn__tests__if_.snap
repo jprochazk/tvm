@@ -6,124 +6,128 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Expr(
-                If(
-                    [
-                        Branch(
-                            UseVar(
-                                Ident("a"),
-                            ),
-                            Block {
-                                body: [],
-                                tail: Some(
-                                    Literal(
-                                        Int(0),
-                                    ),
-                                ),
-                            },
-                        ),
-                        Branch(
-                            UseVar(
-                                Ident("b"),
-                            ),
-                            Block {
-                                body: [],
-                                tail: Some(
-                                    Literal(
-                                        Int(1),
-                                    ),
-                                ),
-                            },
-                        ),
-                        Branch(
-                            UseVar(
-                                Ident("c"),
-                            ),
-                            Block {
-                                body: [],
-                                tail: Some(
-                                    Literal(
-                                        Int(2),
-                                    ),
-                                ),
-                            },
-                        ),
-                    ],
-                    Some(
+            If {
+                branches: [
+                    Branch(
+                        UseVar {
+                            name: Ident("a"),
+                        },
                         Block {
                             body: [],
                             tail: Some(
-                                Literal(
-                                    Int(0),
+                                Int(
+                                    0,
                                 ),
                             ),
                         },
                     ),
+                    Branch(
+                        UseVar {
+                            name: Ident("b"),
+                        },
+                        Block {
+                            body: [],
+                            tail: Some(
+                                Int(
+                                    1,
+                                ),
+                            ),
+                        },
+                    ),
+                    Branch(
+                        UseVar {
+                            name: Ident("c"),
+                        },
+                        Block {
+                            body: [],
+                            tail: Some(
+                                Int(
+                                    2,
+                                ),
+                            ),
+                        },
+                    ),
+                ],
+                tail: Some(
+                    Block {
+                        body: [],
+                        tail: Some(
+                            Int(
+                                0,
+                            ),
+                        ),
+                    },
                 ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Opt(
-                        Named(
-                            Ident("int"),
-                        ),
-                    ),
-                ),
-                If(
-                    [
-                        Branch(
-                            Literal(
-                                Bool(true),
-                            ),
-                            Block {
-                                body: [],
-                                tail: Some(
-                                    Literal(
-                                        Int(0),
-                                    ),
-                                ),
-                            },
-                        ),
-                    ],
-                    None,
-                ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
-                    Named(
-                        Ident("int"),
-                    ),
-                ),
-                If(
-                    [
-                        Branch(
-                            Literal(
-                                Bool(true),
-                            ),
-                            Block {
-                                body: [],
-                                tail: Some(
-                                    Literal(
-                                        Int(0),
-                                    ),
-                                ),
-                            },
-                        ),
-                    ],
-                    Some(
-                        Block {
-                            body: [],
-                            tail: Some(
-                                Literal(
-                                    Int(1),
-                                ),
+                        Opt {
+                            inner: Named(
+                                Named {
+                                    name: Ident("int"),
+                                },
                             ),
                         },
                     ),
                 ),
-            ),
+                init: If {
+                    branches: [
+                        Branch(
+                            Bool(
+                                true,
+                            ),
+                            Block {
+                                body: [],
+                                tail: Some(
+                                    Int(
+                                        0,
+                                    ),
+                                ),
+                            },
+                        ),
+                    ],
+                    tail: None,
+                },
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
+                    Named(
+                        Named {
+                            name: Ident("int"),
+                        },
+                    ),
+                ),
+                init: If {
+                    branches: [
+                        Branch(
+                            Bool(
+                                true,
+                            ),
+                            Block {
+                                body: [],
+                                tail: Some(
+                                    Int(
+                                        0,
+                                    ),
+                                ),
+                            },
+                        ),
+                    ],
+                    tail: Some(
+                        Block {
+                            body: [],
+                            tail: Some(
+                                Int(
+                                    1,
+                                ),
+                            ),
+                        },
+                    ),
+                },
+            },
         ],
         tail: None,
     },

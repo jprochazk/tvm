@@ -6,59 +6,53 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Expr(
-                Call(
-                    UseIndex(
-                        UseField(
-                            UseVar(
-                                Ident("v"),
-                            ),
-                            Ident("a"),
-                        ),
-                        UseVar(
-                            Ident("a"),
-                        ),
+            Call {
+                callee: UseIndex {
+                    parent: UseField {
+                        parent: UseVar {
+                            name: Ident("v"),
+                        },
+                        name: Ident("a"),
+                    },
+                    key: UseVar {
+                        name: Ident("a"),
+                    },
+                },
+                args: [
+                    Arg(
+                        UseVar {
+                            name: Ident("a"),
+                        },
                     ),
-                    [
-                        Arg(
-                            UseVar(
-                                Ident("a"),
+                ],
+            },
+            UseField {
+                parent: UseIndex {
+                    parent: Call {
+                        callee: UseVar {
+                            name: Ident("v"),
+                        },
+                        args: [
+                            Arg(
+                                UseVar {
+                                    name: Ident("a"),
+                                },
                             ),
-                        ),
-                    ],
-                ),
-            ),
-            Expr(
-                UseField(
-                    UseIndex(
-                        Call(
-                            UseVar(
-                                Ident("v"),
-                            ),
-                            [
-                                Arg(
-                                    UseVar(
-                                        Ident("a"),
-                                    ),
-                                ),
-                            ],
-                        ),
-                        UseVar(
-                            Ident("a"),
-                        ),
-                    ),
-                    Ident("a"),
-                ),
-            ),
-            Expr(
-                MethodCall(
-                    UseVar(
-                        Ident("v"),
-                    ),
-                    Ident("a"),
-                    [],
-                ),
-            ),
+                        ],
+                    },
+                    key: UseVar {
+                        name: Ident("a"),
+                    },
+                },
+                name: Ident("a"),
+            },
+            MethodCall {
+                receiver: UseVar {
+                    name: Ident("v"),
+                },
+                method: Ident("a"),
+                args: [],
+            },
         ],
         tail: None,
     },

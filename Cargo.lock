@@ -2004,6 +2004,7 @@ dependencies = [
  "insta",
  "logos",
  "nohash-hasher",
+ "once_cell",
  "paste",
  "rustc-hash",
 ]

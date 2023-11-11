@@ -6,174 +6,156 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [],
+            },
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [
+                    Arg(
+                        Int(
+                            0,
+                        ),
                     ),
-                    [],
-                ),
-            ),
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
+                ],
+            },
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [
+                    Arg(
+                        Int(
+                            0,
+                        ),
                     ),
-                    [
-                        Arg(
-                            Literal(
-                                Int(0),
-                            ),
+                ],
+            },
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [
+                    Arg(
+                        Int(
+                            0,
                         ),
-                    ],
-                ),
-            ),
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
                     ),
-                    [
-                        Arg(
-                            Literal(
-                                Int(0),
-                            ),
+                    Arg(
+                        Int(
+                            1,
                         ),
-                    ],
-                ),
-            ),
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
                     ),
-                    [
-                        Arg(
-                            Literal(
-                                Int(0),
-                            ),
+                    Arg(
+                        Int(
+                            2,
                         ),
-                        Arg(
-                            Literal(
-                                Int(1),
-                            ),
-                        ),
-                        Arg(
-                            Literal(
-                                Int(2),
-                            ),
-                        ),
-                    ],
-                ),
-            ),
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
                     ),
-                    [
-                        Arg(
-                            Literal(
-                                Int(0),
-                            ),
+                ],
+            },
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [
+                    Arg(
+                        Int(
+                            0,
                         ),
-                        Arg(
-                            Literal(
-                                Int(1),
-                            ),
-                        ),
-                        Arg(
-                            Literal(
-                                Int(2),
-                            ),
-                        ),
-                    ],
-                ),
-            ),
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
                     ),
-                    [
-                        Arg(
-                            Ident("a"),
-                            Literal(
-                                Int(0),
-                            ),
+                    Arg(
+                        Int(
+                            1,
                         ),
-                    ],
-                ),
-            ),
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
                     ),
-                    [
-                        Arg(
-                            Ident("a"),
-                            Literal(
-                                Int(0),
-                            ),
+                    Arg(
+                        Int(
+                            2,
                         ),
-                    ],
-                ),
-            ),
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
                     ),
-                    [
-                        Arg(
-                            Ident("a"),
-                            Literal(
-                                Int(0),
-                            ),
+                ],
+            },
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [
+                    Arg(
+                        Ident("a"),
+                        Int(
+                            0,
                         ),
-                        Arg(
-                            Ident("b"),
-                            Literal(
-                                Int(1),
-                            ),
-                        ),
-                        Arg(
-                            Ident("c"),
-                            Literal(
-                                Int(2),
-                            ),
-                        ),
-                    ],
-                ),
-            ),
-            Expr(
-                Call(
-                    UseVar(
-                        Ident("f"),
                     ),
-                    [
-                        Arg(
-                            Ident("a"),
-                            Literal(
-                                Int(0),
-                            ),
+                ],
+            },
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [
+                    Arg(
+                        Ident("a"),
+                        Int(
+                            0,
                         ),
-                        Arg(
-                            Ident("b"),
-                            Literal(
-                                Int(1),
-                            ),
+                    ),
+                ],
+            },
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [
+                    Arg(
+                        Ident("a"),
+                        Int(
+                            0,
                         ),
-                        Arg(
-                            Ident("c"),
-                            Literal(
-                                Int(2),
-                            ),
+                    ),
+                    Arg(
+                        Ident("b"),
+                        Int(
+                            1,
                         ),
-                    ],
-                ),
-            ),
+                    ),
+                    Arg(
+                        Ident("c"),
+                        Int(
+                            2,
+                        ),
+                    ),
+                ],
+            },
+            Call {
+                callee: UseVar {
+                    name: Ident("f"),
+                },
+                args: [
+                    Arg(
+                        Ident("a"),
+                        Int(
+                            0,
+                        ),
+                    ),
+                    Arg(
+                        Ident("b"),
+                        Int(
+                            1,
+                        ),
+                    ),
+                    Arg(
+                        Ident("c"),
+                        Int(
+                            2,
+                        ),
+                    ),
+                ],
+            },
         ],
         tail: None,
     },

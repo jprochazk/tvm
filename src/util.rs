@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::fmt::Display;
+use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 
 pub(crate) fn num_digits(v: usize) -> usize {
   use core::iter::successors;
@@ -91,4 +93,25 @@ where
       sep,
     }
   }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HashOf<T: Hash>(u64, PhantomData<fn(T) -> T>);
+
+impl<T: Hash> HashOf<T> {
+  pub fn new(v: &T) -> Self {
+    Self(hash(v), PhantomData)
+  }
+}
+
+impl<T: Hash> Hash for HashOf<T> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    state.write_u64(self.0);
+  }
+}
+
+pub fn hash(v: &impl Hash) -> u64 {
+  let mut state = rustc_hash::FxHasher::default();
+  v.hash(&mut state);
+  state.finish()
 }

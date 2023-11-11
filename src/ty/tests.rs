@@ -1,5 +1,3 @@
-use super::print::TypedAst;
-
 fn _check(input: &str) -> String {
   let ast = match crate::syn::try_parse(input) {
     Ok(ast) => ast,
@@ -15,7 +13,7 @@ fn _check(input: &str) -> String {
   };
 
   match super::type_check(&ast) {
-    Ok(db) => format!("{}", TypedAst::new(&ast, &db)),
+    Ok(db) => format!("{db}"),
     Err(e) => e
       .into_iter()
       .map(|e| format!("{e}"))
@@ -97,14 +95,13 @@ test! {
   "#
 }
 
-/* test! {
+test! {
   literal_array_type_inference,
   r#"
     let a = [];
     a.push(10);
-    a[0] + 1;
   "#
-} */
+}
 
 /*
 test! {

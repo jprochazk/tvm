@@ -6,113 +6,125 @@ Ast {
     decls: [],
     top_level: Block {
         body: [
-            Let(
-                Ident("v"),
-                Some(
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Named(
-                        Ident("int"),
+                        Named {
+                            name: Ident("int"),
+                        },
                     ),
                 ),
-                Literal(
-                    Int(1),
+                init: Int(
+                    1,
                 ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Named(
-                        Ident("num"),
+                        Named {
+                            name: Ident("num"),
+                        },
                     ),
                 ),
-                Literal(
-                    Float(1.0),
+                init: Num(
+                    1.0,
                 ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Named(
-                        Ident("bool"),
+                        Named {
+                            name: Ident("bool"),
+                        },
                     ),
                 ),
-                Literal(
-                    Bool(true),
+                init: Bool(
+                    true,
                 ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Named(
-                        Ident("str"),
+                        Named {
+                            name: Ident("str"),
+                        },
                     ),
                 ),
-                Literal(
-                    String("\"yo\""),
+                init: Str(
+                    "\"yo\"",
                 ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Array(
-                        Named(
-                            Ident("int"),
-                        ),
-                    ),
-                ),
-                Literal(
-                    Array(
-                        [
-                            Literal(
-                                Int(1),
+                        Array {
+                            item: Named(
+                                Named {
+                                    name: Ident("int"),
+                                },
                             ),
-                            Literal(
-                                Int(2),
-                            ),
-                            Literal(
-                                Int(3),
-                            ),
-                        ],
+                        },
                     ),
                 ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
+                init: Csv(
+                    [
+                        Int(
+                            1,
+                        ),
+                        Int(
+                            2,
+                        ),
+                        Int(
+                            3,
+                        ),
+                    ],
+                ),
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Array(
-                        Named(
-                            Ident("int"),
-                        ),
+                        Array {
+                            item: Named(
+                                Named {
+                                    name: Ident("int"),
+                                },
+                            ),
+                        },
                     ),
                 ),
-                Literal(
-                    Array {
-                        item: Literal(
-                            Int(0),
-                        ),
-                        len: Literal(
-                            Int(10),
-                        ),
-                    },
+                init: Len(
+                    Int(
+                        0,
+                    ),
+                    Int(
+                        10,
+                    ),
                 ),
-            ),
-            Let(
-                Ident("v"),
-                Some(
+            },
+            Let {
+                name: Ident("v"),
+                ty: Some(
                     Array(
-                        Empty,
+                        Array {
+                            item: Empty,
+                        },
                     ),
                 ),
-                Literal(
-                    Array {
-                        item: Literal(
-                            Int(0),
-                        ),
-                        len: Literal(
-                            Int(10),
-                        ),
-                    },
+                init: Len(
+                    Int(
+                        0,
+                    ),
+                    Int(
+                        10,
+                    ),
                 ),
-            ),
+            },
         ],
         tail: None,
     },

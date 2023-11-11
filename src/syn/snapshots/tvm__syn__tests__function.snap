@@ -4,124 +4,146 @@ expression: "parse!(r#\"\n    fn f() {}\n    fn f(a: A) {}\n    fn f(a: A, b: B,
 ---
 Ast {
     decls: [
-        Fn(
-            Ident("f"),
-            [],
-            None,
-            Block {
+        Fn {
+            name: Ident("f"),
+            params: [],
+            ret: None,
+            body: Block {
                 body: [],
                 tail: None,
             },
-        ),
-        Fn(
-            Ident("f"),
-            [
+        },
+        Fn {
+            name: Ident("f"),
+            params: [
                 Param(
                     Ident("a"),
                     Named(
-                        Ident("A"),
+                        Named {
+                            name: Ident("A"),
+                        },
                     ),
                 ),
             ],
-            None,
-            Block {
+            ret: None,
+            body: Block {
                 body: [],
                 tail: None,
             },
-        ),
-        Fn(
-            Ident("f"),
-            [
+        },
+        Fn {
+            name: Ident("f"),
+            params: [
                 Param(
                     Ident("a"),
                     Named(
-                        Ident("A"),
+                        Named {
+                            name: Ident("A"),
+                        },
                     ),
                 ),
                 Param(
                     Ident("b"),
                     Named(
-                        Ident("B"),
+                        Named {
+                            name: Ident("B"),
+                        },
                     ),
                 ),
                 Param(
                     Ident("c"),
                     Named(
-                        Ident("C"),
+                        Named {
+                            name: Ident("C"),
+                        },
                     ),
                 ),
             ],
-            None,
-            Block {
+            ret: None,
+            body: Block {
                 body: [],
                 tail: None,
             },
-        ),
-        Fn(
-            Ident("f"),
-            [],
-            Some(
+        },
+        Fn {
+            name: Ident("f"),
+            params: [],
+            ret: Some(
                 Named(
-                    Ident("R"),
+                    Named {
+                        name: Ident("R"),
+                    },
                 ),
             ),
-            Block {
+            body: Block {
                 body: [],
                 tail: None,
             },
-        ),
-        Fn(
-            Ident("f"),
-            [
+        },
+        Fn {
+            name: Ident("f"),
+            params: [
                 Param(
                     Ident("a"),
                     Named(
-                        Ident("A"),
+                        Named {
+                            name: Ident("A"),
+                        },
                     ),
                 ),
             ],
-            Some(
+            ret: Some(
                 Named(
-                    Ident("R"),
+                    Named {
+                        name: Ident("R"),
+                    },
                 ),
             ),
-            Block {
+            body: Block {
                 body: [],
                 tail: None,
             },
-        ),
-        Fn(
-            Ident("f"),
-            [
+        },
+        Fn {
+            name: Ident("f"),
+            params: [
                 Param(
                     Ident("a"),
                     Named(
-                        Ident("A"),
+                        Named {
+                            name: Ident("A"),
+                        },
                     ),
                 ),
                 Param(
                     Ident("b"),
                     Named(
-                        Ident("B"),
+                        Named {
+                            name: Ident("B"),
+                        },
                     ),
                 ),
                 Param(
                     Ident("c"),
                     Named(
-                        Ident("C"),
+                        Named {
+                            name: Ident("C"),
+                        },
                     ),
                 ),
             ],
-            Some(
+            ret: Some(
                 Named(
-                    Ident("R"),
+                    Named {
+                        name: Ident("R"),
+                    },
                 ),
             ),
-            Block {
+            body: Block {
                 body: [],
                 tail: None,
             },
-        ),
+        },
     ],
     top_level: Block {
         body: [],

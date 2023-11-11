@@ -1,167 +1,237 @@
 #![allow(clippy::new_without_default)]
 
-#[macro_use]
-mod macros;
+mod make;
+mod print;
 
-use std::fmt::{Debug, Display};
+// TODO: finish ast refactor
+
 use std::hash::Hash;
 
 use crate::lex::{Lexer, Span, Token, TokenKind};
-use crate::util::JoinIter;
 use crate::Str;
 
-pub(crate) struct IdGen<T: Next>(T);
-
-impl<T: Copy + Next + Default> IdGen<T> {
-  pub fn new() -> Self {
-    Self(T::default())
-  }
-
-  pub fn next(&mut self) -> T {
-    let v = self.0;
-    self.0 = self.0.next();
-    v
-  }
-}
-
-#[derive(Clone)]
-pub struct Ast<'src> {
+pub struct Ast<'src, T = ()> {
   pub src: &'src str,
-  pub decls: Vec<Decl<'src>>,
-  pub top_level: Block<'src>,
+  pub decls: Vec<Decl<'src, T>>,
+  pub top_level: Block<'src, T>,
 }
 
-syntax_node! {
-  Decl<'src> {
-    Fn {
-      name: Ident<'src>,
-      params: Vec<Param<'src>>,
-      ret: Option<Type<'src>>,
-      body: Block<'src>,
-    }
+pub use decl::Decl;
+pub mod decl {
+  pub use super::*;
+
+  pub struct Decl<'src, T = ()> {
+    pub span: Span,
+    pub kind: DeclKind<'src, T>,
+  }
+
+  pub enum DeclKind<'src, T = ()> {
+    Fn(Box<Fn<'src, T>>),
+  }
+
+  pub struct Fn<'src, T = ()> {
+    pub name: Ident<'src>,
+    pub params: Vec<Param<'src>>,
+    pub ret: Option<Type<'src>>,
+    pub body: Block<'src, T>,
   }
 }
 
-syntax_node! {
-  Stmt<'src> {
-    Let {
-      name: Ident<'src>,
-      ty: Option<Type<'src>>,
-      init: Expr<'src>,
-    },
-    Loop {
-      body: Block<'src>,
-    },
-    Expr {
-      inner: Expr<'src>,
-    },
+pub use stmt::Stmt;
+pub mod stmt {
+  pub use super::*;
+
+  pub struct Stmt<'src, T = ()> {
+    pub span: Span,
+    pub kind: StmtKind<'src, T>,
+  }
+
+  pub enum StmtKind<'src, T = ()> {
+    Let(Box<Let<'src, T>>),
+    Loop(Box<Loop<'src, T>>),
+    Expr(Expr<'src, T>),
+  }
+
+  pub struct Let<'src, T = ()> {
+    pub name: Ident<'src>,
+    pub ty: Option<Type<'src>>,
+    pub init: Expr<'src, T>,
+  }
+
+  pub struct Loop<'src, T = ()> {
+    pub body: Block<'src, T>,
   }
 }
 
-syntax_node! {
-  Type<'src> {
+pub use ty::Type;
+pub mod ty {
+  pub use super::*;
+
+  #[derive(Clone)]
+  pub struct Type<'src> {
+    pub span: Span,
+    pub kind: TypeKind<'src>,
+  }
+
+  #[derive(Clone)]
+  pub enum TypeKind<'src> {
     Empty,
-    Named {
-      name: Ident<'src>,
-    },
-    Array {
-      item: Type<'src>,
-    },
-    Fn {
-      params: Vec<Type<'src>>,
-      ret: Type<'src>,
-    },
-    Opt {
-      inner: Type<'src>,
-    },
+    Named(Named<'src>),
+    Array(Box<Array<'src>>),
+    Fn(Box<Fn<'src>>),
+    Opt(Box<Opt<'src>>),
+  }
+
+  #[derive(Clone)]
+  pub struct Empty;
+
+  #[derive(Clone)]
+  pub struct Named<'src> {
+    pub name: Ident<'src>,
+  }
+
+  #[derive(Clone)]
+  pub struct Array<'src> {
+    pub item: Type<'src>,
+  }
+
+  #[derive(Clone)]
+  pub struct Fn<'src> {
+    pub params: Vec<Type<'src>>,
+    pub ret: Type<'src>,
+  }
+
+  #[derive(Clone)]
+  pub struct Opt<'src> {
+    pub inner: Type<'src>,
   }
 }
 
-syntax_node! {
-  Expr<'src> {
-    Return {
-      value: Option<Expr<'src>>,
-    },
-    /* Yield {
-      value: Option<Expr<'src>>,
-    }, */
+pub use expr::Expr;
+pub mod expr {
+  pub use super::*;
+
+  pub struct Expr<'src, T = ()> {
+    pub span: Span,
+    pub ty: T,
+    pub kind: ExprKind<'src, T>,
+  }
+
+  pub enum ExprKind<'src, T = ()> {
+    Return(Box<Return<'src, T>>),
     Break,
     Continue,
-    Block {
-      inner: Block<'src>,
-    },
-    If {
-      branches: Vec<Branch<'src>>,
-      tail: Option<Block<'src>>,
-    },
-    Binary {
-      left: Expr<'src>,
-      op: BinaryOp,
-      right: Expr<'src>,
-    },
-    Unary {
-      op: UnaryOp,
-      right: Expr<'src>,
-    },
-    Literal {
-      value: Literal<'src>,
-    },
-    UseVar {
-      name: Ident<'src>,
-    },
-    UseField {
-      parent: Expr<'src>,
-      name: Ident<'src>,
-    },
-    UseIndex {
-      parent: Expr<'src>,
-      key: Expr<'src>,
-    },
-    AssignVar {
-      name: Ident<'src>,
-      op: Option<BinaryOp>,
-      value: Expr<'src>,
-    },
-    AssignField {
-      parent: Expr<'src>,
-      name: Ident<'src>,
-      op: Option<BinaryOp>,
-      value: Expr<'src>,
-    },
-    AssignIndex {
-      parent: Expr<'src>,
-      key: Expr<'src>,
-      op: Option<BinaryOp>,
-      value: Expr<'src>,
-    },
-    Call {
-      callee: Expr<'src>,
-      args: Vec<Arg<'src>>,
-    },
-    MethodCall {
-      receiver: Expr<'src>,
-      method: Ident<'src>,
-      args: Vec<Arg<'src>>,
-    }
+    Block(Box<Block<'src, T>>),
+    If(Box<If<'src, T>>),
+    Binary(Box<Binary<'src, T>>),
+    Unary(Box<Unary<'src, T>>),
+    Primitive(Box<Primitive<'src>>),
+    Array(Box<Array<'src, T>>),
+    UseVar(Box<UseVar<'src>>),
+    UseField(Box<UseField<'src, T>>),
+    UseIndex(Box<UseIndex<'src, T>>),
+    AssignVar(Box<AssignVar<'src, T>>),
+    AssignField(Box<AssignField<'src, T>>),
+    AssignIndex(Box<AssignIndex<'src, T>>),
+    Call(Box<Call<'src, T>>),
+    MethodCall(Box<MethodCall<'src, T>>),
+  }
+
+  pub struct Return<'src, T = ()> {
+    pub value: Option<Expr<'src, T>>,
+  }
+
+  pub struct Break;
+
+  pub struct Continue;
+
+  pub struct If<'src, T = ()> {
+    pub branches: Vec<Branch<'src, T>>,
+    pub tail: Option<Block<'src, T>>,
+  }
+
+  pub struct Binary<'src, T = ()> {
+    pub lhs: Expr<'src, T>,
+    pub op: BinaryOp,
+    pub rhs: Expr<'src, T>,
+  }
+
+  pub struct Unary<'src, T = ()> {
+    pub op: UnaryOp,
+    pub rhs: Expr<'src, T>,
+  }
+
+  pub enum Primitive<'src> {
+    Int(i64),
+    Num(f64),
+    Bool(bool),
+    Str(Str<'src>),
+  }
+
+  pub enum Array<'src, T = ()> {
+    Csv(Vec<Expr<'src, T>>),
+    Len(Expr<'src, T>, Expr<'src, T>),
+  }
+
+  pub struct UseVar<'src> {
+    pub name: Ident<'src>,
+  }
+
+  pub struct UseField<'src, T = ()> {
+    pub parent: Expr<'src, T>,
+    pub name: Ident<'src>,
+  }
+
+  pub struct UseIndex<'src, T = ()> {
+    pub parent: Expr<'src, T>,
+    pub key: Expr<'src, T>,
+  }
+
+  pub struct AssignVar<'src, T = ()> {
+    pub name: Ident<'src>,
+    pub op: Option<BinaryOp>,
+    pub value: Expr<'src, T>,
+  }
+
+  pub struct AssignField<'src, T = ()> {
+    pub parent: Expr<'src, T>,
+    pub name: Ident<'src>,
+    pub op: Option<BinaryOp>,
+    pub value: Expr<'src, T>,
+  }
+
+  pub struct AssignIndex<'src, T = ()> {
+    pub parent: Expr<'src, T>,
+    pub key: Expr<'src, T>,
+    pub op: Option<BinaryOp>,
+    pub value: Expr<'src, T>,
+  }
+
+  pub struct Call<'src, T = ()> {
+    pub callee: Expr<'src, T>,
+    pub args: Vec<Arg<'src, T>>,
+  }
+
+  pub struct MethodCall<'src, T = ()> {
+    pub receiver: Expr<'src, T>,
+    pub method: Ident<'src>,
+    pub args: Vec<Arg<'src, T>>,
   }
 }
 
-#[derive(Clone, Hash)]
 pub struct Param<'src> {
   pub name: Ident<'src>,
   pub ty: Type<'src>,
 }
 
-#[derive(Clone)]
-pub struct Branch<'src> {
-  pub cond: Expr<'src>,
-  pub body: Block<'src>,
+pub struct Branch<'src, T = ()> {
+  pub cond: Expr<'src, T>,
+  pub body: Block<'src, T>,
 }
 
-#[derive(Clone)]
-pub struct Arg<'src> {
+pub struct Arg<'src, T = ()> {
   pub key: Option<Ident<'src>>,
-  pub value: Expr<'src>,
+  pub value: Expr<'src, T>,
 }
 
 #[derive(Clone, Copy)]
@@ -214,50 +284,10 @@ macro_rules! unop {
   [?] => ($crate::ast::UnaryOp::Opt);
 }
 
-#[derive(Clone)]
-pub enum Literal<'src> {
-  Int(i64),
-  Float(f64),
-  Bool(bool),
-  String(Str<'src>),
-  Array(Array<'src>),
-}
-
-#[derive(Clone)]
-pub enum Array<'src> {
-  List(Vec<Expr<'src>>),
-  Copy(Expr<'src>, Expr<'src>),
-}
-
-macro_rules! lit {
-  (int, $v:expr) => {
-    $crate::ast::Literal::Int(($v).into())
-  };
-  (float, $v:expr) => {
-    $crate::ast::Literal::Float(($v).into())
-  };
-  (bool, $v:expr) => {
-    $crate::ast::Literal::Bool(($v).into())
-  };
-  (str, $v:expr) => {
-    $crate::ast::Literal::String(($v).into())
-  };
-  (array, $v:expr) => {
-    $crate::ast::Literal::Array(($v).into())
-  };
-}
-
-impl Default for Literal<'_> {
-  fn default() -> Self {
-    Self::Int(0)
-  }
-}
-
-#[derive(Default, Clone)]
-pub struct Block<'src> {
+pub struct Block<'src, T = ()> {
   pub span: Span,
-  pub body: Vec<Stmt<'src>>,
-  pub tail: Option<Expr<'src>>,
+  pub body: Vec<Stmt<'src, T>>,
+  pub tail: Option<Expr<'src, T>>,
 }
 
 #[derive(Clone)]
@@ -287,233 +317,8 @@ impl<'src> Ident<'src> {
   }
 }
 
-pub(crate) trait Next: Sized {
-  fn next(&self) -> Self;
-}
-
-trait WrapBox {
-  type Boxed;
-
-  fn wrap_box(self) -> Self::Boxed;
-}
-
-trait UnwrapBox {
-  type Unboxed;
-
-  fn unwrap_box(self) -> Self::Unboxed;
-}
-
-impl Debug for Ast<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("Ast")
-      .field("decls", &self.decls)
-      .field("top_level", &self.top_level)
-      .finish()
-  }
-}
-
-impl Debug for Param<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_tuple("Param")
-      .field(&self.name)
-      .field(&self.ty)
-      .finish()
-  }
-}
-
-impl Debug for Branch<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_tuple("Branch")
-      .field(&self.cond)
-      .field(&self.body)
-      .finish()
-  }
-}
-
-impl Debug for Arg<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let mut t = f.debug_tuple("Arg");
-    match &self.key {
-      Some(key) => t.field(key).field(&self.value).finish(),
-      None => t.field(&self.value).finish(),
-    }
-  }
-}
-
-impl Debug for BinaryOp {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::Add => f.write_str("Op(+)"),
-      Self::Sub => f.write_str("Op(-)"),
-      Self::Mul => f.write_str("Op(*)"),
-      Self::Div => f.write_str("Op(/)"),
-      Self::Rem => f.write_str("Op(%)"),
-      Self::Pow => f.write_str("Op(**)"),
-      Self::Eq => f.write_str("Op(==)"),
-      Self::Ne => f.write_str("Op(!=)"),
-      Self::Gt => f.write_str("Op(>)"),
-      Self::Lt => f.write_str("Op(<)"),
-      Self::Ge => f.write_str("Op(>=)"),
-      Self::Le => f.write_str("Op(<=)"),
-      Self::And => f.write_str("Op(&&)"),
-      Self::Or => f.write_str("Op(||)"),
-      Self::Opt => f.write_str("Op(??)"),
-    }
-  }
-}
-
-impl Debug for UnaryOp {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::Minus => f.write_str("Op(-)"),
-      Self::Not => f.write_str("Op(!)"),
-      Self::Opt => f.write_str("Op(?)"),
-    }
-  }
-}
-
-impl Debug for Block<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("Block")
-      .field("body", &self.body)
-      .field("tail", &self.tail)
-      .finish()
-  }
-}
-
-impl Debug for Ident<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "Ident({:?})", self.lexeme)
-  }
-}
-
-impl Debug for Literal<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::Int(arg0) => write!(f, "Int({arg0:?})"),
-      Self::Float(arg0) => write!(f, "Float({arg0:?})"),
-      Self::Bool(arg0) => write!(f, "Bool({arg0:?})"),
-      Self::String(arg0) => write!(f, "String({arg0:?})"),
-      Self::Array(arg0) => Debug::fmt(arg0, f),
-    }
-  }
-}
-
-impl Debug for Array<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::List(arg0) => f.debug_tuple("Array").field(arg0).finish(),
-      Self::Copy(arg0, arg1) => f
-        .debug_struct("Array")
-        .field("item", arg0)
-        .field("len", arg1)
-        .finish(),
-    }
-  }
-}
-
-impl Hash for Type<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.kind.hash(state);
-  }
-}
-
-impl Hash for TypeKind<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    core::mem::discriminant(self).hash(state);
-    match self {
-      TypeKind::Empty(ty) => ty.hash(state),
-      TypeKind::Named(ty) => ty.hash(state),
-      TypeKind::Array(ty) => ty.hash(state),
-      TypeKind::Fn(ty) => ty.hash(state),
-      TypeKind::Opt(ty) => ty.hash(state),
-    }
-  }
-}
-
-impl Hash for EmptyType<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.0.hash(state);
-  }
-}
-
-impl Hash for NamedType<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.name.hash(state);
-  }
-}
-
-impl Hash for ArrayType<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.item.hash(state);
-  }
-}
-
-impl Hash for FnType<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.params.hash(state);
-    self.ret.hash(state);
-  }
-}
-
-impl Hash for OptType<'_> {
-  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-    self.inner.hash(state);
-  }
-}
-
 impl Hash for Ident<'_> {
   fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
     self.lexeme.hash(state);
-  }
-}
-
-impl Display for BinaryOp {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.write_str(match self {
-      BinaryOp::Add => "+",
-      BinaryOp::Sub => "-",
-      BinaryOp::Mul => "*",
-      BinaryOp::Div => "/",
-      BinaryOp::Rem => "%",
-      BinaryOp::Pow => "**",
-      BinaryOp::Eq => "==",
-      BinaryOp::Ne => "!=",
-      BinaryOp::Gt => ">",
-      BinaryOp::Lt => "<",
-      BinaryOp::Ge => ">=",
-      BinaryOp::Le => "<=",
-      BinaryOp::And => "&&",
-      BinaryOp::Or => "||",
-      BinaryOp::Opt => "??",
-    })
-  }
-}
-
-impl Display for UnaryOp {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.write_str(match self {
-      UnaryOp::Minus => "-",
-      UnaryOp::Not => "!",
-      UnaryOp::Opt => "?",
-    })
-  }
-}
-
-impl Display for Ident<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.write_str(self.lexeme)
-  }
-}
-
-impl Display for Type<'_> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match &self.kind {
-      TypeKind::Empty(_) => f.write_str("_"),
-      TypeKind::Named(ty) => f.write_str(ty.name.lexeme),
-      TypeKind::Array(ty) => write!(f, "[{}]", ty.item),
-      TypeKind::Fn(ty) => write!(f, "({}) -> {}", ty.params.iter().join(", "), ty.ret),
-      TypeKind::Opt(ty) => write!(f, "{}?", ty.inner),
-    }
   }
 }

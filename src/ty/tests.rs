@@ -1,40 +1,40 @@
 fn _check(input: &str) -> String {
-  let ast = match crate::syn::try_parse(input) {
-    Ok(ast) => ast,
-    Err(e) => {
-      panic!(
-        "{}",
-        e.into_iter()
-          .map(|e| format!("{e}"))
-          .collect::<Vec<_>>()
-          .join("\n")
-      );
-    }
-  };
+    let ast = match crate::syn::try_parse(input) {
+        Ok(ast) => ast,
+        Err(e) => {
+            panic!(
+                "{}",
+                e.into_iter()
+                    .map(|e| format!("{e}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+    };
 
-  match super::type_check(&ast) {
-    Ok(db) => format!("{db}"),
-    Err(e) => e
-      .into_iter()
-      .map(|e| format!("{e}"))
-      .collect::<Vec<_>>()
-      .join("\n"),
-  }
+    match super::type_check(&ast) {
+        Ok(db) => format!("{db}"),
+        Err(e) => e
+            .into_iter()
+            .map(|e| format!("{e}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
 }
 
 macro_rules! check {
-  ($input:literal) => {
-    _check(indoc::indoc!($input))
-  };
+    ($input:literal) => {
+        _check(indoc::indoc!($input))
+    };
 }
 
 macro_rules! test {
-  ($name:ident, $input:literal) => {
-    #[test]
-    fn $name() {
-      insta::assert_snapshot!(check!($input))
-    }
-  };
+    ($name:ident, $input:literal) => {
+        #[test]
+        fn $name() {
+            insta::assert_snapshot!(check!($input))
+        }
+    };
 }
 
 test! {

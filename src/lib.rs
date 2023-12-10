@@ -1,4 +1,8 @@
-#![allow(clippy::new_without_default, clippy::wrong_self_convention)]
+#![allow(
+    clippy::new_without_default,
+    clippy::wrong_self_convention,
+    clippy::new_ret_no_self
+)]
 
 #[macro_use]
 pub mod error;

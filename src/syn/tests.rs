@@ -1,27 +1,27 @@
 fn _parse(input: &str) -> String {
-  match super::try_parse(input) {
-    Ok(ast) => format!("{ast:#?}"),
-    Err(e) => e
-      .into_iter()
-      .map(|e| format!("{e}"))
-      .collect::<Vec<_>>()
-      .join("\n"),
-  }
+    match super::try_parse(input) {
+        Ok(ast) => format!("{ast:#?}"),
+        Err(e) => e
+            .into_iter()
+            .map(|e| format!("{e}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    }
 }
 
 macro_rules! parse {
-  ($input:literal) => {
-    _parse(indoc::indoc!($input))
-  };
+    ($input:literal) => {
+        _parse(indoc::indoc!($input))
+    };
 }
 
 macro_rules! test {
-  ($name:ident, $input:literal) => {
-    #[test]
-    fn $name() {
-      insta::assert_snapshot!(parse!($input))
-    }
-  };
+    ($name:ident, $input:literal) => {
+        #[test]
+        fn $name() {
+            insta::assert_snapshot!(parse!($input))
+        }
+    };
 }
 
 test! {

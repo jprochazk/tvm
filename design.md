@@ -3,34 +3,53 @@
 
 ```rust
 let v: int = 0;
+let v = 0; // type inference
 
-// type inference
-let v = 0;
+// deeply immutable
+v += 1; // <- error
 
-// bi-directional type inference
-let v = []; // type of `v` is `[_]`, `_` meaning "empty"
-v.push(10);  // type of `v` is `[int]`
+mut v: int = 0;
+mut v = 0;
+
+v += 1; // <- ok
 ```
 
 ## Literals
 
 ```rust
-let v: int = 1;
-let v: num = 1.0;
-let v: bool = true;
-let v: str = "yo";
-let v: [int] = [1, 2, 3];
-let v: {str} = {"a", "b", "c"};
-let v: {str -> int} = {"a": 0, "b": 1};
+let v: int = 1; // integers, the default numeric type
+let v: num = 1.0; // "generic number", f64
+let v: bool = true; // true/false
+let v: str = "yo"; // strings, immutable
 
-// anu type can be made optional with a `?`
-// `?` types support a very limited form of subtyping:
-// - `T` can be assigned to both `T` and `T?`
-// - `T?` can be assigned to only `T?`
-let opt: int? = 1;
-let opt: int? = none;
-let v: int = opt; // type error
-let v: int? = opt; // ok
+// built-in data structures:
+
+// List
+let v: List<int> = List<int>.new(1, 2, 3);
+let v: List<int> = List.new(1, 2, 3);
+let v: List<int> = [1, 2, 3];
+
+// Map
+mut v: Map<str, int> = Map<str, int>.new(("a", 0), ("b", 1));
+mut v: Map<str, int> = Map.new(("a", 0), ("b", 1));
+mut v: Map<str, int> = {"a": 0, "b": 1};
+
+// Data structures are mutable (if they appear in a mutable place)
+v.set("c", 2);
+
+// Set
+let v: Set<str> = Set.new("a", "b", "c"); // no syntax sugar
+let v: Set<str> = {"a", "b"};
+
+// Optionals, "nullable value"
+let v: Opt<int> = Some(1);
+let v: Opt<int> = None;
+
+// "todo" literal
+// - coerces to any type
+// - warning at compile time
+// - error at runtime
+let v: T = todo;
 ```
 
 ## Operators
@@ -50,12 +69,8 @@ let v: int? = opt; // ok
 2 <= 2;
 -2;
 !true;
-not true;
 true && true;
-true and true;
 false || true;
-false or true;
-a ?? b;
 ```
 
 ```rust
@@ -66,10 +81,18 @@ name /= 1;
 name *= 1;
 name %= 1;
 name **= 1;
+```
 
-// assigns to `name` only if `name` is `none`,
-// and asserts that `name` is no longer `none`
-name ??= 1;
+```rust
+let a: Opt<T> = todo;
+let b: T = todo;
+
+let value = a ?? b;
+// equivalent to:
+let value = match a {
+  Some(a) -> a,
+  None -> b,
+};
 ```
 
 ## Control flow
@@ -88,14 +111,18 @@ if true {}
 else if true {}
 else {}
 
-// if expr
+// if expr,
 // evaluates to:
-// - `0` if `true`
-// - `none` if `false`
-let v: int? = if true {0};
-let v: int = if true {0} else {1};
+// - `T` if given an `else` branch
+// - `Opt<T>` if not given an `else`
+let v: Opt<int> = if true { 0 };
+// above is equivalent to:
+let v: Opt<int> = if true { Some(0) } else { None };
 
-// bare loop
+// If given an `else`, then evaluates to just `T`.
+let v: int = if true { 0 } else { 1 };
+
+// infinite loop
 loop {}
 ```
 
@@ -115,16 +142,17 @@ let v = continue;
 
 ```rust
 // function declarations:
-fn name() {}
-fn name(a: A) {}
-fn name(a: A, b: B, c: C) {}
-fn name() -> R {}
-fn name(a: A) -> R {}
-fn name(a: A, b: B, c: C) -> R {}
+fn simple() {}
+fn single_param(a: A) {}
+fn multi_param(a: A, b: B, c: C) {}
+fn with_ret() -> R {}
+fn param_and_ret(a: A) -> R {}
+fn full_mono(a: A, b: B, c: C) -> R {}
 
-fn name(a: A, b: B, c: C) -> R {
+fn generic<T>() {}
+fn multi_generic<A, B, C>() {}
 
-}
+fn var_args<T>(v: ...T) {}
 ```
 
 ## Function calls
@@ -142,105 +170,82 @@ print(adder(10)(50)); // 60
 
 ```rust
 // Records
-record Foo {
-  a: int,
-  b: str,
-}
+type Foo = { a: int, b: str };
+type Bar = { a: str, b: int };
 
 // record constructor, field access
-let v = Foo(a: 100, b: "test");
+let v: Foo = { a: 100, b: "test" };
 print(v.b);
 
 // Unions
-union Bar {
-  Lorem,
-  Ipsum { a: int, b: str },
-  Dolor,
-}
+type Bar =
+  | Lorem
+  | Ipsum(a: int, b: str)
+  | Dolor;
 
 // union constructor, match
-let v = Bar.Lorem
-let v = Bar.Ipsum(a: 100, b: "test")
+let v = Lorem
+let v = Ipsum(a: 100, b: "test")
 
 match v {
-  Bar.Lorem -> print("A")
-  Bar.Ipsum -> print("B")
+  Lorem -> print("A")
+  Ipsum(_, _) -> print("B")
   _ -> print("?")
 }
 
-// unions enable another limited form of subtyping
-// each variant is a type, and the union is their supertype
-fn test(v: Bar) {/*...*/} // accepts any variant of `Bar`
-fn test(v: Bar.Lorem) {/*...*/} // accepts only `Lorem`
-```
-
-## UFCS
-
-```rust
-// given a record like
-record User {
-  name: str,
-  age: int,
-}
-
-// and a function like
-fn greet(user: User) {
-  print("Hi, {user.name}!");
-}
-
-let v = User(name: "😂", age: 100);
-
-// both of these are equivalent function calls:
-v.greet(); // -> greet(v)
-greet(v);
-
-// the above also applies for unions
-union Animal {
-  Cat
-  Dog
-}
-
-fn sound(a: Animal) -> str {
-  match a {
-    Bar.Cat -> "meow",
-    Bar.Dog -> "woof",
-  }
-}
-
-let v = Animal.Cat;
-print(v.sound());
-print(sound(v));
 ```
 
 ## Code examples
 
+
+```rust
+
+mod foo {
+  type Thing = { a: int };
+
+  fn test(v: Thing) -> int {
+    v.a
+  };
+}
+
+mod bar {
+  use foo.test;
+
+  // test : (Thing) -> int
+  test({ a: 10 })
+}
+
+```
+
 ### Tic Tac Toe
 
 ```rust
-union Player { X, O }
+type Player = X | O;
+type Cell = Empty | With(player: Player);
 
-union Cell {
-  Empty,
-  With { player: Player }
+type TicTacToe(
+  board: [Cell],
+  player: Player,
+);
+
+fn TicTacToe.new() -> Self {
+  Self(
+    board: [Empty; 9],
+    player: X
+  )
 }
 
-
-record TicTacToe {
-  board: [Cell] = [Cell.Empty; 9],
-  player: Player = Player.X,
-}
-
-fn to_str(v: Cell) -> str {
-  match v {
-    Cell.Empty -> "-"
-    Cell.Player(player) -> player.to_str()
+fn Cell.to_str(self) -> str {
+  match self {
+    Empty -> "-"
+    With(player) -> player.to_str()
   }
 }
 
-fn to_str(v: Player) -> str {
-  match v {
-    Player.X -> "X"
-    Player.O -> "O"
+fn Player.to_str(self) -> str {
+  match self {
+    X -> "X"
+    O -> "O"
   }
 }
 

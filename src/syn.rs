@@ -2,10 +2,14 @@ use crate::ast::*;
 use crate::error::{Error, ErrorCtx, Result};
 use crate::lex::{Lexer, Span, Token, TokenKind, EOF};
 
+/// Performs a resilient parse, in which the returned `Ast`
+/// may be incomplete if the returned list of errors is
+/// not empty.
 pub fn parse(s: &str) -> (Ast<'_>, Vec<Error>) {
     Parser::new(s).parse()
 }
 
+/// Performs a full parse.
 pub fn try_parse(s: &str) -> Result<Ast<'_>, Vec<Error>> {
     Parser::new(s).try_parse()
 }
@@ -47,7 +51,7 @@ impl<'src> Parser<'src> {
                 decls,
                 top_level,
             },
-            self.ecx.finish(),
+            self.ecx.finish().err().unwrap_or_default(),
         )
     }
 
@@ -204,8 +208,8 @@ fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src, ()> {
 
 fn top_level_stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src, ()>>) {
     match top_level_stmt(p) {
-        Ok(StmtOrDecl::Stmt(stmt)) => out.push(stmt),
-        Ok(StmtOrDecl::Decl(decl)) => p.decls.push(decl),
+        Ok(Top::Stmt(stmt)) => out.push(stmt),
+        Ok(Top::Decl(decl)) => p.decls.push(decl),
         Err(e) => sync(p, e, SyncCtx::TopLevel),
     }
 }
@@ -248,34 +252,84 @@ fn sync(p: &mut Parser<'_>, e: Error, kind: SyncCtx) {
     }
 }
 
-enum StmtOrDecl<'src> {
+enum Top<'src> {
     Stmt(Stmt<'src, ()>),
     Decl(Decl<'src, ()>),
 }
 
-fn top_level_stmt<'src>(p: &mut Parser<'src>) -> Result<StmtOrDecl<'src>> {
+fn top_level_stmt<'src>(p: &mut Parser<'src>) -> Result<Top<'src>> {
+    let extern_ = p.eat(t![extern]);
     match p.kind() {
-        t![fn] => fn_(p).map(StmtOrDecl::Decl),
-        _ => stmt(p).map(StmtOrDecl::Stmt),
+        t![fn] => fn_(p, extern_).map(Top::Decl),
+        t![type] => type_(p, extern_).map(Top::Decl),
+        _ if extern_ => Err(p.ecx.unexpected_token(p.prev.span)),
+        _ => stmt(p).map(Top::Stmt),
     }
 }
 
-fn fn_<'src>(p: &mut Parser<'src>) -> Result<Decl<'src, ()>> {
+fn fn_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src, ()>> {
     let s = p.span();
 
     assert!(p.eat(t![fn]));
     let name = ident(p)?;
     let params = params(p)?;
-    let ret = p.eat(t![->]).then(|| type_(p)).transpose()?;
-    let body = block(p)?;
+    let ret = p.eat(t![->]).then(|| type_expr(p)).transpose()?;
+    let body = if extern_ {
+        if p.at(t!["{"]) {
+            // parse and discard
+            let err = p.ecx.extern_fn_body(p.span());
+            p.ecx.push(err);
+            let _ = block(p)?;
+        }
+
+        decl::Body::Extern
+    } else {
+        decl::Body::Block(block(p)?)
+    };
     Ok(decl::Fn::new(p.finish(s), name, params, ret, body))
+}
+
+fn type_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src, ()>> {
+    let s = p.span();
+
+    assert!(p.eat(t![type]));
+    let name = ident(p)?;
+    let fields = if extern_ {
+        if p.at(t!["("]) {
+            // parse and discard
+            let err = p.ecx.extern_type_fields(p.span());
+            p.ecx.push(err);
+            let _ = fields(p)?;
+        }
+
+        decl::Fields::Extern
+    } else {
+        decl::Fields::Named(
+            p.at(t!["("])
+                .then(|| fields(p))
+                .transpose()?
+                .unwrap_or_default(),
+        )
+    };
+    Ok(decl::Type::new(p.finish(s), name, fields))
+}
+
+fn fields<'src>(p: &mut Parser<'src>) -> Result<Vec<decl::Field<'src>>> {
+    paren_list(p, field)
+}
+
+fn field<'src>(p: &mut Parser<'src>) -> Result<decl::Field<'src>> {
+    let name = ident(p)?;
+    p.must(t![:])?;
+    let ty = type_expr(p)?;
+    Ok(decl::Field { name, ty })
 }
 
 fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
     match p.kind() {
         t![fn] => {
             let span = p.curr.span;
-            let _ = fn_(p)?;
+            let _ = fn_(p, false)?;
             Err(p.ecx.no_nested_functions(span))
         }
         t![loop] => stmt_loop(p),
@@ -292,7 +346,7 @@ fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
 fn param<'src>(p: &mut Parser<'src>) -> Result<Param<'src>> {
     let name = ident(p)?;
     p.must(t![:])?;
-    let ty = type_(p)?;
+    let ty = type_expr(p)?;
     Ok(Param { name, ty })
 }
 
@@ -329,7 +383,11 @@ fn stmt_let<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
     let s = p.span();
 
     let name = ident(p)?;
-    let ty = if p.eat(t![:]) { Some(type_(p)?) } else { None };
+    let ty = if p.eat(t![:]) {
+        Some(type_expr(p)?)
+    } else {
+        None
+    };
     p.must(t![=])?;
     let init = expr(p)?;
 
@@ -395,7 +453,7 @@ fn branch<'src>(p: &mut Parser<'src>) -> Result<Branch<'src, ()>> {
     })
 }
 
-fn type_<'src>(p: &mut Parser<'src>) -> Result<Type<'src>> {
+fn type_expr<'src>(p: &mut Parser<'src>) -> Result<TypeExpr<'src>> {
     match p.kind() {
         t![_] => {
             p.advance();
@@ -403,36 +461,9 @@ fn type_<'src>(p: &mut Parser<'src>) -> Result<Type<'src>> {
         }
         t![ident] => {
             let ident = ident(p)?;
-            let ty = ty::Named::new(ident.span, ident);
-            Ok(type_opt(p, ty))
-        }
-        t!["["] => {
-            let start = p.curr.span.start;
-            p.advance();
-            let element = type_(p)?;
-            let end = p.prev.span.end;
-            p.must(t!["]"])?;
-            let ty = ty::Array::new(start..end, element);
-            Ok(type_opt(p, ty))
-        }
-        t!["("] => {
-            let start = p.curr.span.start;
-
-            let end = p.prev.span.end;
-            let params = paren_list(p, type_)?;
-            p.must(t![->])?;
-            let ret = type_(p)?;
-            Ok(ty::Fn::new(start..end, params, ret))
+            Ok(ty::Named::new(ident.span, ident))
         }
         _ => Err(p.ecx.unexpected_token(p.curr.span)),
-    }
-}
-
-fn type_opt<'src>(p: &mut Parser<'src>, inner: Type<'src>) -> Type<'src> {
-    if p.eat(t![?]) {
-        ty::Opt::new(inner.span.to(p.prev.span), inner)
-    } else {
-        inner
     }
 }
 
@@ -765,24 +796,16 @@ fn expr_array<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     let s = p.span();
 
     assert!(p.eat(t!["["]));
-    let array = if !p.end() && !p.at(t!["]"]) {
-        let first_item = expr(p)?;
-        if p.eat(t![;]) {
-            let len = expr(p)?;
-            expr::Array::Len(first_item, len)
-        } else {
-            let mut elems = vec![first_item];
-            while !p.end() && p.eat(t![,]) && !p.at(t!["]"]) {
-                elems.push(expr(p)?);
-            }
-            expr::Array::Csv(elems)
+    let mut items = vec![];
+    if !p.end() && !p.at(t!["]"]) {
+        items.push(expr(p)?);
+        while !p.end() && p.eat(t![,]) && !p.at(t!["]"]) {
+            items.push(expr(p)?);
         }
-    } else {
-        expr::Array::Csv(vec![])
-    };
+    }
     p.must(t!["]"])?;
 
-    Ok(array.into_expr(p.finish(s)))
+    Ok(expr::Array::new(p.finish(s), items))
 }
 
 fn expr_group<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {

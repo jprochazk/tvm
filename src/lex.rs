@@ -200,6 +200,8 @@ impl Token {
 #[derive(Clone, Copy, Debug, Logos, PartialEq, Eq)]
 #[logos(skip r"[ \t\n\r]+")]
 pub enum TokenKind {
+    #[token("extern")]
+    Extern,
     #[token("fn")]
     Fn,
     #[token("class")]
@@ -375,78 +377,79 @@ pub enum TokenKind {
 }
 
 macro_rules! t {
-  [fn] => ($crate::lex::TokenKind::Fn);
-  [class] => ($crate::lex::TokenKind::Class);
-  [static] => ($crate::lex::TokenKind::Static);
-  [pub] => ($crate::lex::TokenKind::Pub);
-  [mod] => ($crate::lex::TokenKind::Mod);
-  [use] => ($crate::lex::TokenKind::Use);
-  [inter] => ($crate::lex::TokenKind::Inter);
-  [impl] => ($crate::lex::TokenKind::Impl);
-  [type] => ($crate::lex::TokenKind::Type);
-  [where] => ($crate::lex::TokenKind::Where);
-  [loop] => ($crate::lex::TokenKind::Loop);
-  [while] => ($crate::lex::TokenKind::While);
-  [for] => ($crate::lex::TokenKind::For);
-  [break] => ($crate::lex::TokenKind::Break);
-  [continue] => ($crate::lex::TokenKind::Continue);
-  [return] => ($crate::lex::TokenKind::Return);
-  [yield] => ($crate::lex::TokenKind::Yield);
-  [if] => ($crate::lex::TokenKind::If);
-  [else] => ($crate::lex::TokenKind::Else);
-  [let] => ($crate::lex::TokenKind::Let);
-  [var] => ($crate::lex::TokenKind::Var);
-  [union] => ($crate::lex::TokenKind::Union);
-  [match] => ($crate::lex::TokenKind::Match);
-  [case] => ($crate::lex::TokenKind::Case);
-  [do] => ($crate::lex::TokenKind::Do);
-  [,] => ($crate::lex::TokenKind::Comma);
-  [:] => ($crate::lex::TokenKind::Colon);
-  [->] => ($crate::lex::TokenKind::Arrow);
-  [@] => ($crate::lex::TokenKind::At);
-  [_] => ($crate::lex::TokenKind::Under);
-  [;] => ($crate::lex::TokenKind::Semi);
-  [.] => ($crate::lex::TokenKind::Dot);
-  [=] => ($crate::lex::TokenKind::Equal);
-  [==] => ($crate::lex::TokenKind::EqualEqual);
-  [!=] => ($crate::lex::TokenKind::BangEqual);
-  [+=] => ($crate::lex::TokenKind::PlusEqual);
-  [-=] => ($crate::lex::TokenKind::MinusEqual);
-  [/=] => ($crate::lex::TokenKind::SlashEqual);
-  [*=] => ($crate::lex::TokenKind::StarEqual);
-  [%=] => ($crate::lex::TokenKind::PercentEqual);
-  [**=] => ($crate::lex::TokenKind::StarStarEqual);
-  [??=] => ($crate::lex::TokenKind::CoalesceEqual);
-  [+] => ($crate::lex::TokenKind::Plus);
-  [-] => ($crate::lex::TokenKind::Minus);
-  [/] => ($crate::lex::TokenKind::Slash);
-  [*] => ($crate::lex::TokenKind::Star);
-  [%] => ($crate::lex::TokenKind::Percent);
-  [**] => ($crate::lex::TokenKind::StarStar);
-  [!] => ($crate::lex::TokenKind::Bang);
-  [>] => ($crate::lex::TokenKind::More);
-  [>=] => ($crate::lex::TokenKind::MoreEqual);
-  [<] => ($crate::lex::TokenKind::Less);
-  [<=] => ($crate::lex::TokenKind::LessEqual);
-  [?] => ($crate::lex::TokenKind::Qmark);
-  [??] => ($crate::lex::TokenKind::Coalesce);
-  [|] => ($crate::lex::TokenKind::Pipe);
-  [||] => ($crate::lex::TokenKind::PipePipe);
-  [&] => ($crate::lex::TokenKind::And);
-  [&&] => ($crate::lex::TokenKind::AndAnd);
-  ["("] => ($crate::lex::TokenKind::ParenL);
-  [")"] => ($crate::lex::TokenKind::ParenR);
-  ["{"] => ($crate::lex::TokenKind::CurlyL);
-  ["}"] => ($crate::lex::TokenKind::CurlyR);
-  ["["] => ($crate::lex::TokenKind::SquareL);
-  ["]"] => ($crate::lex::TokenKind::SquareR);
-  [nil] => ($crate::lex::TokenKind::Nil);
-  [int] => ($crate::lex::TokenKind::Int);
-  [float] => ($crate::lex::TokenKind::Float);
-  [bool] => ($crate::lex::TokenKind::Bool);
-  [str] => ($crate::lex::TokenKind::String);
-  [ident] => ($crate::lex::TokenKind::Ident);
-  [EOF] => ($crate::lex::TokenKind::Eof);
+    [extern] => ($crate::lex::TokenKind::Extern);
+    [fn] => ($crate::lex::TokenKind::Fn);
+    [class] => ($crate::lex::TokenKind::Class);
+    [static] => ($crate::lex::TokenKind::Static);
+    [pub] => ($crate::lex::TokenKind::Pub);
+    [mod] => ($crate::lex::TokenKind::Mod);
+    [use] => ($crate::lex::TokenKind::Use);
+    [inter] => ($crate::lex::TokenKind::Inter);
+    [impl] => ($crate::lex::TokenKind::Impl);
+    [type] => ($crate::lex::TokenKind::Type);
+    [where] => ($crate::lex::TokenKind::Where);
+    [loop] => ($crate::lex::TokenKind::Loop);
+    [while] => ($crate::lex::TokenKind::While);
+    [for] => ($crate::lex::TokenKind::For);
+    [break] => ($crate::lex::TokenKind::Break);
+    [continue] => ($crate::lex::TokenKind::Continue);
+    [return] => ($crate::lex::TokenKind::Return);
+    [yield] => ($crate::lex::TokenKind::Yield);
+    [if] => ($crate::lex::TokenKind::If);
+    [else] => ($crate::lex::TokenKind::Else);
+    [let] => ($crate::lex::TokenKind::Let);
+    [var] => ($crate::lex::TokenKind::Var);
+    [union] => ($crate::lex::TokenKind::Union);
+    [match] => ($crate::lex::TokenKind::Match);
+    [case] => ($crate::lex::TokenKind::Case);
+    [do] => ($crate::lex::TokenKind::Do);
+    [,] => ($crate::lex::TokenKind::Comma);
+    [:] => ($crate::lex::TokenKind::Colon);
+    [->] => ($crate::lex::TokenKind::Arrow);
+    [@] => ($crate::lex::TokenKind::At);
+    [_] => ($crate::lex::TokenKind::Under);
+    [;] => ($crate::lex::TokenKind::Semi);
+    [.] => ($crate::lex::TokenKind::Dot);
+    [=] => ($crate::lex::TokenKind::Equal);
+    [==] => ($crate::lex::TokenKind::EqualEqual);
+    [!=] => ($crate::lex::TokenKind::BangEqual);
+    [+=] => ($crate::lex::TokenKind::PlusEqual);
+    [-=] => ($crate::lex::TokenKind::MinusEqual);
+    [/=] => ($crate::lex::TokenKind::SlashEqual);
+    [*=] => ($crate::lex::TokenKind::StarEqual);
+    [%=] => ($crate::lex::TokenKind::PercentEqual);
+    [**=] => ($crate::lex::TokenKind::StarStarEqual);
+    [??=] => ($crate::lex::TokenKind::CoalesceEqual);
+    [+] => ($crate::lex::TokenKind::Plus);
+    [-] => ($crate::lex::TokenKind::Minus);
+    [/] => ($crate::lex::TokenKind::Slash);
+    [*] => ($crate::lex::TokenKind::Star);
+    [%] => ($crate::lex::TokenKind::Percent);
+    [**] => ($crate::lex::TokenKind::StarStar);
+    [!] => ($crate::lex::TokenKind::Bang);
+    [>] => ($crate::lex::TokenKind::More);
+    [>=] => ($crate::lex::TokenKind::MoreEqual);
+    [<] => ($crate::lex::TokenKind::Less);
+    [<=] => ($crate::lex::TokenKind::LessEqual);
+    [?] => ($crate::lex::TokenKind::Qmark);
+    [??] => ($crate::lex::TokenKind::Coalesce);
+    [|] => ($crate::lex::TokenKind::Pipe);
+    [||] => ($crate::lex::TokenKind::PipePipe);
+    [&] => ($crate::lex::TokenKind::And);
+    [&&] => ($crate::lex::TokenKind::AndAnd);
+    ["("] => ($crate::lex::TokenKind::ParenL);
+    [")"] => ($crate::lex::TokenKind::ParenR);
+    ["{"] => ($crate::lex::TokenKind::CurlyL);
+    ["}"] => ($crate::lex::TokenKind::CurlyR);
+    ["["] => ($crate::lex::TokenKind::SquareL);
+    ["]"] => ($crate::lex::TokenKind::SquareR);
+    [nil] => ($crate::lex::TokenKind::Nil);
+    [int] => ($crate::lex::TokenKind::Int);
+    [float] => ($crate::lex::TokenKind::Float);
+    [bool] => ($crate::lex::TokenKind::Bool);
+    [str] => ($crate::lex::TokenKind::String);
+    [ident] => ($crate::lex::TokenKind::Ident);
+    [EOF] => ($crate::lex::TokenKind::Eof);
 }
 
 struct Strings {
@@ -462,6 +465,7 @@ impl TokenKind {
             };
         }
         match self {
+            T::Extern => s!("extern"),
             T::Fn => s!("fn"),
             T::Class => s!("class"),
             T::Record => s!("record"),

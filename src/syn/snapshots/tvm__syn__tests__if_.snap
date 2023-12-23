@@ -1,6 +1,6 @@
 ---
 source: src/syn/tests.rs
-expression: "parse!(r#\"\n    if a {0}\n    else if b {1}\n    else if c {2}\n    else {0}\n\n    let v: int? = if true {0};\n    let v: int = if true {0} else {1};\n  \"#)"
+expression: "parse!(r#\"\n        if a {0}\n        else if b {1}\n        else if c {2}\n        else {0}\n\n        let v: int = if true {0} else {1};\n    \"#)"
 ---
 Ast {
     decls: [],
@@ -58,38 +58,6 @@ Ast {
                         ),
                     },
                 ),
-            },
-            Let {
-                name: Ident("v"),
-                ty: Some(
-                    Opt(
-                        Opt {
-                            inner: Named(
-                                Named {
-                                    name: Ident("int"),
-                                },
-                            ),
-                        },
-                    ),
-                ),
-                init: If {
-                    branches: [
-                        Branch(
-                            Bool(
-                                true,
-                            ),
-                            Block {
-                                body: [],
-                                tail: Some(
-                                    Int(
-                                        0,
-                                    ),
-                                ),
-                            },
-                        ),
-                    ],
-                    tail: None,
-                },
             },
             Let {
                 name: Ident("v"),

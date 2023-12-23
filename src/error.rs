@@ -26,16 +26,8 @@ impl<'src> ErrorCtx<'src> {
         self.errors.push(e);
     }
 
-    pub fn num_errors(&self) -> usize {
-        self.errors.len()
-    }
-
-    pub fn finish(&mut self) -> Vec<Error> {
-        std::mem::take(&mut self.errors)
-    }
-
-    pub fn finish_result(&mut self) -> Result<(), Vec<Error>> {
-        let errors = self.finish();
+    pub fn finish(&mut self) -> Result<(), Vec<Error>> {
+        let errors = std::mem::take(&mut self.errors);
         if errors.is_empty() {
             Ok(())
         } else {
@@ -336,6 +328,11 @@ impl<'src> ErrorCtx<'src> {
     }
 
     #[inline]
+    pub fn invalid_label(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("invalid argument label", span, self.src()).into()
+    }
+
+    #[inline]
     pub fn param_mismatch(&mut self, span: impl Into<Span>, expected: usize, got: usize) -> Error {
         Error::spanned(
             format!("expected {expected} params, got {got}"),
@@ -358,21 +355,6 @@ impl<'src> ErrorCtx<'src> {
             self.src(),
         )
         .into()
-    }
-
-    #[inline]
-    pub fn infinite_type(&mut self, span: impl Into<Span>, ty: impl Display) -> Error {
-        Error::spanned(
-            format!("the type `{ty}` has an infinite size"),
-            span,
-            self.src(),
-        )
-        .into()
-    }
-
-    #[inline]
-    pub fn invalid_label(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("invalid argument label", span, self.src()).into()
     }
 
     #[inline]
@@ -400,8 +382,90 @@ impl<'src> ErrorCtx<'src> {
         .into()
     }
 
+    #[inline]
+    pub fn extern_fn_body(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("an extern function may not have a body", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn extern_type_fields(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("an extern type may not have fields", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn duplicate_decl(&mut self, span: impl Into<Span>, name: &str) -> Error {
+        Error::spanned(format!("duplicate declaration {name:?}"), span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn undefined_decl(&mut self, span: impl Into<Span>, name: &str) -> Error {
+        Error::spanned(
+            format!("{name:?} is not declared in this scope"),
+            span,
+            self.src(),
+        )
+        .into()
+    }
+
+    #[inline]
+    pub fn duplicate_fn(&mut self, span: impl Into<Span>, name: &str) -> Error {
+        Error::spanned(format!("duplicate function {name:?}"), span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn bad_return_type<'a>(&'a mut self) -> BadReturnType<'a, 'src> {
+        BadReturnType {
+            ecx: self,
+            name_span: Span::empty(),
+            ret_ty: None,
+            ret_val: None,
+        }
+    }
+
     /* #[inline]
     pub fn invalid_string_escape(&mut self, span: impl Into<Span>) -> Error {
       Error::spanned("invalid string escape", span, self.src()).into()
     } */
+}
+
+pub struct BadReturnType<'a, 'src> {
+    ecx: &'a mut ErrorCtx<'src>,
+    name_span: Span,
+    ret_ty: Option<(/* type */ String, Span)>,
+    ret_val: Option<(/* type */ String, Span)>,
+}
+
+impl<'a, 'src> BadReturnType<'a, 'src> {
+    pub fn fn_name(mut self, span: impl Into<Span>) -> Self {
+        self.name_span = span.into();
+        self
+    }
+
+    pub fn ret_ty(mut self, spanned_ty: Option<(impl Display, impl Into<Span>)>) -> Self {
+        self.ret_ty = spanned_ty.map(|(ty, span)| (ty.to_string(), span.into()));
+        self
+    }
+
+    pub fn ret_val(mut self, spanned_ty: Option<(impl Display, impl Into<Span>)>) -> Self {
+        self.ret_val = spanned_ty.map(|(ty, span)| (ty.to_string(), span.into()));
+        self
+    }
+
+    pub fn finish(self) -> Error {
+        let mut err = Error::spanned("mismatched return type", self.name_span, self.ecx.src());
+
+        if let Some((ty, span)) = self.ret_ty {
+            err = err.append_spanned(format!("the return type is \"{ty}\""), span);
+        } else {
+            err = err.append("the return type is \"()\"");
+        }
+
+        if let Some((ty, span)) = self.ret_val {
+            err = err.append_spanned(format!("but the returned value's type is \"{ty}\""), span);
+        } else {
+            err = err.append("but the returned value's type is \"()\"");
+        }
+
+        err.into()
+    }
 }

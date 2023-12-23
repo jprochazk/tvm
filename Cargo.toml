@@ -28,6 +28,3 @@ criterion = "0.4"
 
 # [profile.release]
 # lto = "fat"
-
-[workspace]
-members = ["web"]

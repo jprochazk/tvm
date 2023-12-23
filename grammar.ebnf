@@ -1,0 +1,45 @@
+
+(*
+The grammar is composed of terms. Terms are defined using the following syntax:
+
+  NAME = DEF ;
+
+Where `DEF` is a union of term/token sequences.
+Tokens are quoted, e.g. "->", where as terms are not.
+
+  ? = optional
+  * = appears 0 to ∞ times
+  ,* = appears 0 to ∞ times, comma separated with optional trailing comma
+  (a b c) = sub-term
+
+*)
+
+program = top_level_stmt* ;
+
+top_level_stmt = stmt | decl ;
+
+stmt =
+  | var
+  | expr ";"
+  ;
+
+decl =
+  | fn
+  | type
+  ;
+
+var = ("let" | "mut") ident (":" type_expr)? "=" expr ;
+
+fn = "extern"? "fn" ident params? ("->" type_expr)? stmt_block ;
+
+type = "extern"? "type" ident "(" (ident ":" type_expr),* ")" ;
+
+expr = ... ;
+
+type_expr = named ;
+named = ident ;
+
+params = "(" (ident ":" type),* ")" ;
+stmt_block = "{" stmt* "}" ;
+
+ident = ... ;

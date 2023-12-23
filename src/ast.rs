@@ -27,13 +27,34 @@ pub mod decl {
 
     pub enum DeclKind<'src, T = ()> {
         Fn(Box<Fn<'src, T>>),
+        Type(Box<Type<'src>>),
     }
 
     pub struct Fn<'src, T = ()> {
         pub name: Ident<'src>,
         pub params: Vec<Param<'src>>,
-        pub ret: Option<Type<'src>>,
-        pub body: Block<'src, T>,
+        pub ret: Option<TypeExpr<'src>>,
+        pub body: Body<'src, T>,
+    }
+
+    pub enum Body<'src, T = ()> {
+        Extern,
+        Block(Block<'src, T>),
+    }
+
+    pub struct Type<'src> {
+        pub name: Ident<'src>,
+        pub fields: Fields<'src>,
+    }
+
+    pub enum Fields<'src> {
+        Extern,
+        Named(Vec<Field<'src>>),
+    }
+
+    pub struct Field<'src> {
+        pub name: Ident<'src>,
+        pub ty: TypeExpr<'src>,
     }
 }
 
@@ -54,7 +75,7 @@ pub mod stmt {
 
     pub struct Let<'src, T = ()> {
         pub name: Ident<'src>,
-        pub ty: Option<Type<'src>>,
+        pub ty: Option<TypeExpr<'src>>,
         pub init: Expr<'src, T>,
     }
 
@@ -63,23 +84,20 @@ pub mod stmt {
     }
 }
 
-pub use ty::Type;
+pub use ty::TypeExpr;
 pub mod ty {
     pub use super::*;
 
     #[derive(Clone)]
-    pub struct Type<'src> {
+    pub struct TypeExpr<'src> {
         pub span: Span,
-        pub kind: TypeKind<'src>,
+        pub kind: TypeExprKind<'src>,
     }
 
     #[derive(Clone)]
-    pub enum TypeKind<'src> {
+    pub enum TypeExprKind<'src> {
         Empty,
         Named(Named<'src>),
-        Array(Box<Array<'src>>),
-        Fn(Box<Fn<'src>>),
-        Opt(Box<Opt<'src>>),
     }
 
     #[derive(Clone)]
@@ -88,22 +106,6 @@ pub mod ty {
     #[derive(Clone)]
     pub struct Named<'src> {
         pub name: Ident<'src>,
-    }
-
-    #[derive(Clone)]
-    pub struct Array<'src> {
-        pub item: Type<'src>,
-    }
-
-    #[derive(Clone)]
-    pub struct Fn<'src> {
-        pub params: Vec<Type<'src>>,
-        pub ret: Type<'src>,
-    }
-
-    #[derive(Clone)]
-    pub struct Opt<'src> {
-        pub inner: Type<'src>,
     }
 }
 
@@ -168,9 +170,8 @@ pub mod expr {
         Str(Str<'src>),
     }
 
-    pub enum Array<'src, T = ()> {
-        Csv(Vec<Expr<'src, T>>),
-        Len(Expr<'src, T>, Expr<'src, T>),
+    pub struct Array<'src, T = ()> {
+        pub items: Vec<Expr<'src, T>>,
     }
 
     pub struct UseVar<'src> {
@@ -221,7 +222,7 @@ pub mod expr {
 
 pub struct Param<'src> {
     pub name: Ident<'src>,
-    pub ty: Type<'src>,
+    pub ty: TypeExpr<'src>,
 }
 
 pub struct Branch<'src, T = ()> {

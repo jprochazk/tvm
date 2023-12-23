@@ -1,6 +1,6 @@
 ---
 source: src/syn/tests.rs
-expression: "parse!(r#\"\n    let v: int = 1;\n    let v: num = 1.0;\n    let v: bool = true;\n    let v: str = \"yo\";\n    let v: [int] = [1, 2, 3];\n    let v: [int] = [0; 10];\n    let v: [_] = [0; 10];\n  \"#)"
+expression: "parse!(r#\"\n        let v: int = 1;\n        let v: num = 1.0;\n        let v: bool = true;\n        let v: str = \"yo\";\n    \"#)"
 ---
 Ast {
     decls: [],
@@ -56,73 +56,6 @@ Ast {
                 ),
                 init: Str(
                     "\"yo\"",
-                ),
-            },
-            Let {
-                name: Ident("v"),
-                ty: Some(
-                    Array(
-                        Array {
-                            item: Named(
-                                Named {
-                                    name: Ident("int"),
-                                },
-                            ),
-                        },
-                    ),
-                ),
-                init: Csv(
-                    [
-                        Int(
-                            1,
-                        ),
-                        Int(
-                            2,
-                        ),
-                        Int(
-                            3,
-                        ),
-                    ],
-                ),
-            },
-            Let {
-                name: Ident("v"),
-                ty: Some(
-                    Array(
-                        Array {
-                            item: Named(
-                                Named {
-                                    name: Ident("int"),
-                                },
-                            ),
-                        },
-                    ),
-                ),
-                init: Len(
-                    Int(
-                        0,
-                    ),
-                    Int(
-                        10,
-                    ),
-                ),
-            },
-            Let {
-                name: Ident("v"),
-                ty: Some(
-                    Array(
-                        Array {
-                            item: Empty,
-                        },
-                    ),
-                ),
-                init: Len(
-                    Int(
-                        0,
-                    ),
-                    Int(
-                        10,
-                    ),
                 ),
             },
         ],

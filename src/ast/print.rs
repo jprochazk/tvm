@@ -44,7 +44,7 @@ impl<T> Debug for super::decl::Body<'_, T> {
     }
 }
 
-impl Debug for super::decl::Type<'_> {
+impl Debug for super::decl::TypeDef<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Type")
             .field("name", &self.name)
@@ -103,9 +103,9 @@ impl<T> Debug for super::stmt::Loop<'_, T> {
     }
 }
 
-impl Display for super::ty::TypeExpr<'_> {
+impl Display for super::ty::Ty<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        use super::ty::TypeExprKind as Ty;
+        use super::ty::TyKind as Ty;
         match &self.kind {
             Ty::Empty => f.write_str("_"),
             Ty::Named(ty) => f.write_str(ty.name.lexeme),
@@ -113,13 +113,13 @@ impl Display for super::ty::TypeExpr<'_> {
     }
 }
 
-impl Debug for super::ty::TypeExpr<'_> {
+impl Debug for super::ty::Ty<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         Debug::fmt(&self.kind, f)
     }
 }
 
-impl Debug for super::ty::TypeExprKind<'_> {
+impl Debug for super::ty::TyKind<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Empty => write!(f, "Empty"),

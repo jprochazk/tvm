@@ -7,7 +7,7 @@ impl<'src, T> decl::Fn<'src, T> {
         span: impl Into<Span>,
         name: Ident<'src>,
         params: Vec<Param<'src>>,
-        ret: Option<TypeExpr<'src>>,
+        ret: Option<Ty<'src>>,
         body: decl::Body<'src, T>,
     ) -> Decl<'src, T> {
         Decl {
@@ -22,7 +22,7 @@ impl<'src, T> decl::Fn<'src, T> {
     }
 }
 
-impl<'src> decl::Type<'src> {
+impl<'src> decl::TypeDef<'src> {
     pub fn new<T>(
         span: impl Into<Span>,
         name: Ident<'src>,
@@ -39,7 +39,7 @@ impl<'src, T> stmt::Let<'src, T> {
     pub fn new(
         span: impl Into<Span>,
         name: Ident<'src>,
-        ty: Option<TypeExpr<'src>>,
+        ty: Option<Ty<'src>>,
         init: Expr<'src, T>,
     ) -> Stmt<'src, T> {
         Stmt {
@@ -59,19 +59,19 @@ impl<'src, T> stmt::Loop<'src, T> {
 }
 
 impl<'src> ty::Empty {
-    pub fn new(span: impl Into<Span>) -> TypeExpr<'src> {
-        TypeExpr {
+    pub fn new(span: impl Into<Span>) -> Ty<'src> {
+        Ty {
             span: span.into(),
-            kind: ty::TypeExprKind::Empty,
+            kind: ty::TyKind::Empty,
         }
     }
 }
 
 impl<'src> ty::Named<'src> {
-    pub fn new(span: impl Into<Span>, name: Ident<'src>) -> TypeExpr<'src> {
-        TypeExpr {
+    pub fn new(span: impl Into<Span>, name: Ident<'src>) -> Ty<'src> {
+        Ty {
             span: span.into(),
-            kind: ty::TypeExprKind::Named(ty::Named { name }),
+            kind: ty::TyKind::Named(ty::Named { name }),
         }
     }
 }

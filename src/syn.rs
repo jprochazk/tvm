@@ -128,7 +128,7 @@ impl<'src> Parser<'src> {
             } else {
                 Span::empty()
             };
-            Err(self.ecx.expected_token(kind, span))
+            Err(self.ecx.expected_token(kind.name(), span))
         } else {
             Ok(())
         }
@@ -144,7 +144,7 @@ impl<'src> Parser<'src> {
             } else {
                 Span::empty()
             };
-            return Err(self.ecx.expected_token(kind, span));
+            return Err(self.ecx.expected_token(kind.name(), span));
         }
         Ok(())
     }
@@ -156,8 +156,7 @@ impl<'src> Parser<'src> {
             match self.lex.bump() {
                 Ok(token) => break token,
                 Err(e) => {
-                    let e = self.ecx.unexpected_token(e.span);
-                    self.ecx.push(e)
+                    self.ecx.emit_unexpected_token(e.span);
                 }
             }
         };
@@ -277,8 +276,7 @@ fn fn_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src, ()>> {
     let body = if extern_ {
         if p.at(t!["{"]) {
             // parse and discard
-            let err = p.ecx.extern_fn_body(p.span());
-            p.ecx.push(err);
+            p.ecx.emit_extern_fn_body(p.span());
             let _ = block(p)?;
         }
 
@@ -297,8 +295,7 @@ fn type_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src, ()>> {
     let fields = if extern_ {
         if p.at(t!["("]) {
             // parse and discard
-            let err = p.ecx.extern_type_fields(p.span());
-            p.ecx.push(err);
+            p.ecx.emit_extern_type_fields(p.span());
             let _ = fields(p)?;
         }
 
@@ -311,7 +308,7 @@ fn type_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src, ()>> {
                 .unwrap_or_default(),
         )
     };
-    Ok(decl::Type::new(p.finish(s), name, fields))
+    Ok(decl::TypeDef::new(p.finish(s), name, fields))
 }
 
 fn fields<'src>(p: &mut Parser<'src>) -> Result<Vec<decl::Field<'src>>> {
@@ -453,7 +450,7 @@ fn branch<'src>(p: &mut Parser<'src>) -> Result<Branch<'src, ()>> {
     })
 }
 
-fn type_expr<'src>(p: &mut Parser<'src>) -> Result<TypeExpr<'src>> {
+fn type_expr<'src>(p: &mut Parser<'src>) -> Result<Ty<'src>> {
     match p.kind() {
         t![_] => {
             p.advance();
@@ -470,7 +467,10 @@ fn type_expr<'src>(p: &mut Parser<'src>) -> Result<TypeExpr<'src>> {
 fn ident<'src>(p: &mut Parser<'src>) -> Result<Ident<'src>> {
     p.must(t![ident])?;
 
-    Ok(Ident::from_token(&p.lex, &p.prev))
+    Ok(Ident {
+        span: p.prev.span,
+        lexeme: p.lexeme(&p.prev),
+    })
 }
 
 fn block<'src>(p: &mut Parser<'src>) -> Result<Block<'src, ()>> {
@@ -696,6 +696,7 @@ fn expr_call<'src>(p: &mut Parser<'src>, target: Expr<'src, ()>) -> Result<Expr<
 
 fn arg<'src>(p: &mut Parser<'src>) -> Result<Arg<'src, ()>> {
     let value = expr(p)?;
+
     if !p.eat(t![:]) {
         return Ok(Arg { key: None, value });
     }
@@ -708,7 +709,7 @@ fn arg<'src>(p: &mut Parser<'src>) -> Result<Arg<'src, ()>> {
             key: Some(var.name),
             value: expr(p)?,
         }),
-        value => Err(p.ecx.invalid_label(value.span)),
+        value => Err(p.ecx.invalid_arg_key(value.span)),
     }
 }
 
@@ -816,9 +817,8 @@ fn expr_group<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
 }
 
 fn expr_use<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
-    assert!(p.eat(t![ident]));
-    let name = Ident::from_token(&p.lex, &p.prev);
-    Ok(expr::UseVar::new(p.prev.span, name))
+    let ident = ident(p)?;
+    Ok(expr::UseVar::new(ident.span, ident))
 }
 
 #[cfg(test)]

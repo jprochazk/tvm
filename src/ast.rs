@@ -27,13 +27,13 @@ pub mod decl {
 
     pub enum DeclKind<'src, T = ()> {
         Fn(Box<Fn<'src, T>>),
-        Type(Box<Type<'src>>),
+        Type(Box<TypeDef<'src>>),
     }
 
     pub struct Fn<'src, T = ()> {
         pub name: Ident<'src>,
         pub params: Vec<Param<'src>>,
-        pub ret: Option<TypeExpr<'src>>,
+        pub ret: Option<Ty<'src>>,
         pub body: Body<'src, T>,
     }
 
@@ -42,7 +42,7 @@ pub mod decl {
         Block(Block<'src, T>),
     }
 
-    pub struct Type<'src> {
+    pub struct TypeDef<'src> {
         pub name: Ident<'src>,
         pub fields: Fields<'src>,
     }
@@ -54,7 +54,7 @@ pub mod decl {
 
     pub struct Field<'src> {
         pub name: Ident<'src>,
-        pub ty: TypeExpr<'src>,
+        pub ty: Ty<'src>,
     }
 }
 
@@ -75,7 +75,7 @@ pub mod stmt {
 
     pub struct Let<'src, T = ()> {
         pub name: Ident<'src>,
-        pub ty: Option<TypeExpr<'src>>,
+        pub ty: Option<Ty<'src>>,
         pub init: Expr<'src, T>,
     }
 
@@ -84,18 +84,18 @@ pub mod stmt {
     }
 }
 
-pub use ty::TypeExpr;
+pub use ty::Ty;
 pub mod ty {
     pub use super::*;
 
     #[derive(Clone)]
-    pub struct TypeExpr<'src> {
+    pub struct Ty<'src> {
         pub span: Span,
-        pub kind: TypeExprKind<'src>,
+        pub kind: TyKind<'src>,
     }
 
     #[derive(Clone)]
-    pub enum TypeExprKind<'src> {
+    pub enum TyKind<'src> {
         Empty,
         Named(Named<'src>),
     }
@@ -222,7 +222,7 @@ pub mod expr {
 
 pub struct Param<'src> {
     pub name: Ident<'src>,
-    pub ty: TypeExpr<'src>,
+    pub ty: Ty<'src>,
 }
 
 pub struct Branch<'src, T = ()> {
@@ -291,21 +291,13 @@ pub struct Block<'src, T = ()> {
     pub tail: Option<Expr<'src, T>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Ident<'src> {
     pub span: Span,
     pub lexeme: &'src str,
 }
 
 impl<'src> Ident<'src> {
-    pub fn from_token(l: &Lexer<'src>, t: &Token) -> Self {
-        assert!(matches!(t.kind, TokenKind::Ident));
-        Self {
-            span: t.span,
-            lexeme: l.lexeme(t),
-        }
-    }
-
     pub fn raw(lexeme: &'src str) -> Self {
         Self {
             span: Span::empty(),
@@ -318,6 +310,22 @@ impl<'src> Ident<'src> {
     }
 }
 
+impl PartialEq for Ident<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.lexeme == other.lexeme
+    }
+}
+impl Eq for Ident<'_> {}
+impl PartialOrd for Ident<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(Ord::cmp(self, other))
+    }
+}
+impl Ord for Ident<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.lexeme.cmp(other.lexeme)
+    }
+}
 impl Hash for Ident<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.lexeme.hash(state);

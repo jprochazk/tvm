@@ -17,6 +17,8 @@ pub mod syn;
 
 pub mod ty;
 
+pub mod code;
+
 mod util;
 
 pub type Str<'a> = beef::lean::Cow<'a, str>;

@@ -1,6 +1,6 @@
 ---
 source: src/syn/tests.rs
-expression: "parse!(r#\"\n    fn f() {}\n    fn f(a: A) {}\n    fn f(a: A, b: B, c: C) {}\n    fn f() -> R {}\n    fn f(a: A) -> R {}\n    fn f(a: A, b: B, c: C) -> R {}\n  \"#)"
+expression: "parse!(r#\"\n        fn f() {}\n        fn f(a: A) {}\n        fn f(a: A, b: B, c: C) {}\n        fn f() -> R {}\n        fn f(a: A) -> R {}\n        fn f(a: A, b: B, c: C) -> R {}\n\n        extern fn f();\n    \"#)"
 ---
 Ast {
     decls: [
@@ -8,10 +8,12 @@ Ast {
             name: Ident("f"),
             params: [],
             ret: None,
-            body: Block {
-                body: [],
-                tail: None,
-            },
+            body: Block(
+                Block {
+                    body: [],
+                    tail: None,
+                },
+            ),
         },
         Fn {
             name: Ident("f"),
@@ -26,10 +28,12 @@ Ast {
                 ),
             ],
             ret: None,
-            body: Block {
-                body: [],
-                tail: None,
-            },
+            body: Block(
+                Block {
+                    body: [],
+                    tail: None,
+                },
+            ),
         },
         Fn {
             name: Ident("f"),
@@ -60,10 +64,12 @@ Ast {
                 ),
             ],
             ret: None,
-            body: Block {
-                body: [],
-                tail: None,
-            },
+            body: Block(
+                Block {
+                    body: [],
+                    tail: None,
+                },
+            ),
         },
         Fn {
             name: Ident("f"),
@@ -75,10 +81,12 @@ Ast {
                     },
                 ),
             ),
-            body: Block {
-                body: [],
-                tail: None,
-            },
+            body: Block(
+                Block {
+                    body: [],
+                    tail: None,
+                },
+            ),
         },
         Fn {
             name: Ident("f"),
@@ -99,10 +107,12 @@ Ast {
                     },
                 ),
             ),
-            body: Block {
-                body: [],
-                tail: None,
-            },
+            body: Block(
+                Block {
+                    body: [],
+                    tail: None,
+                },
+            ),
         },
         Fn {
             name: Ident("f"),
@@ -139,10 +149,18 @@ Ast {
                     },
                 ),
             ),
-            body: Block {
-                body: [],
-                tail: None,
-            },
+            body: Block(
+                Block {
+                    body: [],
+                    tail: None,
+                },
+            ),
+        },
+        Fn {
+            name: Ident("f"),
+            params: [],
+            ret: None,
+            body: Extern,
         },
     ],
     top_level: Block {

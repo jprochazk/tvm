@@ -1,0 +1,8 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        type T;\n        let v = T();\n        v();\n    \"#)"
+---
+error: this expression of type "T" is not callable
+3 |  v();
+  |  ^
+

@@ -1,8 +1,8 @@
 ---
 source: src/syn/tests.rs
-expression: "parse!(r#\"\n    fn\n  \"#)"
+expression: "parse!(r#\"\n        fn\n    \"#)"
 ---
-error: expected `identifier`
+error: expected "identifier"
 1 |  fn
   |   ^
 

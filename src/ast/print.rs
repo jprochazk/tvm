@@ -1,7 +1,5 @@
 use std::fmt::{Debug, Display, Formatter, Result};
 
-use crate::util::JoinIter;
-
 impl<T> Debug for super::Ast<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Ast")
@@ -21,6 +19,7 @@ impl<T> Debug for super::decl::DeclKind<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Fn(arg0) => Debug::fmt(arg0, f),
+            Self::Type(arg0) => Debug::fmt(arg0, f),
         }
     }
 }
@@ -32,6 +31,42 @@ impl<T> Debug for super::decl::Fn<'_, T> {
             .field("params", &self.params)
             .field("ret", &self.ret)
             .field("body", &self.body)
+            .finish()
+    }
+}
+
+impl<T> Debug for super::decl::Body<'_, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            Self::Extern => write!(f, "Extern"),
+            Self::Block(arg0) => f.debug_tuple("Block").field(arg0).finish(),
+        }
+    }
+}
+
+impl Debug for super::decl::TypeDef<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.debug_struct("Type")
+            .field("name", &self.name)
+            .field("fields", &self.fields)
+            .finish()
+    }
+}
+
+impl Debug for super::decl::Fields<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            Self::Extern => write!(f, "Extern"),
+            Self::Named(arg0) => f.debug_tuple("Named").field(arg0).finish(),
+        }
+    }
+}
+
+impl Debug for super::decl::Field<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.debug_struct("Field")
+            .field("name", &self.name)
+            .field("ty", &self.ty)
             .finish()
     }
 }
@@ -68,33 +103,27 @@ impl<T> Debug for super::stmt::Loop<'_, T> {
     }
 }
 
-impl Display for super::ty::Type<'_> {
+impl Display for super::ty::Ty<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        use super::ty::TypeKind as Ty;
+        use super::ty::TyKind as Ty;
         match &self.kind {
             Ty::Empty => f.write_str("_"),
             Ty::Named(ty) => f.write_str(ty.name.lexeme),
-            Ty::Array(ty) => write!(f, "[{}]", ty.item),
-            Ty::Fn(ty) => write!(f, "({}) -> {}", ty.params.iter().join(", "), ty.ret),
-            Ty::Opt(ty) => write!(f, "{}?", ty.inner),
         }
     }
 }
 
-impl Debug for super::ty::Type<'_> {
+impl Debug for super::ty::Ty<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         Debug::fmt(&self.kind, f)
     }
 }
 
-impl Debug for super::ty::TypeKind<'_> {
+impl Debug for super::ty::TyKind<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Empty => write!(f, "Empty"),
             Self::Named(arg0) => f.debug_tuple("Named").field(arg0).finish(),
-            Self::Array(arg0) => f.debug_tuple("Array").field(arg0).finish(),
-            Self::Fn(arg0) => f.debug_tuple("Fn").field(arg0).finish(),
-            Self::Opt(arg0) => f.debug_tuple("Opt").field(arg0).finish(),
         }
     }
 }
@@ -102,27 +131,6 @@ impl Debug for super::ty::TypeKind<'_> {
 impl Debug for super::ty::Named<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Named").field("name", &self.name).finish()
-    }
-}
-
-impl Debug for super::ty::Array<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("Array").field("item", &self.item).finish()
-    }
-}
-
-impl Debug for super::ty::Fn<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("Fn")
-            .field("params", &self.params)
-            .field("ret", &self.ret)
-            .finish()
-    }
-}
-
-impl Debug for super::ty::Opt<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("Opt").field("inner", &self.inner).finish()
     }
 }
 
@@ -205,10 +213,7 @@ impl Debug for super::expr::Primitive<'_> {
 
 impl<T> Debug for super::expr::Array<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            Self::Csv(arg0) => f.debug_tuple("Csv").field(arg0).finish(),
-            Self::Len(arg0, arg1) => f.debug_tuple("Len").field(arg0).field(arg1).finish(),
-        }
+        f.debug_struct("Array").field("items", &self.items).finish()
     }
 }
 

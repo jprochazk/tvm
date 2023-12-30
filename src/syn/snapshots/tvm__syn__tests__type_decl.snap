@@ -1,0 +1,89 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n        type T;\n        type T();\n        type T(a: A);\n        type T(a: A,);\n        type T(a: A, b: B, c: C);\n\n        extern type T;\n    \"#)"
+---
+Ast {
+    decls: [
+        Type {
+            name: Ident("T"),
+            fields: Named(
+                [],
+            ),
+        },
+        Type {
+            name: Ident("T"),
+            fields: Named(
+                [],
+            ),
+        },
+        Type {
+            name: Ident("T"),
+            fields: Named(
+                [
+                    Field {
+                        name: Ident("a"),
+                        ty: Named(
+                            Named {
+                                name: Ident("A"),
+                            },
+                        ),
+                    },
+                ],
+            ),
+        },
+        Type {
+            name: Ident("T"),
+            fields: Named(
+                [
+                    Field {
+                        name: Ident("a"),
+                        ty: Named(
+                            Named {
+                                name: Ident("A"),
+                            },
+                        ),
+                    },
+                ],
+            ),
+        },
+        Type {
+            name: Ident("T"),
+            fields: Named(
+                [
+                    Field {
+                        name: Ident("a"),
+                        ty: Named(
+                            Named {
+                                name: Ident("A"),
+                            },
+                        ),
+                    },
+                    Field {
+                        name: Ident("b"),
+                        ty: Named(
+                            Named {
+                                name: Ident("B"),
+                            },
+                        ),
+                    },
+                    Field {
+                        name: Ident("c"),
+                        ty: Named(
+                            Named {
+                                name: Ident("C"),
+                            },
+                        ),
+                    },
+                ],
+            ),
+        },
+        Type {
+            name: Ident("T"),
+            fields: Extern,
+        },
+    ],
+    top_level: Block {
+        body: [],
+        tail: None,
+    },
+}

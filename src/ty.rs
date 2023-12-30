@@ -1,842 +1,937 @@
-use std::fmt::Display;
+#[macro_use]
+mod macros;
 
-use ena::unify::{EqUnifyValue, InPlaceUnificationTable, UnifyKey};
+use std::collections::BTreeMap;
 
-use crate::ast::*;
+use crate::ast::{self, Ast, Block, Expr, Ident, Stmt};
 use crate::error::{Error, ErrorCtx, Result};
 use crate::lex::Span;
-use crate::{Cow, HashMap};
 
-// TODO: type info:
-//       - use functions instead of a table, that way static data can be a
-//         static function
-// TODO: field exprs:
-//       - `v.x` will probe the type of `v`, if it is not known yet, then emit
-//         an error. this works well in practice for Rust.
+// TODO: don't ignore keyword args
+// they should:
+// - allow reordering args
+// - parse only after positionals, to allow mixing
+// - be unavailable in calls to functions without keyword params
+//
+// e.g. `(T) -> R` does not allow call with keyword params,
+// because there's no information about how to re-order the args.
+// this information is only available against calls where the
+// callee is a function declaration
 
-// NOTE: whenever matching on types, make sure that the types are normalized.
-
+#[derive(Debug)]
 pub struct Hir<'src> {
-    pub src: &'src str,
-    pub top_level: Block<'src, Type>,
+    pub defs: Defs<'src>,
+    pub fns: Fns<'src>,
+    pub top_level: Block<'src, Ty>,
 }
 
-pub fn type_check<'src>(ast: &Ast<'src>) -> Result<Hir<'src>, Vec<Error>> {
-    let mut tcx = TypeCtx::new(ast.src);
+pub fn check<'src>(v: &Ast<'src>) -> Result<Hir<'src>, Vec<Error>> {
+    // 3. type check top-level code + all function bodies
 
-    /* for decl in &ast.decls {
-      tcx.push_decl(decl).fold_error(tcx.ecx());
-    } */
+    let mut tcx = TyCtx::new(v.src);
+    register_primitive_types(&mut tcx);
 
-    let top_level = tcx.infer(
-        |icx| icx.infer_block(&ast.top_level),
-        |icx, mut block| {
-            icx.substitute_block(&mut block);
-            block
-        },
-    );
+    tcx.enter_scope();
+    tcx.declare_types(&v.decls);
+    let pending_fns = tcx.collect_fn_sigs(&v.decls);
+    tcx.infer_fns(&v.decls, pending_fns);
+    let top_level = tcx.infer_block(&v.top_level);
+    tcx.leave_scope();
 
-    /* for decl in ast.decls.iter().flat_map(|v| v.as_fn()) {
-      tcx.infer(|icx| icx.infer_block(&decl.body));
-    } */
-
-    tcx.ecx.finish_result()?;
-
-    Ok(Hir {
-        src: ast.src,
-        top_level,
-    })
+    tcx.finish(top_level)
 }
 
-type Scope<'src> = HashMap<&'src str, Type>;
-
-struct TypeCtx<'src> {
-    scopes: Vec<Scope<'src>>,
+struct TyCtx<'src> {
     ecx: ErrorCtx<'src>,
+    defs: Defs<'src>,
+    fns: Fns<'src>,
+
+    scopes: Vec<Scope<'src>>,
 }
 
-impl<'src> TypeCtx<'src> {
+type Scope<'src> = BTreeMap<&'src str, Symbol>;
+
+#[derive(Clone, Copy)]
+struct Symbol {
+    ty: Ty,
+    span: Span,
+    kind: SymbolKind,
+}
+
+#[derive(Clone, Copy)]
+enum SymbolKind {
+    Var,
+    Fn,
+    Cons,
+}
+
+impl std::fmt::Display for SymbolKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            SymbolKind::Var => "variable",
+            SymbolKind::Fn => "function",
+            SymbolKind::Cons => "type constructor",
+        };
+        f.write_str(s)
+    }
+}
+
+impl<'src> TyCtx<'src> {
     fn new(src: &'src str) -> Self {
         Self {
-            scopes: Vec::new(),
             ecx: ErrorCtx::new(src),
+            defs: Defs::new(),
+            fns: Fns::new(),
+
+            scopes: Vec::new(),
         }
     }
 
-    fn by_name(&self, name: &str) -> Result<Type> {
-        match name {
-            "int" => Ok(Type::Int),
-            "num" => Ok(Type::Num),
-            "bool" => Ok(Type::Bool),
-            "str" => Ok(Type::Str),
-            _ => todo!("resolve type by name from decls"),
+    fn finish(mut self, top_level: Block<'src, Ty>) -> Result<Hir<'src>, Vec<Error>> {
+        self.ecx.finish()?;
+
+        Ok(Hir {
+            defs: self.defs,
+            fns: self.fns,
+            top_level,
+        })
+    }
+
+    fn declare_types(&mut self, decls: &[ast::Decl<'src>]) {
+        // 1. give each unique decl an ID
+        let mut pending = Vec::new();
+        for decl in decls {
+            let ast::decl::DeclKind::Type(decl) = &decl.kind else {
+                continue;
+            };
+
+            if self.defs.contains(decl.name.as_str()) {
+                self.ecx.emit_shadowed_def(decl.name.span);
+                continue;
+            }
+
+            let id = self.defs.reserve(decl.name.as_str());
+            pending.push((id, &**decl));
+        }
+
+        // 2. define all types and their constructors
+        for (id, decl) in pending {
+            let name = decl.name.clone();
+            let fields = match &decl.fields {
+                ast::decl::Fields::Extern => Fields::Extern,
+                ast::decl::Fields::Named(fields) => {
+                    let mut out = BTreeMap::new();
+                    for (offset, field) in fields.iter().enumerate() {
+                        let (name, ty) = self.resolve_field(field);
+                        out.insert(field.name.as_str(), Field { name, ty, offset });
+                    }
+                    Fields::Named(out)
+                }
+            };
+
+            self.declare_cons(id, name.clone(), &fields);
+            self.defs.define(id, TypeDef { id, name, fields });
         }
     }
 
-    fn ecx(&mut self) -> &mut ErrorCtx<'src> {
-        &mut self.ecx
+    fn declare_cons(&mut self, def_id: DefId, name: Ident<'src>, fields: &Fields<'src>) {
+        if let Err(e) = self.check_symbol(&name, SymbolKind::Cons) {
+            self.ecx.push(e);
+            return;
+        }
+
+        let (kind, sig) = match fields {
+            Fields::Extern => (
+                FnKind::ExternCons,
+                FnSig {
+                    params: vec![],
+                    ret: Ty::Def(def_id),
+                    ret_span: None,
+                },
+            ),
+            Fields::Named(fields) => (
+                FnKind::Cons,
+                FnSig {
+                    params: fields
+                        .values()
+                        .map(|field| Param {
+                            name: field.name.clone(),
+                            ty: field.ty,
+                        })
+                        .collect(),
+                    ret: Ty::Def(def_id),
+                    ret_span: None,
+                },
+            ),
+        };
+
+        let id = self.fns.insert(Fn {
+            name: name.clone(),
+            kind,
+            sig,
+            body: FnBody::Extern, // compiler-defined
+        });
+        self.declare_symbol(name, Ty::Fn(id), SymbolKind::Fn);
+    }
+
+    fn collect_fn_sigs(
+        &mut self,
+        fns: &[ast::Decl<'src>],
+    ) -> BTreeMap<&'src str, (Ident<'src>, FnSig<'src>)> {
+        let mut out = BTreeMap::<&str, (Ident, FnSig)>::new();
+        for fn_ in fns {
+            let ast::decl::DeclKind::Fn(fn_) = &fn_.kind else {
+                continue;
+            };
+            let name = fn_.name.clone();
+
+            if let Err(e) = self.check_symbol(&name, SymbolKind::Fn) {
+                self.ecx.push(e);
+                continue;
+            }
+
+            if let Some((existing, _)) = out.get(name.as_str()) {
+                // let existing: &Ident<'_> = existing;
+                self.ecx.emit_invalid_shadowing(
+                    name.span,
+                    name.as_str(),
+                    SymbolKind::Fn,
+                    SymbolKind::Fn,
+                    existing.span,
+                );
+                continue;
+            }
+
+            let sig = FnSig {
+                params: fn_
+                    .params
+                    .iter()
+                    .map(|param| Param {
+                        name: param.name.clone(),
+                        ty: self.resolve_ast_ty(&param.ty),
+                    })
+                    .collect(),
+                ret: fn_
+                    .ret
+                    .as_ref()
+                    .map(|ty| self.resolve_ast_ty(ty))
+                    .unwrap_or(Ty::Unit),
+                ret_span: fn_.ret.as_ref().map(|ty| ty.span),
+            };
+
+            out.insert(name.as_str(), (name, sig));
+        }
+        out
     }
 
     fn enter_scope(&mut self) {
-        self.scopes.push(HashMap::default());
+        self.scopes.push(BTreeMap::new());
     }
 
     fn leave_scope(&mut self) {
-        self.scopes.pop().unwrap();
+        assert!(self.scopes.pop().is_some());
     }
 
-    fn infer<'a, T>(
-        &'a mut self,
-        i: impl FnOnce(&mut InferCtx<'a, 'src>) -> T,
-        sub: impl FnOnce(&mut InferCtx<'a, 'src>, T) -> T,
-    ) -> T {
-        let icx = &mut InferCtx {
-            tcx: self,
-            table: InPlaceUnificationTable::default(),
-        };
-        let ret = i(icx);
-        sub(icx, ret)
+    fn current_scope(&mut self) -> &mut Scope<'src> {
+        self.scopes
+            .last_mut()
+            .expect("accessing current scope without any scope available")
     }
 
-    fn push_decl(&mut self, decl: &Decl<'src>) -> Result<()> {
-        todo!()
-    }
-}
-
-struct InferCtx<'a, 'src> {
-    tcx: &'a mut TypeCtx<'src>,
-    table: InPlaceUnificationTable<Var>,
-    // constraints: Vec<(Span, Type, Type)>,
-}
-
-impl<'a, 'src> InferCtx<'a, 'src> {
-    #[inline]
-    fn ecx(&mut self) -> &mut ErrorCtx<'src> {
-        self.tcx.ecx()
-    }
-
-    #[inline]
-    fn scope(&mut self) -> &mut Scope<'src> {
-        self.tcx.scopes.last_mut().unwrap()
-    }
-
-    fn report(&mut self, e: Error) -> Type {
-        self.ecx().push(e);
-        Type::Error
-    }
-
-    /// Unify `lhs` and `rhs`
-    fn unify(&mut self, span: Span, mut lhs: Type, mut rhs: Type) -> Result<()> {
-        self.normalize(&mut lhs);
-        self.normalize(&mut rhs);
-        match (lhs, rhs) {
-            (Type::Error, _) | (_, Type::Error) => {
-                // emitted as a result of some other error
-                Ok(())
-            }
-            (Type::Int, Type::Int) => Ok(()),
-            (Type::Num, Type::Num) => Ok(()),
-            (Type::Num, Type::Int) | (Type::Int, Type::Num) => Ok(()),
-            (Type::Bool, Type::Bool) => Ok(()),
-            (Type::Str, Type::Str) => Ok(()),
-            (Type::Func(lhs), Type::Func(rhs)) if lhs.params.len() == rhs.params.len() => {
-                let lparams = lhs.params.into_iter();
-                let rparams = rhs.params.into_iter();
-                for (lhs, rhs) in lparams.zip(rparams) {
-                    self.unify(span, lhs, rhs)?;
-                }
-                self.unify(span, *lhs.ret, *rhs.ret)
-            }
-            (Type::App(lhs), Type::App(rhs)) if lhs.name == rhs.name => {
-                let largs = lhs.args.into_iter();
-                let rargs = rhs.args.into_iter();
-                for (lhs, rhs) in largs.zip(rargs) {
-                    self.unify(span, lhs, rhs)?;
-                }
-                Ok(())
-            }
-            (Type::Var(lhs), Type::Var(rhs)) => self
-                .table
-                .unify_var_var(lhs, rhs)
-                .map_err(|(lhs, rhs)| self.ecx().type_mismatch(span, lhs, rhs)),
-            (Type::Var(var), ty) | (ty, Type::Var(var)) => {
-                if var.occurs_in(&ty) {
-                    return Err(self.ecx().infinite_type(span, ty));
-                }
-
-                self.table
-                    .unify_var_value(var, Some(ty))
-                    .map_err(|(lhs, rhs)| self.ecx().type_mismatch(span, lhs, rhs))
-            }
-            (lhs, rhs) => Err(self.ecx().type_mismatch(span, lhs, rhs)),
+    fn check_symbol(&mut self, name: &Ident<'src>, kind: SymbolKind) -> Result<()> {
+        use SymbolKind as S;
+        let scope = self.current_scope();
+        match scope.get(name.as_str()).copied() {
+            Some(existing) if matches!((existing.kind, kind), (S::Var, S::Var)) => Ok(()),
+            Some(existing) => Err(self.ecx.invalid_shadowing(
+                name.span,
+                name.as_str(),
+                kind,
+                existing.kind,
+                existing.span,
+            )),
+            None => Ok(()),
         }
     }
 
-    fn normalize(&mut self, ty: &mut Type) {
-        match ty {
-            Type::Error | Type::Void | Type::Int | Type::Num | Type::Bool | Type::Str => {}
-            Type::Func(ty) => {
-                for param in &mut ty.params {
-                    self.normalize(param)
-                }
-                self.normalize(&mut ty.ret)
-            }
-            Type::App(ty) => {
-                for arg in &mut ty.args {
-                    self.normalize(arg)
-                }
-            }
-            Type::Array(Array { item: inner }) => self.normalize(inner),
-            Type::Opt(Opt { inner }) => self.normalize(inner),
-            Type::Var(var) => {
-                if let Some(mut inner) = self.table.probe_value(*var) {
-                    self.normalize(&mut inner);
-                    *ty = inner;
-                }
-            }
-        }
+    fn declare_symbol(&mut self, name: Ident<'src>, ty: Ty, kind: SymbolKind) {
+        debug_assert!(self.check_symbol(&name, kind).is_ok());
+        self.current_scope().insert(
+            name.as_str(),
+            Symbol {
+                ty,
+                span: name.span,
+                kind,
+            },
+        );
     }
 
-    fn substitute_block(&mut self, block: &mut Block<'src, Type>) {
-        for stmt in &mut block.body {
-            self.substitute_stmt(stmt);
+    fn resolve_var_ty(&self, name: &str) -> Option<Ty> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(symbol) = scope.get(name).copied() {
+                return Some(symbol.ty);
+            }
         }
 
-        if let Some(tail) = &mut block.tail {
-            self.substitute_expr(tail)
-        }
+        None
     }
 
-    fn substitute_stmt(&mut self, stmt: &mut Stmt<'src, Type>) {
-        use stmt::StmtKind as S;
-        match &mut stmt.kind {
-            S::Let(node) => self.substitute_expr(&mut node.init),
-            S::Loop(node) => self.substitute_block(&mut node.body),
-            S::Expr(node) => self.substitute_expr(node),
-        }
+    fn resolve_field(&mut self, field: &ast::decl::Field<'src>) -> (Ident<'src>, Ty) {
+        let name = field.name.clone();
+        let ty = self.resolve_ast_ty(&field.ty);
+        (name, ty)
     }
 
-    fn substitute_expr(&mut self, expr: &mut Expr<'src, Type>) {
-        use expr::ExprKind as E;
-        self.normalize(&mut expr.ty);
-        match &mut expr.kind {
-            E::Return(node) => {
-                if let Some(value) = &mut node.value {
-                    self.substitute_expr(value)
-                }
+    fn resolve_ast_ty(&mut self, ty: &ast::Ty<'src>) -> Ty {
+        match &ty.kind {
+            ast::ty::TyKind::Empty => {
+                self.ecx.emit_unknown_type(ty.span);
+                Ty::Error
             }
-            E::Break => {}
-            E::Continue => {}
-            E::Block(node) => self.substitute_block(node),
-            E::If(node) => {
-                for branch in &mut node.branches {
-                    self.substitute_expr(&mut branch.cond);
-                    self.substitute_block(&mut branch.body)
-                }
-                if let Some(tail) = &mut node.tail {
-                    self.substitute_block(tail)
-                }
-            }
-            E::Binary(node) => {
-                self.substitute_expr(&mut node.lhs);
-                self.substitute_expr(&mut node.rhs)
-            }
-            E::Unary(node) => self.substitute_expr(&mut node.rhs),
-            E::Primitive(_) => {}
-            E::Array(node) => match &mut **node {
-                expr::Array::Csv(items) => {
-                    for item in items {
-                        self.substitute_expr(item)
-                    }
-                }
-                expr::Array::Len(item, len) => {
-                    self.substitute_expr(item);
-                    self.substitute_expr(len)
+            ast::ty::TyKind::Named(ast::ty::Named { name }) => match self.defs.id(name.as_str()) {
+                Some(id) => Ty::Def(id),
+                None => {
+                    self.ecx.emit_undefined_decl(name.span, name.as_str());
+                    Ty::Error
                 }
             },
-            E::UseVar(_) => {}
-            E::UseField(node) => self.substitute_expr(&mut node.parent),
-            E::UseIndex(node) => {
-                self.substitute_expr(&mut node.parent);
-                self.substitute_expr(&mut node.key)
-            }
-            E::AssignVar(node) => self.substitute_expr(&mut node.value),
-            E::AssignField(node) => {
-                self.substitute_expr(&mut node.parent);
-                self.substitute_expr(&mut node.value)
-            }
-            E::AssignIndex(node) => {
-                self.substitute_expr(&mut node.parent);
-                self.substitute_expr(&mut node.key);
-                self.substitute_expr(&mut node.value)
-            }
-            E::Call(node) => {
-                self.substitute_expr(&mut node.callee);
-                for arg in &mut node.args {
-                    self.substitute_expr(&mut arg.value)
+        }
+    }
+
+    fn infer_fns(
+        &mut self,
+        fns: &[ast::Decl<'src>],
+        mut pending_fns: BTreeMap<&'src str, (Ident<'src>, FnSig<'src>)>,
+    ) {
+        for fn_ in fns {
+            let ast::decl::DeclKind::Fn(fn_) = &fn_.kind else {
+                continue;
+            };
+
+            let (name, sig) = pending_fns.remove(fn_.name.as_str()).unwrap();
+
+            let body = self.infer_fn_body(&fn_.name, &sig, &fn_.body);
+            let id = self.fns.insert(Fn {
+                name,
+                kind: FnKind::Function,
+                sig,
+                body,
+            });
+            self.declare_symbol(fn_.name.clone(), Ty::Fn(id), SymbolKind::Fn);
+        }
+        assert!(pending_fns.is_empty());
+    }
+
+    fn infer_fn_body(
+        &mut self,
+        name: &Ident<'src>,
+        sig: &FnSig<'src>,
+        body: &ast::decl::Body<'src>,
+    ) -> FnBody<'src> {
+        match body {
+            ast::decl::Body::Extern => FnBody::Extern,
+            ast::decl::Body::Block(block) => {
+                // TODO: add fn context so `return` can be type checked
+                self.enter_scope();
+                for param in &sig.params {
+                    // definitely not shadowing anything else, we just entered a fresh scope
+                    let _ = self.current_scope().insert(
+                        param.name.as_str(),
+                        Symbol {
+                            ty: param.ty,
+                            span: param.name.span,
+                            kind: SymbolKind::Var,
+                        },
+                    );
                 }
-            }
-            E::MethodCall(node) => {
-                self.substitute_expr(&mut node.receiver);
-                for arg in &mut node.args {
-                    self.substitute_expr(&mut arg.value)
+                let block = self.infer_block(block);
+                self.leave_scope();
+
+                let ret_ty = block.tail.as_ref().map(|tail| tail.ty).unwrap_or(Ty::Unit);
+
+                if !self.type_eq(sig.ret, ret_ty) {
+                    let p = ty_p!(self);
+                    self.ecx
+                        .bad_return_type()
+                        .fn_name(name.span)
+                        .fn_ret(p(sig.ret), sig.ret_span)
+                        .ret_val(p(ret_ty), block.tail.as_ref().map(|v| v.span))
+                        .emit();
                 }
+
+                FnBody::Block(block)
             }
         }
     }
 
-    fn infer_block(&mut self, block: &Block<'src>) -> Block<'src, Type> {
-        self.tcx.enter_scope();
-        let span = block.span;
-        let body = block
-            .body
-            .iter()
-            .map(|stmt| self.infer_stmt(stmt))
-            .collect();
+    fn infer_block(&mut self, block: &Block<'src>) -> Block<'src, Ty> {
+        self.enter_scope();
+        let mut body = Vec::with_capacity(block.body.len());
+        for stmt in &block.body {
+            body.push(self.infer_stmt(stmt));
+        }
         let tail = block.tail.as_ref().map(|tail| self.infer_expr(tail));
-        self.tcx.leave_scope();
+        self.leave_scope();
 
-        Block { span, body, tail }
+        Block {
+            span: block.span,
+            body,
+            tail,
+        }
     }
 
-    fn infer_stmt(&mut self, stmt: &Stmt<'src>) -> Stmt<'src, Type> {
-        use stmt::StmtKind as S;
+    fn infer_stmt(&mut self, stmt: &Stmt<'src>) -> Stmt<'src, Ty> {
         match &stmt.kind {
-            S::Let(node) => self.infer_let_stmt(stmt.span, node),
-            S::Loop(node) => self.infer_loop_stmt(stmt.span, node),
-            S::Expr(node) => self.infer_expr_stmt(node),
+            ast::stmt::StmtKind::Let(v) => self.infer_let(stmt.span, v),
+            ast::stmt::StmtKind::Loop(v) => self.infer_loop(stmt.span, v),
+            ast::stmt::StmtKind::Expr(v) => self.infer_expr(v).into_stmt(),
         }
     }
 
-    fn infer_let_stmt(&mut self, span: Span, node: &stmt::Let<'src>) -> Stmt<'src, Type> {
-        let ann_ty = node.ty.as_ref().map(|ty| self.ast_ty_to_ty(ty));
-        let init = match &ann_ty {
-            Some(ann_ty) => self.check(&node.init, ann_ty),
-            None => self.infer_expr(&node.init),
+    fn infer_let(&mut self, span: Span, v: &ast::stmt::Let<'src>) -> Stmt<'src, Ty> {
+        let init = match v.ty.as_ref().map(|ty| self.resolve_ast_ty(ty)) {
+            Some(ty) => self.check_expr(&v.init, ty),
+            None => self.infer_expr(&v.init),
         };
-        self.scope().insert(node.name.as_str(), init.ty.clone());
-        stmt::Let::new(span, node.name.clone(), node.ty.clone(), init)
+        match self.check_symbol(&v.name, SymbolKind::Var) {
+            Ok(_) => self.declare_symbol(v.name.clone(), init.ty, SymbolKind::Var),
+            Err(e) => self.ecx.push(e),
+        }
+        ast::stmt::Let::new(span, v.name.clone(), v.ty.clone(), init)
     }
 
-    fn infer_loop_stmt(&mut self, span: Span, node: &stmt::Loop<'src>) -> Stmt<'src, Type> {
-        stmt::Loop::new(span, self.infer_block(&node.body))
+    fn infer_loop(&mut self, span: Span, v: &ast::stmt::Loop<'src>) -> Stmt<'src, Ty> {
+        ast::stmt::Loop::new(span, self.infer_block(&v.body))
     }
 
-    fn infer_expr_stmt(&mut self, node: &Expr<'src>) -> Stmt<'src, Type> {
-        self.infer_expr(node).into_stmt()
+    fn check_expr(&mut self, expr: &Expr<'src>, ty: Ty) -> Expr<'src, Ty> {
+        let mut expr = self.infer_expr(expr);
+        if !self.type_eq(expr.ty, ty) {
+            let p = ty_p!(self);
+            self.ecx.emit_type_mismatch(expr.span, p(expr.ty), p(ty));
+            expr.ty = Ty::Error;
+        }
+        expr
     }
 
-    fn infer_expr(&mut self, expr: &Expr<'src>) -> Expr<'src, Type> {
-        use expr::ExprKind as E;
+    fn infer_expr(&mut self, expr: &Expr<'src>) -> Expr<'src, Ty> {
+        use ast::expr::ExprKind as E;
         match &expr.kind {
-            E::Return(node) => self.infer_return(expr.span, node),
-            E::Break => self.infer_break(expr.span),
-            E::Continue => self.infer_continue(expr.span),
-            E::Block(node) => self.infer_block_expr(expr.span, node),
-            E::If(node) => self.infer_if(expr.span, node),
-            E::Binary(node) => self.infer_binary(expr.span, node),
-            E::Unary(node) => self.infer_unary(expr.span, node),
-            E::Primitive(node) => self.infer_primitive(expr.span, node),
-            E::Array(node) => self.infer_array(expr.span, node),
-            E::UseVar(node) => self.infer_use_var(expr.span, node),
-            E::UseField(node) => self.infer_use_field(expr.span, node),
-            E::UseIndex(node) => self.infer_use_index(expr.span, node),
-            E::AssignVar(node) => self.infer_assign_var(expr.span, node),
-            E::AssignField(node) => self.infer_assign_field(expr.span, node),
-            E::AssignIndex(node) => self.infer_assign_index(expr.span, node),
-            E::Call(node) => self.infer_call(expr.span, node),
-            E::MethodCall(node) => self.infer_method_call(expr.span, node),
+            E::Return(_) => todo!("infer:Return"),
+            E::Break => todo!("infer:Break"),
+            E::Continue => todo!("infer:Continue"),
+            E::Block(_) => todo!("infer:Block"),
+            E::If(_) => todo!("infer:If"),
+            E::Binary(v) => self.infer_binary(expr.span, v),
+            E::Unary(_) => todo!("infer:Unary"),
+            E::Primitive(v) => self.infer_primitive(expr.span, v),
+            E::Array(_) => todo!("infer:Array"),
+            E::UseVar(v) => self.infer_var_expr(expr.span, v),
+            E::UseField(_) => todo!("infer:UseField"),
+            E::UseIndex(_) => todo!("infer:UseIndex"),
+            E::AssignVar(_) => todo!("infer:AssignVar"),
+            E::AssignField(_) => todo!("infer:AssignField"),
+            E::AssignIndex(_) => todo!("infer:AssignIndex"),
+            E::Call(v) => self.infer_call_expr(expr.span, v),
+            E::MethodCall(_) => todo!("infer:MethodCall"),
         }
     }
 
-    fn infer_return(&mut self, span: Span, node: &expr::Return<'src>) -> Expr<'src, Type> {
-        let (value, ty) = match &node.value {
-            Some(value) => {
-                let value = self.infer_expr(value);
-                let ty = value.ty.clone();
-                (Some(value), ty)
+    fn infer_binary(&mut self, span: Span, v: &ast::expr::Binary<'src>) -> Expr<'src, Ty> {
+        fn get_binop_ret_ty<'src>(
+            tcx: &mut TyCtx<'src>,
+            span: Span,
+            lhs: &Expr<'src, Ty>,
+            rhs: &Expr<'src, Ty>,
+            op: ast::BinaryOp,
+        ) -> Ty {
+            if !tcx.type_supports_binop(lhs.ty, op) {
+                let p = ty_p!(tcx);
+                tcx.ecx.emit_unsupported_op(span, p(lhs.ty), op);
+                return Ty::Error;
             }
-            None => (None, Type::Var(self.type_var())),
-        };
-        expr::Return::with(span, ty, value)
+
+            if !tcx.type_supports_binop(rhs.ty, op) {
+                let p = ty_p!(tcx);
+                tcx.ecx.emit_unsupported_op(span, p(rhs.ty), op);
+                return Ty::Error;
+            }
+
+            if !tcx.type_eq(lhs.ty, rhs.ty) {
+                let p = ty_p!(tcx);
+                tcx.ecx.emit_type_mismatch(span, p(lhs.ty), p(rhs.ty));
+                return Ty::Error;
+            }
+
+            use ast::BinaryOp as Op;
+            match op {
+                Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow => lhs.ty,
+                Op::Eq | Op::Ne | Op::Gt | Op::Lt | Op::Ge | Op::Le | Op::And | Op::Or => {
+                    Ty::Def(BOOL)
+                }
+                Op::Opt => todo!("opt binop"),
+            }
+        }
+
+        let lhs = self.infer_expr(&v.lhs);
+        let rhs = self.infer_expr(&v.rhs);
+        let ty = get_binop_ret_ty(self, span, &lhs, &rhs, v.op);
+        ast::expr::Binary::with(ty, lhs, v.op, rhs)
     }
 
-    fn infer_break(&mut self, span: Span) -> Expr<'src, Type> {
-        expr::Break::with(span, Type::Var(self.type_var()))
-    }
-
-    fn infer_continue(&mut self, span: Span) -> Expr<'src, Type> {
-        expr::Continue::with(span, Type::Var(self.type_var()))
-    }
-
-    fn block_ty(&mut self, block: Option<&Block<'src, Type>>) -> Type {
-        match block {
-            Some(Block {
-                tail: Some(tail), ..
-            }) => tail.ty.clone(),
-            _ => Type::Var(self.type_var()),
+    fn infer_primitive(&mut self, span: Span, v: &ast::expr::Primitive<'src>) -> Expr<'src, Ty> {
+        use ast::expr::Primitive as P;
+        match v {
+            P::Int(v) => P::int_with(span, Ty::Def(INT), *v),
+            P::Num(v) => P::num_with(span, Ty::Def(NUM), *v),
+            P::Bool(v) => P::bool_with(span, Ty::Def(BOOL), *v),
+            P::Str(v) => P::str_with(span, Ty::Def(STR), v.clone()),
         }
     }
 
-    fn infer_block_expr(&mut self, span: Span, node: &Block<'src>) -> Expr<'src, Type> {
-        let block = self.infer_block(node);
-        let ty = self.block_ty(Some(&block));
-        let mut e = block.into_expr(ty);
-        e.span = span; // block expr has a `do` keyword
-        e
+    fn infer_var_expr(&mut self, span: Span, v: &ast::expr::UseVar<'src>) -> Expr<'src, Ty> {
+        let ty = match self.resolve_var_ty(v.name.as_str()) {
+            Some(ty) => ty,
+            None => {
+                self.ecx.emit_undefined_var(span);
+                Ty::Error
+            }
+        };
+
+        ast::expr::UseVar::with(span, ty, v.name.clone())
     }
 
-    fn infer_if(&mut self, span: Span, node: &expr::If<'src>) -> Expr<'src, Type> {
-        let tail = node.tail.as_ref().map(|tail| self.infer_block(tail));
-        let ty = self.block_ty(tail.as_ref());
-
-        let branches = node
-            .branches
+    fn infer_call_expr(&mut self, span: Span, v: &ast::expr::Call<'src>) -> Expr<'src, Ty> {
+        let callee = self.infer_expr(&v.callee);
+        let args = v
+            .args
             .iter()
-            .map(|branch| {
-                let cond = self.check(&branch.cond, &Type::Bool);
-                let body = self.check_block(&branch.body, &ty);
-
-                Branch { cond, body }
+            .map(|arg| ast::Arg {
+                key: arg.key.clone(),
+                value: self.infer_expr(&arg.value),
             })
             .collect::<Vec<_>>();
-
-        expr::If::with(span, ty, branches, tail)
+        let ty = self.check_call(callee.span, callee.ty, &args);
+        ast::expr::Call::with(span, ty, callee, args)
     }
 
-    fn infer_binary(&mut self, span: Span, node: &expr::Binary<'src>) -> Expr<'src, Type> {
-        todo!()
-    }
-
-    fn infer_unary(&mut self, span: Span, node: &expr::Unary<'src>) -> Expr<'src, Type> {
-        todo!()
-    }
-
-    fn infer_primitive(&mut self, span: Span, node: &expr::Primitive<'src>) -> Expr<'src, Type> {
-        use expr::Primitive as P;
-        match node {
-            P::Int(value) => expr::Primitive::int_with(span, Type::Int, *value),
-            P::Num(value) => expr::Primitive::num_with(span, Type::Num, *value),
-            P::Bool(value) => expr::Primitive::bool_with(span, Type::Bool, *value),
-            P::Str(value) => expr::Primitive::str_with(span, Type::Str, value.clone()),
-        }
-    }
-
-    fn infer_array(&mut self, span: Span, node: &expr::Array<'src>) -> Expr<'src, Type> {
-        use expr::Array as A;
-        match node {
-            A::Csv(items) => {
-                let items: Vec<_> = items.iter().map(|item| self.infer_expr(item)).collect();
-                let ty = match items.len() {
-                    0 => Type::Var(self.type_var()),
-                    _ => items[0].ty.clone(),
-                };
-                expr::Array::csv_with(span, Array::new(ty), items)
+    fn check_call(&mut self, span: Span, callee: Ty, args: &[ast::Arg<'src, Ty>]) -> Ty {
+        match callee {
+            Ty::Unit | Ty::Def(_) => {
+                let p = ty_p!(self);
+                self.ecx.emit_not_callable(span, p(callee));
+                Ty::Error
             }
-            A::Len(item, len) => {
-                let item = self.infer_expr(item);
-                let len = self.check(len, &Type::Int);
-                expr::Array::len_with(span, Array::new(item.ty.clone()), item, len)
-            }
-        }
-    }
-
-    fn infer_use_var(&mut self, span: Span, node: &expr::UseVar<'src>) -> Expr<'src, Type> {
-        let ty = match self.scope().get(node.name.as_str()) {
-            Some(ty) => ty.clone(),
-            None => {
-                let e = self.ecx().undefined_var(node.name.span);
-                self.report(e)
-            }
-        };
-        expr::UseVar::with(span, ty, node.name.clone())
-    }
-
-    fn infer_use_field(&mut self, span: Span, node: &expr::UseField<'src>) -> Expr<'src, Type> {
-        todo!()
-    }
-
-    fn infer_use_index(&mut self, span: Span, node: &expr::UseIndex<'src>) -> Expr<'src, Type> {
-        todo!()
-    }
-
-    fn infer_assign_var(&mut self, span: Span, node: &expr::AssignVar<'src>) -> Expr<'src, Type> {
-        todo!()
-    }
-
-    fn infer_assign_field(
-        &mut self,
-        span: Span,
-        node: &expr::AssignField<'src>,
-    ) -> Expr<'src, Type> {
-        todo!()
-    }
-
-    fn infer_assign_index(
-        &mut self,
-        span: Span,
-        node: &expr::AssignIndex<'src>,
-    ) -> Expr<'src, Type> {
-        todo!()
-    }
-
-    fn infer_call(&mut self, span: Span, node: &expr::Call<'src>) -> Expr<'src, Type> {
-        todo!()
-    }
-
-    fn infer_method_call(&mut self, span: Span, node: &expr::MethodCall<'src>) -> Expr<'src, Type> {
-        fn inner<'src>(
-            icx: &mut InferCtx<'_, 'src>,
-            span: Span,
-            receiver: &Expr<'src, Type>,
-            node: &expr::MethodCall<'src>,
-        ) -> Result<CheckedCall<'src>> {
-            let method = icx.method_ty(receiver, node.method.as_str())?;
-            icx.check_call(span, &node.args, method)
-        }
-
-        let receiver = self.infer_expr(&node.receiver);
-        let call = inner(self, span, &receiver, node).unwrap_or_else(|e| {
-            let ret = self.report(e);
-            let args = node
-                .args
-                .iter()
-                .map(|arg| Arg {
-                    key: arg.key.clone(),
-                    value: self.infer_expr(&arg.value),
-                })
-                .collect();
-            CheckedCall { args, ret }
-        });
-
-        expr::MethodCall::with(span, call.ret, receiver, node.method.clone(), call.args)
-    }
-
-    fn method_ty(&mut self, receiver: &Expr<'src, Type>, name: &str) -> Result<Func> {
-        let mut receiver_ty = receiver.ty.clone();
-        self.normalize(&mut receiver_ty);
-        let ty = match receiver_ty {
-            Type::Error
-            | Type::Void
-            | Type::Int
-            | Type::Num
-            | Type::Bool
-            | Type::Str
-            | Type::Func(_) => None,
-            Type::App(_) => todo!(),
-            // TODO: synchronize implementation types with this match
-            Type::Array(array) => match name {
-                "push" => Some(Func {
-                    params: vec![*array.item],
-                    ret: Box::new(Type::Var(self.type_var())),
-                }),
-                _ => None,
-            },
-            Type::Opt(_) => todo!(),
-            Type::Var(_) => return Err(self.ecx().undefined_var(receiver.span)),
-        };
-
-        ty.ok_or_else(|| {
-            self.ecx()
-                .unknown_method(receiver.span, receiver.ty.clone(), name)
-        })
-    }
-
-    fn check_call(
-        &mut self,
-        span: Span,
-        args: &[Arg<'src>],
-        func: Func,
-    ) -> Result<CheckedCall<'src>> {
-        if func.params.len() != args.len() {
-            let e = self
-                .ecx()
-                .param_mismatch(span, func.params.len(), args.len());
-            return Err(e);
-        }
-
-        let args: Vec<_> = args
-            .iter()
-            .zip(func.params.iter())
-            .map(|(arg, param)| Arg {
-                key: arg.key.clone(),
-                value: self.check(&arg.value, param),
-            })
-            .collect();
-
-        Ok(CheckedCall {
-            args,
-            ret: *func.ret,
-        })
-    }
-
-    fn check(&mut self, expr: &Expr<'src>, expected: &Type) -> Expr<'src, Type> {
-        let mut expr = self.infer_expr(expr);
-        match (&expr.ty, expected) {
-            (Type::Error, _) | (_, Type::Error) => {
-                expr.ty = Type::Error;
-                expr
-            }
-            (Type::Int, Type::Int) => expr,
-            (Type::Num, Type::Num) => expr,
-            (Type::Bool, Type::Bool) => expr,
-            (Type::Str, Type::Str) => expr,
-            _ => match self.unify(expr.span, expr.ty.clone(), expected.clone()) {
-                Ok(()) => {
-                    self.normalize(&mut expr.ty);
-                    expr
+            Ty::Fn(id) => {
+                let fn_ = &self.fns[id];
+                if fn_.is_extern_cons() {
+                    self.ecx
+                        .emit_extern_cons_not_callable(span, fn_.name.as_str());
+                    return Ty::Error;
                 }
-                Err(e) => {
-                    expr.ty = self.report(e);
-                    expr
+
+                let params = &fn_.sig.params;
+                if params.len() != args.len() {
+                    self.ecx.emit_param_mismatch(span, params.len(), args.len());
+                    return Ty::Error;
                 }
-            },
-        }
-    }
 
-    fn check_block(&mut self, block: &Block<'src>, expected: &Type) -> Block<'src, Type> {
-        let span = block.span;
-        let body = block
-            .body
-            .iter()
-            .map(|stmt| self.infer_stmt(stmt))
-            .collect();
-        let tail = block.tail.as_ref().map(|tail| self.check(tail, expected));
-        self.tcx.leave_scope();
-
-        Block { span, body, tail }
-    }
-
-    fn type_var(&mut self) -> Var {
-        self.table.new_key(None)
-    }
-
-    fn ast_ty_to_ty(&mut self, ty: &ty::Type<'src>) -> Type {
-        fn inner(icx: &mut InferCtx<'_, '_>, ty: &ty::Type<'_>) -> Result<Type> {
-            use ty::TypeKind as T;
-            match &ty.kind {
-                T::Empty => Ok(Type::Var(icx.type_var())),
-                T::Named(ty) => icx.tcx.by_name(ty.name.as_str()),
-                T::Array(ty) => Ok(Type::Array(Array {
-                    item: Box::new(inner(icx, &ty.item)?),
-                })),
-                T::Fn(ty) => {
-                    let mut params = Vec::with_capacity(ty.params.len());
-                    for param in &ty.params {
-                        params.push(inner(icx, param)?);
+                for (i, arg) in args.iter().enumerate() {
+                    let arg_ty = arg.value.ty;
+                    let param_ty = params[i].ty;
+                    if !self.type_eq(arg_ty, param_ty) {
+                        let p = ty_p!(self);
+                        self.ecx
+                            .emit_type_mismatch(arg.value.span, p(arg_ty), p(param_ty));
                     }
-                    let ret = inner(icx, &ty.ret)?;
-                    Ok(Type::Func(Func {
-                        params,
-                        ret: Box::new(ret),
-                    }))
                 }
-                T::Opt(ty) => Ok(Type::Opt(Opt {
-                    inner: Box::new(inner(icx, &ty.inner)?),
-                })),
+
+                fn_.sig.ret
+            }
+            Ty::Error => Ty::Error,
+        }
+    }
+
+    fn type_eq(&self, a: Ty, b: Ty) -> bool {
+        match (a, b) {
+            (Ty::Unit, Ty::Unit) => true,
+            (Ty::Def(a), Ty::Def(b)) => a == b,
+            (Ty::Fn(a), Ty::Fn(b)) => self.fn_sig_match(&self.fns[a].sig, &self.fns[b].sig),
+            (Ty::Error, _) | (_, Ty::Error) => true,
+            _ => false,
+        }
+    }
+
+    fn type_supports_binop(&self, ty: Ty, op: ast::BinaryOp) -> bool {
+        use ast::BinaryOp as Op;
+        match op {
+            Op::Add
+            | Op::Sub
+            | Op::Mul
+            | Op::Div
+            | Op::Rem
+            | Op::Pow
+            | Op::Gt
+            | Op::Lt
+            | Op::Ge
+            | Op::Le => ty.is_int() || ty.is_num(),
+            Op::Eq | Op::Ne => ty.is_primitive(),
+            Op::And | Op::Or => ty.is_bool(),
+            Op::Opt => todo!("opt binop"),
+        }
+    }
+
+    fn fn_sig_match(&self, a: &FnSig<'src>, b: &FnSig<'src>) -> bool {
+        if a.params.len() != b.params.len() {
+            return false;
+        }
+
+        if !self.type_eq(a.ret, b.ret) {
+            return false;
+        }
+
+        for (a, b) in a.params.iter().zip(b.params.iter()) {
+            if !self.type_eq(a.ty, b.ty) {
+                return false;
             }
         }
 
-        match inner(self, ty) {
-            Ok(ty) => ty,
-            Err(e) => self.report(e),
-        }
+        true
     }
 }
-
-struct CheckedCall<'src> {
-    args: Vec<Arg<'src, Type>>,
-    ret: Type,
-}
-
-impl<'a> From<&'a Type> for Cow<'a, Type> {
-    fn from(value: &'a Type) -> Self {
-        Cow::Borrowed(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Type {
-    /// Type error
-    Error,
-    /// No value
-    Void,
-    /// Int
-    Int,
-    /// Generic number type
-    Num,
-    /// Boolean
-    Bool,
-    /// String
-    Str,
-    /// Function
-    Func(Func),
-    /// Named type with args
-    App(App),
-    /// Homogenous array
-    Array(Array),
-    /// Optional
-    Opt(Opt),
-    /// Type variable
-    Var(Var),
-}
-
-impl Type {
-    pub fn as_array_inner(&self) -> &Type {
-        match self {
-            Type::Array(v) => &v.item,
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn into_array_inner(self) -> Type {
-        match self {
-            Type::Array(v) => *v.item,
-            _ => unreachable!(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Func {
-    pub params: Vec<Type>,
-    pub ret: Box<Type>,
-}
-
-impl Func {
-    pub fn new(params: Vec<Type>, ret: Type) -> Type {
-        Type::Func(Func {
-            params,
-            ret: Box::new(ret),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct App {
-    pub name: String,
-    pub args: Vec<Type>,
-}
-
-impl App {
-    pub fn new(name: String, args: Vec<Type>) -> Type {
-        Type::App(App { name, args })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Array {
-    pub item: Box<Type>,
-}
-
-impl Array {
-    pub fn new(item: Type) -> Type {
-        Type::Array(Array {
-            item: Box::new(item),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Opt {
-    pub inner: Box<Type>,
-}
-
-impl Opt {
-    pub fn new(inner: Type) -> Type {
-        Type::Opt(Opt {
-            inner: Box::new(inner),
-        })
-    }
-}
-
-impl EqUnifyValue for Type {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Var(u32);
+pub struct FnId(u32);
 
-impl Var {
-    fn occurs_in(&self, ty: &Type) -> bool {
-        // note: this is called during unification, so types are normalized
-        match ty {
-            Type::Error | Type::Void | Type::Int | Type::Num | Type::Bool | Type::Str => false,
-            Type::Func(Func { params, ret }) => {
-                params.iter().any(|ty| self.occurs_in(ty)) || self.occurs_in(ret)
-            }
-            Type::App(App { args, .. }) => args.iter().any(|ty| self.occurs_in(ty)),
-            Type::Array(Array { item: inner }) => self.occurs_in(inner),
-            Type::Opt(Opt { inner }) => self.occurs_in(inner),
-            Type::Var(var) => self == var,
+#[derive(Debug)]
+pub struct Fns<'src> {
+    next_id: FnId,
+    id_map: BTreeMap<&'src str, FnId>,
+    array: Vec<Fn<'src>>,
+}
+
+impl<'a, 'src> std::ops::Index<&'a str> for Fns<'src> {
+    type Output = Fn<'src>;
+
+    fn index(&self, index: &'a str) -> &Self::Output {
+        self.get_by_name(index).unwrap()
+    }
+}
+
+impl<'src> std::ops::Index<FnId> for Fns<'src> {
+    type Output = Fn<'src>;
+
+    fn index(&self, index: FnId) -> &Self::Output {
+        self.get_by_id(index).unwrap()
+    }
+}
+
+impl<'src> Fns<'src> {
+    fn new() -> Self {
+        Self {
+            next_id: FnId(0),
+            id_map: BTreeMap::new(),
+            array: Vec::new(),
         }
     }
+
+    #[inline]
+    fn insert(&mut self, fn_: Fn<'src>) -> FnId {
+        let id = self.next_id;
+        self.next_id.0 += 1;
+
+        self.id_map.insert(fn_.name.as_str(), id);
+        self.array.push(fn_);
+
+        id
+    }
+
+    #[inline]
+    pub fn contains(&self, name: &'src str) -> bool {
+        self.id_map.contains_key(name)
+    }
+
+    #[inline]
+    pub fn get_by_id(&self, id: FnId) -> Option<&Fn<'src>> {
+        self.array.get(id.0 as usize)
+    }
+
+    #[inline]
+    pub fn id(&self, name: &str) -> Option<FnId> {
+        self.id_map.get(name).copied()
+    }
+
+    #[inline]
+    pub fn get_by_name(&self, name: &str) -> Option<&Fn<'src>> {
+        self.id(name).and_then(|id| self.get_by_id(id))
+    }
 }
 
-impl UnifyKey for Var {
-    type Value = Option<Type>;
+#[derive(Debug)]
+pub struct Fn<'src> {
+    pub name: Ident<'src>,
+    pub kind: FnKind,
+    pub sig: FnSig<'src>,
+    pub body: FnBody<'src>,
+}
 
-    fn index(&self) -> u32 {
-        self.0
-    }
-
-    fn from_index(u: u32) -> Self {
-        Self(u)
-    }
-
-    fn tag() -> &'static str {
-        "Var"
+impl<'src> Fn<'src> {
+    fn is_extern_cons(&self) -> bool {
+        use FnKind as F;
+        matches!(self.kind, F::ExternCons)
     }
 }
 
-impl Display for Var {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{}", self.0)
+#[derive(Debug, Clone, Copy)]
+pub enum FnKind {
+    /// Regular function declaration
+    Function,
+
+    /// Type constructor
+    Cons,
+
+    /// Extern type constructor
+    ///
+    /// Functions of this kind may not be called,
+    /// and exist only to provide better error messages.
+    ExternCons,
+}
+
+#[derive(Debug)]
+pub struct FnSig<'src> {
+    pub params: Vec<Param<'src>>,
+    pub ret: Ty,
+    pub ret_span: Option<Span>,
+}
+
+#[derive(Debug)]
+pub enum FnBody<'src> {
+    Extern,
+    Block(Block<'src, Ty>),
+}
+
+#[derive(Debug)]
+pub struct Param<'src> {
+    pub name: Ident<'src>,
+    pub ty: Ty,
+}
+
+#[derive(Debug)]
+pub struct Defs<'src> {
+    next_id: DefId,
+    id_map: DefIdMap<'src>,
+    array: Vec<TypeDef<'src>>,
+}
+
+impl<'a, 'src> std::ops::Index<&'a str> for Defs<'src> {
+    type Output = TypeDef<'src>;
+
+    fn index(&self, index: &'a str) -> &Self::Output {
+        self.get_by_name(index).unwrap()
     }
 }
 
-impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Type::Error => write!(f, "{{error}}"),
-            Type::Void => f.write_str("_"),
-            Type::Int => f.write_str("int"),
-            Type::Num => f.write_str("num"),
-            Type::Bool => f.write_str("bool"),
-            Type::Str => f.write_str("str"),
-            Type::Func(Func { params, ret }) => {
-                f.write_str("(")?;
-                let mut params = params.iter().peekable();
-                while let Some(param) = params.next() {
-                    Display::fmt(param, f)?;
-                    if params.peek().is_some() {
-                        f.write_str(", ")?;
-                    }
-                }
-                f.write_str(") -> ")?;
-                Display::fmt(ret, f)
+impl<'src> std::ops::Index<DefId> for Defs<'src> {
+    type Output = TypeDef<'src>;
+
+    fn index(&self, index: DefId) -> &Self::Output {
+        self.get_by_id(index).unwrap()
+    }
+}
+
+impl<'src> Defs<'src> {
+    fn new() -> Self {
+        Self {
+            next_id: DefId(0),
+            id_map: DefIdMap::new(),
+            array: Vec::new(),
+        }
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.array.is_empty()
+    }
+
+    #[inline]
+    pub fn contains(&self, name: &'src str) -> bool {
+        self.id_map.contains_key(name)
+    }
+
+    #[inline]
+    pub fn get_by_id(&self, id: DefId) -> Option<&TypeDef<'src>> {
+        self.array.get(id.0 as usize)
+    }
+
+    #[inline]
+    pub fn id(&self, name: &str) -> Option<DefId> {
+        self.id_map.get(name).copied()
+    }
+
+    #[inline]
+    pub fn get_by_name(&self, name: &str) -> Option<&TypeDef<'src>> {
+        self.id(name).and_then(|id| self.get_by_id(id))
+    }
+
+    #[inline]
+    fn reserve(&mut self, name: &'src str) -> DefId {
+        let id = self.next_id;
+        self.next_id.0 += 1;
+
+        self.id_map.insert(name, id);
+        self.array.push(TypeDef {
+            id,
+            name: Ident::raw(""),
+            fields: Fields::Extern,
+        });
+
+        id
+    }
+
+    #[inline]
+    fn define(&mut self, id: DefId, def: TypeDef<'src>) {
+        assert_eq!(def.id, id);
+        self.array[id.0 as usize] = def;
+    }
+}
+
+type DefIdMap<'src> = BTreeMap<&'src str, DefId>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DefId(u32);
+
+#[derive(Debug)]
+pub struct TypeDef<'src> {
+    pub id: DefId,
+    pub name: Ident<'src>,
+    pub fields: Fields<'src>,
+}
+
+#[derive(Debug)]
+pub enum Fields<'src> {
+    Extern,
+    Named(FieldMap<'src>),
+}
+
+pub type FieldMap<'src> = BTreeMap<&'src str, Field<'src>>;
+
+#[derive(Debug)]
+pub struct Field<'src> {
+    pub name: Ident<'src>,
+    pub ty: Ty,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Ty {
+    /// Unit
+    Unit,
+    /// Type definition
+    Def(DefId),
+    /// Function
+    Fn(FnId),
+    /// Type error
+    Error,
+}
+
+macro_rules! primitives {
+    ($LIST:ident = [$($name:ident),*]) => {
+        paste::paste! {
+            #[allow(clippy::upper_case_acronyms)]
+            #[repr(u32)]
+            enum _Builtins {
+                $($name),*
             }
-            Type::App(App { name, args }) => {
-                f.write_str(name)?;
-                if !args.is_empty() {
-                    f.write_str("<")?;
-                    let mut args = args.iter().peekable();
-                    while let Some(arg) = args.next() {
-                        Display::fmt(arg, f)?;
-                        if args.peek().is_some() {
-                            f.write_str(", ")?;
+
+            $(
+                pub const $name: DefId = DefId(_Builtins::$name as u32);
+            )*
+
+            const $LIST: &[(&str, DefId)] = &[
+                $((stringify!([<$name:lower>]), $name)),*
+            ];
+
+            impl Ty {
+                $(
+                    pub fn [<is_ $name:lower>](&self) -> bool {
+                        match self {
+                            Self::Def(id) => *id == $name,
+                            _ => false,
                         }
                     }
-                    f.write_str(">")?;
-                }
-                Ok(())
+                )*
             }
-            Type::Array(Array { item: inner }) => write!(f, "[{inner}]"),
-            Type::Opt(Opt { inner }) => write!(f, "{inner}?"),
-            Type::Var(var) => Display::fmt(var, f),
         }
     }
 }
 
-pub mod print;
+primitives!(PRIMITIVES = [INT, NUM, BOOL, STR]);
+
+impl Ty {
+    pub fn is_primitive(&self) -> bool {
+        match self {
+            Self::Def(id) => {
+                let first = PRIMITIVES.first().unwrap().1;
+                let last = PRIMITIVES.last().unwrap().1;
+                *id >= first && *id <= last
+            }
+            _ => false,
+        }
+    }
+}
+
+fn register_primitive_types(tcx: &mut TyCtx<'_>) {
+    assert!(
+        tcx.defs.is_empty(),
+        "`register_builtin_types` called with some type defs already present"
+    );
+
+    for (name, id) in PRIMITIVES.iter().copied() {
+        assert_eq!(tcx.defs.reserve(name), id);
+        tcx.defs.define(
+            id,
+            TypeDef {
+                id,
+                name: Ident::raw(name),
+                fields: Fields::Extern,
+            },
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct TyPrinter<'a, 'src> {
+    defs: &'a Defs<'src>,
+    fns: &'a Fns<'src>,
+}
+
+impl<'a, 'src> TyPrinter<'a, 'src> {
+    pub fn print(self, ty: Ty) -> PrintTy<'a, 'src> {
+        PrintTy { printer: self, ty }
+    }
+}
+
+pub struct PrintTy<'a, 'src> {
+    printer: TyPrinter<'a, 'src>,
+    ty: Ty,
+}
+
+impl<'a, 'src> std::fmt::Display for PrintTy<'a, 'src> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.ty {
+            Ty::Unit => f.write_str("()"),
+            Ty::Def(id) => {
+                let decl = self.printer.defs[id].name.as_str();
+                write!(f, "{decl}")
+            }
+            Ty::Fn(id) => {
+                let fn_ = self.printer.fns[id].name.as_str();
+                write!(f, "[fn {fn_}]")
+            }
+            Ty::Error => f.write_str("?!"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests;

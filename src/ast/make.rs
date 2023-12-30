@@ -7,8 +7,8 @@ impl<'src, T> decl::Fn<'src, T> {
         span: impl Into<Span>,
         name: Ident<'src>,
         params: Vec<Param<'src>>,
-        ret: Option<Type<'src>>,
-        body: Block<'src, T>,
+        ret: Option<Ty<'src>>,
+        body: decl::Body<'src, T>,
     ) -> Decl<'src, T> {
         Decl {
             span: span.into(),
@@ -22,11 +22,24 @@ impl<'src, T> decl::Fn<'src, T> {
     }
 }
 
+impl<'src> decl::TypeDef<'src> {
+    pub fn new<T>(
+        span: impl Into<Span>,
+        name: Ident<'src>,
+        fields: decl::Fields<'src>,
+    ) -> Decl<'src, T> {
+        Decl {
+            span: span.into(),
+            kind: decl::DeclKind::Type(Box::new(Self { name, fields })),
+        }
+    }
+}
+
 impl<'src, T> stmt::Let<'src, T> {
     pub fn new(
         span: impl Into<Span>,
         name: Ident<'src>,
-        ty: Option<Type<'src>>,
+        ty: Option<Ty<'src>>,
         init: Expr<'src, T>,
     ) -> Stmt<'src, T> {
         Stmt {
@@ -46,46 +59,19 @@ impl<'src, T> stmt::Loop<'src, T> {
 }
 
 impl<'src> ty::Empty {
-    pub fn new(span: impl Into<Span>) -> Type<'src> {
-        Type {
+    pub fn new(span: impl Into<Span>) -> Ty<'src> {
+        Ty {
             span: span.into(),
-            kind: ty::TypeKind::Empty,
+            kind: ty::TyKind::Empty,
         }
     }
 }
 
 impl<'src> ty::Named<'src> {
-    pub fn new(span: impl Into<Span>, name: Ident<'src>) -> Type<'src> {
-        Type {
+    pub fn new(span: impl Into<Span>, name: Ident<'src>) -> Ty<'src> {
+        Ty {
             span: span.into(),
-            kind: ty::TypeKind::Named(ty::Named { name }),
-        }
-    }
-}
-
-impl<'src> ty::Opt<'src> {
-    pub fn new(span: impl Into<Span>, inner: Type<'src>) -> Type<'src> {
-        Type {
-            span: span.into(),
-            kind: ty::TypeKind::Opt(Box::new(ty::Opt { inner })),
-        }
-    }
-}
-
-impl<'src> ty::Array<'src> {
-    pub fn new(span: impl Into<Span>, item: Type<'src>) -> Type<'src> {
-        Type {
-            span: span.into(),
-            kind: ty::TypeKind::Array(Box::new(ty::Array { item })),
-        }
-    }
-}
-
-impl<'src> ty::Fn<'src> {
-    pub fn new(span: impl Into<Span>, params: Vec<Type<'src>>, ret: Type<'src>) -> Type<'src> {
-        Type {
-            span: span.into(),
-            kind: ty::TypeKind::Fn(Box::new(ty::Fn { params, ret })),
+            kind: ty::TyKind::Named(ty::Named { name }),
         }
     }
 }
@@ -484,34 +470,21 @@ impl<'src, T> expr::MethodCall<'src, T> {
 }
 
 impl<'src, T: Default> expr::Array<'src, T> {
-    pub fn into_expr(self, span: impl Into<Span>) -> Expr<'src, T> {
+    pub fn new(span: impl Into<Span>, items: Vec<Expr<'src, T>>) -> Expr<'src, T> {
         Expr {
             span: span.into(),
             ty: Default::default(),
-            kind: expr::ExprKind::Array(Box::new(self)),
+            kind: expr::ExprKind::Array(Box::new(Self { items })),
         }
     }
 }
 
 impl<'src, T> expr::Array<'src, T> {
-    pub fn csv_with(span: impl Into<Span>, ty: T, items: Vec<Expr<'src, T>>) -> Expr<'src, T> {
+    pub fn with(span: impl Into<Span>, ty: T, items: Vec<Expr<'src, T>>) -> Expr<'src, T> {
         Expr {
             span: span.into(),
             ty,
-            kind: expr::ExprKind::Array(Box::new(expr::Array::Csv(items))),
-        }
-    }
-
-    pub fn len_with(
-        span: impl Into<Span>,
-        ty: T,
-        item: Expr<'src, T>,
-        len: Expr<'src, T>,
-    ) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::Array(Box::new(expr::Array::Len(item, len))),
+            kind: expr::ExprKind::Array(Box::new(Self { items })),
         }
     }
 }

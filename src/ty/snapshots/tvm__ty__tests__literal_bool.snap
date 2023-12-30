@@ -1,7 +1,0 @@
----
-source: src/ty/tests.rs
-expression: "check!(r#\"\n    let a = true;\n    let b = false;\n  \"#)"
----
-let a = true/*bool*/;
-let b = false/*bool*/;
-

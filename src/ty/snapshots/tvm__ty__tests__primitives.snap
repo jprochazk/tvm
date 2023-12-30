@@ -1,0 +1,79 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        0;\n        1.2;\n        true;\n        \"test\";\n    \"#)"
+---
+Hir {
+    defs: Defs {
+        next_id: DefId(
+            4,
+        ),
+        id_map: {
+            "bool": DefId(
+                2,
+            ),
+            "int": DefId(
+                0,
+            ),
+            "num": DefId(
+                1,
+            ),
+            "str": DefId(
+                3,
+            ),
+        },
+        array: [
+            TypeDef {
+                id: DefId(
+                    0,
+                ),
+                name: Ident("int"),
+                fields: Extern,
+            },
+            TypeDef {
+                id: DefId(
+                    1,
+                ),
+                name: Ident("num"),
+                fields: Extern,
+            },
+            TypeDef {
+                id: DefId(
+                    2,
+                ),
+                name: Ident("bool"),
+                fields: Extern,
+            },
+            TypeDef {
+                id: DefId(
+                    3,
+                ),
+                name: Ident("str"),
+                fields: Extern,
+            },
+        ],
+    },
+    fns: Fns {
+        next_id: FnId(
+            0,
+        ),
+        id_map: {},
+        array: [],
+    },
+    top_level: Block {
+        body: [
+            Int(
+                0,
+            ),
+            Num(
+                1.2,
+            ),
+            Bool(
+                true,
+            ),
+            Str(
+                "\"test\"",
+            ),
+        ],
+        tail: None,
+    },
+}

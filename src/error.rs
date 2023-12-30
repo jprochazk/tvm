@@ -1,13 +1,15 @@
 use core::fmt::{self, Debug, Display, Write};
 use std::sync::Arc;
 
-use crate::lex::{Span, TokenKind};
+use beef::lean::Cow;
+
+use crate::lex::Span;
 use crate::util::num_digits;
 use crate::Str;
 
 pub type Result<T, E = Error> = ::std::result::Result<T, E>;
 
-pub(crate) struct ErrorCtx<'src> {
+pub struct ErrorCtx<'src> {
     src: &'src str,
     src_rc: Option<Arc<str>>,
     errors: Vec<Error>,
@@ -26,16 +28,8 @@ impl<'src> ErrorCtx<'src> {
         self.errors.push(e);
     }
 
-    pub fn num_errors(&self) -> usize {
-        self.errors.len()
-    }
-
-    pub fn finish(&mut self) -> Vec<Error> {
-        std::mem::take(&mut self.errors)
-    }
-
-    pub fn finish_result(&mut self) -> Result<(), Vec<Error>> {
-        let errors = self.finish();
+    pub fn finish(&mut self) -> Result<(), Vec<Error>> {
+        let errors = std::mem::take(&mut self.errors);
         if errors.is_empty() {
             Ok(())
         } else {
@@ -222,29 +216,6 @@ impl Location {
 
 impl std::error::Error for Error {}
 
-/* impl Display for ErrorKind {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      ErrorKind::UnexpectedToken => f.write_str("unexpected token"),
-      ErrorKind::ExpectedToken(kind) => write!(f, "expected token `{kind}`"),
-      ErrorKind::InvalidFloat => f.write_str("invalid float literal"),
-      ErrorKind::InvalidInt => f.write_str("invalid integer literal"),
-      ErrorKind::InvalidEscape => f.write_str("invalid string escape"),
-      ErrorKind::InvalidPlace => f.write_str("invalid assignment target"),
-      ErrorKind::NoNestedFunctions => f.write_str("functions may not be nested"),
-
-      ErrorKind::NoSuchTypeInScope => f.write_str("this type is not in the current scope"),
-      ErrorKind::VarAlreadyDefined => {
-        f.write_str("this variable is already defined in the current scope")
-      }
-      ErrorKind::WrongParamCount => f.write_str("mismatched number of params"),
-      ErrorKind::UndefinedVar => f.write_str("undefined variable"),
-      ErrorKind::NotIndexable => f.write_str("not an indexable collection"),
-      ErrorKind::TypeError => f.write_str("type error"),
-    }
-  }
-} */
-
 impl Debug for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         Debug::fmt(&self.kind, f)
@@ -304,6 +275,7 @@ fn report_multi(out: &mut impl Write, src: &str, messages: &[Message]) -> fmt::R
     Ok(())
 }
 
+// error constructors
 impl<'src> ErrorCtx<'src> {
     #[inline]
     pub fn unexpected_token(&mut self, span: impl Into<Span>) -> Error {
@@ -311,8 +283,20 @@ impl<'src> ErrorCtx<'src> {
     }
 
     #[inline]
-    pub fn expected_token(&mut self, kind: TokenKind, span: impl Into<Span>) -> Error {
-        Error::spanned(format!("expected `{}`", kind.name()), span, self.src()).into()
+    pub fn emit_unexpected_token(&mut self, span: impl Into<Span>) {
+        let e = self.unexpected_token(span);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn expected_token(&mut self, kind: &str, span: impl Into<Span>) -> Error {
+        Error::spanned(format!("expected {kind:?}"), span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn emit_expected_token(&mut self, kind: &str, span: impl Into<Span>) {
+        let e = self.expected_token(kind, span);
+        self.push(e);
     }
 
     #[inline]
@@ -321,8 +305,20 @@ impl<'src> ErrorCtx<'src> {
     }
 
     #[inline]
+    pub fn emit_no_nested_functions(&mut self, span: impl Into<Span>) {
+        let e = self.no_nested_functions(span);
+        self.push(e);
+    }
+
+    #[inline]
     pub fn invalid_assign_target(&mut self, span: impl Into<Span>) -> Error {
         Error::spanned("invalid assignment target", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn emit_invalid_assign_target(&mut self, span: impl Into<Span>) {
+        let e = self.invalid_assign_target(span);
+        self.push(e);
     }
 
     #[inline]
@@ -331,18 +327,48 @@ impl<'src> ErrorCtx<'src> {
     }
 
     #[inline]
+    pub fn emit_invalid_int(&mut self, span: impl Into<Span>) {
+        let e = self.invalid_int(span);
+        self.push(e);
+    }
+
+    #[inline]
     pub fn invalid_float(&mut self, span: impl Into<Span>) -> Error {
         Error::spanned("invalid float literal", span, self.src()).into()
     }
 
     #[inline]
+    pub fn emit_invalid_float(&mut self, span: impl Into<Span>) {
+        let e = self.invalid_float(span);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn invalid_arg_key(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("invalid argument key", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn emit_invalid_arg_key(&mut self, span: impl Into<Span>) {
+        let e = self.invalid_arg_key(span);
+        self.push(e);
+    }
+
+    #[inline]
     pub fn param_mismatch(&mut self, span: impl Into<Span>, expected: usize, got: usize) -> Error {
+        let plural = if expected > 1 { "s" } else { "" };
         Error::spanned(
-            format!("expected {expected} params, got {got}"),
+            format!("expected {expected} param{plural}, got {got}"),
             span,
             self.src(),
         )
         .into()
+    }
+
+    #[inline]
+    pub fn emit_param_mismatch(&mut self, span: impl Into<Span>, expected: usize, got: usize) {
+        let e = self.param_mismatch(span, expected, got);
+        self.push(e);
     }
 
     #[inline]
@@ -353,7 +379,7 @@ impl<'src> ErrorCtx<'src> {
         rhs: impl Display,
     ) -> Error {
         Error::spanned(
-            format!("type mismatch between `{lhs}` and `{rhs}`"),
+            format!("type mismatch between \"{lhs}\" and \"{rhs}\""),
             span,
             self.src(),
         )
@@ -361,18 +387,14 @@ impl<'src> ErrorCtx<'src> {
     }
 
     #[inline]
-    pub fn infinite_type(&mut self, span: impl Into<Span>, ty: impl Display) -> Error {
-        Error::spanned(
-            format!("the type `{ty}` has an infinite size"),
-            span,
-            self.src(),
-        )
-        .into()
-    }
-
-    #[inline]
-    pub fn invalid_label(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("invalid argument label", span, self.src()).into()
+    pub fn emit_type_mismatch(
+        &mut self,
+        span: impl Into<Span>,
+        lhs: impl Display,
+        rhs: impl Display,
+    ) {
+        let e = self.type_mismatch(span, lhs, rhs);
+        self.push(e);
     }
 
     #[inline]
@@ -381,27 +403,220 @@ impl<'src> ErrorCtx<'src> {
     }
 
     #[inline]
+    pub fn emit_undefined_var(&mut self, span: impl Into<Span>) {
+        let e = self.undefined_var(span);
+        self.push(e);
+    }
+
+    #[inline]
     pub fn unknown_type(&mut self, span: impl Into<Span>) -> Error {
         Error::spanned("type must be known at this point", span, self.src()).into()
     }
 
     #[inline]
-    pub fn unknown_method(
-        &mut self,
-        span: impl Into<Span>,
-        receiver: impl Display,
-        name: &str,
-    ) -> Error {
+    pub fn emit_unknown_type(&mut self, span: impl Into<Span>) {
+        let e = self.unknown_type(span);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn extern_fn_body(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("an extern function may not have a body", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn emit_extern_fn_body(&mut self, span: impl Into<Span>) {
+        let e = self.extern_fn_body(span);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn extern_type_fields(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("an extern type may not have fields", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn emit_extern_type_fields(&mut self, span: impl Into<Span>) {
+        let e = self.extern_type_fields(span);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn undefined_decl(&mut self, span: impl Into<Span>, name: &str) -> Error {
         Error::spanned(
-            format!("the type `{receiver}` has no method named `{name}`"),
+            format!("{name:?} is not declared in this scope"),
             span,
             self.src(),
         )
         .into()
     }
 
-    /* #[inline]
-    pub fn invalid_string_escape(&mut self, span: impl Into<Span>) -> Error {
-      Error::spanned("invalid string escape", span, self.src()).into()
-    } */
+    #[inline]
+    pub fn emit_undefined_decl(&mut self, span: impl Into<Span>, name: &str) {
+        let e = self.undefined_decl(span, name);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn invalid_shadowing(
+        &mut self,
+        span: impl Into<Span>,
+        name: &str,
+        kind: impl Display,
+        existing: impl Display,
+        existing_span: impl Into<Span>,
+    ) -> Error {
+        Error::spanned(
+            format!("{kind} {name:?} shadows existing {existing}"),
+            span,
+            self.src(),
+        )
+        .append_spanned(format!("existing {existing} declared here"), existing_span)
+        .into()
+    }
+
+    #[inline]
+    pub fn emit_invalid_shadowing(
+        &mut self,
+        span: impl Into<Span>,
+        name: &str,
+        kind: impl Display,
+        existing: impl Display,
+        existing_span: impl Into<Span>,
+    ) {
+        let e = self.invalid_shadowing(span, name, kind, existing, existing_span);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn bad_return_type<'a>(&'a mut self) -> BadReturnType<'a, 'src> {
+        BadReturnType {
+            ecx: self,
+            name_span: Span::empty(),
+            fn_ret: Cow::borrowed("()"),
+            fn_ret_span: None,
+            ret_val: Cow::borrowed("()"),
+            ret_val_span: None,
+        }
+    }
+
+    #[inline]
+    pub fn not_callable(&mut self, span: impl Into<Span>, ty: impl Display) -> Error {
+        Error::spanned(
+            format!("this expression of type \"{ty}\" is not callable"),
+            span,
+            self.src(),
+        )
+        .into()
+    }
+
+    #[inline]
+    pub fn emit_not_callable(&mut self, span: impl Into<Span>, ty: impl Display) {
+        let e = self.not_callable(span, ty);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn extern_cons_not_callable(&mut self, span: impl Into<Span>, name: &str) -> Error {
+        Error::spanned(
+            format!("{name:?} may not be constructed directly, because it is an external type"),
+            span,
+            self.src(),
+        )
+        .into()
+    }
+
+    #[inline]
+    pub fn emit_extern_cons_not_callable(&mut self, span: impl Into<Span>, name: &str) {
+        let e = self.extern_cons_not_callable(span, name);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn shadowed_def(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("a type with this name already exists", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn emit_shadowed_def(&mut self, span: impl Into<Span>) {
+        let e = self.shadowed_def(span);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn unsupported_op(
+        &mut self,
+        span: impl Into<Span>,
+        ty: impl Display,
+        op: impl Display,
+    ) -> Error {
+        Error::spanned(
+            format!("the type \"{ty}\" does not support the \"{op}\" operation"),
+            span,
+            self.src(),
+        )
+        .into()
+    }
+
+    #[inline]
+    pub fn emit_unsupported_op(
+        &mut self,
+        span: impl Into<Span>,
+        ty: impl Display,
+        op: impl Display,
+    ) {
+        let e = self.unsupported_op(span, ty, op);
+        self.push(e);
+    }
+}
+
+pub struct BadReturnType<'a, 'src> {
+    ecx: &'a mut ErrorCtx<'src>,
+    name_span: Span,
+    fn_ret: Cow<'static, str>,
+    fn_ret_span: Option<Span>,
+    ret_val: Cow<'static, str>,
+    ret_val_span: Option<Span>,
+}
+
+impl<'a, 'src> BadReturnType<'a, 'src> {
+    pub fn fn_name(mut self, span: impl Into<Span>) -> Self {
+        self.name_span = span.into();
+        self
+    }
+
+    pub fn fn_ret(mut self, ty: impl Display, span: Option<impl Into<Span>>) -> Self {
+        self.fn_ret = Cow::owned(ty.to_string());
+        self.fn_ret_span = span.map(Into::into);
+        self
+    }
+
+    pub fn ret_val(mut self, ty: impl Display, span: Option<impl Into<Span>>) -> Self {
+        self.ret_val = Cow::owned(ty.to_string());
+        self.ret_val_span = span.map(Into::into);
+        self
+    }
+
+    pub fn finish(&mut self) -> Error {
+        let mut err = Error::spanned("mismatched return type", self.name_span, self.ecx.src());
+
+        let msg = format!("the return type is \"{}\"", self.fn_ret);
+        match self.fn_ret_span {
+            Some(span) => err = err.append_spanned(msg, span),
+            None => err = err.append(msg),
+        }
+
+        let msg = format!("the return type is \"{}\"", self.ret_val);
+        match self.ret_val_span {
+            Some(span) => err = err.append_spanned(msg, span),
+            None => err = err.append(msg),
+        }
+
+        err.into()
+    }
+
+    pub fn emit(mut self) {
+        let e = self.finish();
+        self.ecx.push(e);
+    }
 }

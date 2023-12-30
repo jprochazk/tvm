@@ -1,43 +1,55 @@
-mod op;
+use crate::ty::Hir;
+
+mod asm;
+pub mod op;
+
+pub fn compile(hir: Hir<'_>) -> Obj {
+    todo!()
+}
+
+pub struct Obj {}
+
+impl Obj {
+    pub fn link() -> Module {
+        todo!()
+    }
+}
+
+pub struct Module {}
 
 /*
 
-```rust
-fn fib(n: int) -> int {
-    if n <= 1 { n }
-    else { fib(n-2) + fib(n-1) }
+
+let src = "
+    extern fn foo(s: str);
+    foo("abcd");
+";
+let ast = syn::parse(src)?;
+let hir = ty::check(&ast)?;
+let obj = code::compile(&hir);
+
+type Sender = crossbeam_channel::Sender<String>;
+type Receiver = crossbeam_channel::Receiver<String>;
+
+#[hebi::module]
+fn foo(ctx: &Ctx, sender: Sender) -> Result<()> {
+    ctx.register(move |vm: &Vm, s: String| -> Result<()> {
+        sender.send(s);
+        Ok(())
+    });
 }
 
-fib(20)
-```
+let ctx = Ctx::new();
+let (rx, tx) = crossbeam_channel::unbounded();
+ctx.register(foo(tx));
 
-Module {
-    Function(root, 0),
-    Function("fib", 1),
-}
+let module = obj.link(&ctx)?;
+module.run()?;
 
-Function "fib" {
-    params: [
-        n: int
-    ],
-    stack: 3,
-    bytecode: [
-                ; if n <= 1 { n }
-                local.get 0
-                cmp.le.imm 1
-                jmp.if_not @0
-                local.get 0
-                ret
-                ; else { fib(n-2) + fib(n-1) }
-        @0      local.get 0
-                sub.imm 2
-                call fib
-                local.get 0
-                sub.imm 1
-                call fib
-                add
-                ret
-    ],
-}
+let v = rx.recv().unwrap();
+println!("{v}"); // abcd
 
 */
+
+#[cfg(test)]
+mod tests;

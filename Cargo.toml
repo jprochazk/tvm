@@ -1,5 +1,5 @@
 [workspace]
-members = ["build/bytecode"]
+members = ["bcgen"]
 
 [workspace.dependencies]
 beef = "0.5.2"

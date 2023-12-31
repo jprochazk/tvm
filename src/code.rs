@@ -1,15 +1,15 @@
-use crate::ty::Hir;
+use crate::hir::Hir;
 
 mod asm;
 pub mod op;
 
-pub fn compile(hir: Hir<'_>) -> Obj {
+pub fn compile(_hir: Hir<'_>) -> Code {
     todo!()
 }
 
-pub struct Obj {}
+pub struct Code {}
 
-impl Obj {
+impl Code {
     pub fn link() -> Module {
         todo!()
     }

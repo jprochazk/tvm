@@ -21,7 +21,7 @@ pub fn try_parse(s: &str) -> Result<Ast<'_>, Vec<Error>> {
 // TODO: yield may only appear in `gen` fn
 
 struct Parser<'src> {
-    decls: Vec<Decl<'src, ()>>,
+    decls: Vec<Decl<'src>>,
     lex: Lexer<'src>,
     prev: Token,
     curr: Token,
@@ -169,7 +169,7 @@ impl<'src> Parser<'src> {
     }
 }
 
-fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src, ()> {
+fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src> {
     let s = p.span();
 
     let mut body = vec![];
@@ -205,7 +205,7 @@ fn top_level<'src>(p: &mut Parser<'src>) -> Block<'src, ()> {
     }
 }
 
-fn top_level_stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src, ()>>) {
+fn top_level_stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src>>) {
     match top_level_stmt(p) {
         Ok(Top::Stmt(stmt)) => out.push(stmt),
         Ok(Top::Decl(decl)) => p.decls.push(decl),
@@ -213,7 +213,7 @@ fn top_level_stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src, (
     }
 }
 
-fn stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src, ()>>) {
+fn stmt_or_sync<'src>(p: &mut Parser<'src>, out: &mut Vec<Stmt<'src>>) {
     match stmt(p) {
         Ok(stmt) => out.push(stmt),
         Err(e) => sync(p, e, SyncCtx::Inner),
@@ -252,8 +252,8 @@ fn sync(p: &mut Parser<'_>, e: Error, kind: SyncCtx) {
 }
 
 enum Top<'src> {
-    Stmt(Stmt<'src, ()>),
-    Decl(Decl<'src, ()>),
+    Stmt(Stmt<'src>),
+    Decl(Decl<'src>),
 }
 
 fn top_level_stmt<'src>(p: &mut Parser<'src>) -> Result<Top<'src>> {
@@ -266,7 +266,7 @@ fn top_level_stmt<'src>(p: &mut Parser<'src>) -> Result<Top<'src>> {
     }
 }
 
-fn fn_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src, ()>> {
+fn fn_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src>> {
     let s = p.span();
 
     assert!(p.eat(t![fn]));
@@ -287,7 +287,7 @@ fn fn_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src, ()>> {
     Ok(decl::Fn::new(p.finish(s), name, params, ret, body))
 }
 
-fn type_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src, ()>> {
+fn type_<'src>(p: &mut Parser<'src>, extern_: bool) -> Result<Decl<'src>> {
     let s = p.span();
 
     assert!(p.eat(t![type]));
@@ -322,7 +322,7 @@ fn field<'src>(p: &mut Parser<'src>) -> Result<decl::Field<'src>> {
     Ok(decl::Field { name, ty })
 }
 
-fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
+fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
     match p.kind() {
         t![fn] => {
             let span = p.curr.span;
@@ -335,7 +335,7 @@ fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
         t![continue] => expr_continue(p).map(Expr::into_stmt),
         t![return] => expr_return(p).map(Expr::into_stmt),
         t![if] => expr_if(p).map(Expr::into_stmt),
-        t!["{"] => block(p).map(|b| b.into_stmt(())),
+        t!["{"] => block(p).map(|b| b.into_stmt()),
         _ => expr_assign(p).map(Expr::into_stmt),
     }
 }
@@ -367,7 +367,7 @@ where
     Ok(out)
 }
 
-fn stmt_loop<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
+fn stmt_loop<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
     let s = p.span();
 
     assert!(p.eat(t![loop]));
@@ -375,7 +375,7 @@ fn stmt_loop<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
     Ok(stmt::Loop::new(p.finish(s), body))
 }
 
-fn stmt_let<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
+fn stmt_let<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
     assert!(p.eat(t![let]));
     let s = p.span();
 
@@ -391,17 +391,17 @@ fn stmt_let<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src, ()>> {
     Ok(stmt::Let::new(p.finish(s), name, ty, init))
 }
 
-fn expr_break<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_break<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![break]));
-    Ok(expr::Break::new(p.prev.span, ()))
+    Ok(expr::Break::new(p.prev.span))
 }
 
-fn expr_continue<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_continue<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![continue]));
-    Ok(expr::Continue::new(p.prev.span, ()))
+    Ok(expr::Continue::new(p.prev.span))
 }
 
-fn expr_return<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_return<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let s = p.span();
 
     assert!(p.eat(t![return]));
@@ -413,7 +413,7 @@ fn expr_return<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(expr::Return::new(p.finish(s), value))
 }
 
-/* fn yield_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+/* fn yield_<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
   let s = p.span();
 
   assert!(p.eat(t![yield]));
@@ -426,7 +426,7 @@ fn expr_return<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
   Ok(Expr::make_yield( span, value))
 } */
 
-fn expr_if<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_if<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let s = p.span();
 
     assert!(p.eat(t![if]));
@@ -443,7 +443,7 @@ fn expr_if<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(expr::If::new(p.finish(s), branches, tail))
 }
 
-fn branch<'src>(p: &mut Parser<'src>) -> Result<Branch<'src, ()>> {
+fn branch<'src>(p: &mut Parser<'src>) -> Result<Branch<'src>> {
     Ok(Branch {
         cond: expr(p)?,
         body: block(p)?,
@@ -473,7 +473,7 @@ fn ident<'src>(p: &mut Parser<'src>) -> Result<Ident<'src>> {
     })
 }
 
-fn block<'src>(p: &mut Parser<'src>) -> Result<Block<'src, ()>> {
+fn block<'src>(p: &mut Parser<'src>) -> Result<Block<'src>> {
     let s = p.span();
 
     p.must(t!["{"])?;
@@ -510,7 +510,7 @@ fn block<'src>(p: &mut Parser<'src>) -> Result<Block<'src, ()>> {
     })
 }
 
-fn expr_assign<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_assign<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let lhs = expr(p)?;
     let op = match p.kind() {
         t![=] => None,
@@ -537,7 +537,7 @@ fn expr_assign<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     }
 }
 
-fn expr<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     match p.kind() {
         t![break] => expr_break(p),
         t![continue] => expr_continue(p),
@@ -547,7 +547,7 @@ fn expr<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     }
 }
 
-fn expr_opt<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_opt<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut lhs = expr_or(p)?;
     while !p.end() && p.eat(t![??]) {
         let rhs = expr_or(p)?;
@@ -556,7 +556,7 @@ fn expr_opt<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(lhs)
 }
 
-fn expr_or<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_or<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut lhs = expr_and(p)?;
     while !p.end() && p.eat(t![||]) {
         let rhs = expr_and(p)?;
@@ -565,7 +565,7 @@ fn expr_or<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(lhs)
 }
 
-fn expr_and<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_and<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut lhs = expr_eq(p)?;
     while !p.end() && p.eat(t![&&]) {
         let rhs = expr_eq(p)?;
@@ -574,7 +574,7 @@ fn expr_and<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(lhs)
 }
 
-fn expr_eq<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_eq<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut lhs = expr_cmp(p)?;
     while !p.end() {
         let op = match p.kind() {
@@ -589,7 +589,7 @@ fn expr_eq<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(lhs)
 }
 
-fn expr_cmp<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_cmp<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut lhs = expr_add(p)?;
     while !p.end() {
         let op = match p.kind() {
@@ -606,7 +606,7 @@ fn expr_cmp<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(lhs)
 }
 
-fn expr_add<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_add<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut lhs = expr_mul(p)?;
     while !p.end() {
         let op = match p.kind() {
@@ -621,7 +621,7 @@ fn expr_add<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(lhs)
 }
 
-fn expr_mul<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_mul<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut lhs = expr_pow(p)?;
     while !p.end() {
         let op = match p.kind() {
@@ -637,7 +637,7 @@ fn expr_mul<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(lhs)
 }
 
-fn expr_pow<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_pow<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut lhs = expr_pre(p)?;
     while !p.end() && p.eat(t![**]) {
         let rhs = expr_pre(p)?;
@@ -646,7 +646,7 @@ fn expr_pow<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(lhs)
 }
 
-fn expr_pre<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_pre<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let op = match p.kind() {
         t![-] => unop![-],
         t![!] => unop![!],
@@ -658,7 +658,7 @@ fn expr_pre<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(expr::Unary::new(tok.span.to(rhs.span), op, rhs))
 }
 
-fn expr_post<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_post<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let mut expr = expr_primary(p)?;
     while !p.end() {
         match p.kind() {
@@ -671,7 +671,7 @@ fn expr_post<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(expr)
 }
 
-fn expr_call<'src>(p: &mut Parser<'src>, target: Expr<'src, ()>) -> Result<Expr<'src, ()>> {
+fn expr_call<'src>(p: &mut Parser<'src>, target: Expr<'src>) -> Result<Expr<'src>> {
     let s = p.span();
 
     assert!(p.eat(t!["("]));
@@ -694,7 +694,7 @@ fn expr_call<'src>(p: &mut Parser<'src>, target: Expr<'src, ()>) -> Result<Expr<
     }
 }
 
-fn arg<'src>(p: &mut Parser<'src>) -> Result<Arg<'src, ()>> {
+fn arg<'src>(p: &mut Parser<'src>) -> Result<Arg<'src>> {
     let value = expr(p)?;
 
     if !p.eat(t![:]) {
@@ -713,7 +713,7 @@ fn arg<'src>(p: &mut Parser<'src>) -> Result<Arg<'src, ()>> {
     }
 }
 
-fn expr_index<'src>(p: &mut Parser<'src>, parent: Expr<'src, ()>) -> Result<Expr<'src, ()>> {
+fn expr_index<'src>(p: &mut Parser<'src>, parent: Expr<'src>) -> Result<Expr<'src>> {
     let s = p.span();
 
     assert!(p.eat(t!["["]));
@@ -723,7 +723,7 @@ fn expr_index<'src>(p: &mut Parser<'src>, parent: Expr<'src, ()>) -> Result<Expr
     Ok(expr::UseIndex::new(p.finish(s), parent, key))
 }
 
-fn expr_field<'src>(p: &mut Parser<'src>, parent: Expr<'src, ()>) -> Result<Expr<'src, ()>> {
+fn expr_field<'src>(p: &mut Parser<'src>, parent: Expr<'src>) -> Result<Expr<'src>> {
     let s = p.span();
 
     assert!(p.eat(t![.]));
@@ -732,7 +732,7 @@ fn expr_field<'src>(p: &mut Parser<'src>, parent: Expr<'src, ()>) -> Result<Expr
     Ok(expr::UseField::new(p.finish(s), parent, name))
 }
 
-fn expr_primary<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_primary<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     match p.kind() {
         t![int] => expr_int(p),
         t![float] => expr_float(p),
@@ -747,53 +747,53 @@ fn expr_primary<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     }
 }
 
-fn expr_int<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_int<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![int]));
     let span = p.prev.span;
     let v = p
         .lexeme(&p.prev)
         .parse::<i64>()
         .map_err(|_| p.ecx.invalid_int(span))?;
-    Ok(expr::Primitive::new_int(span, v))
+    Ok(expr::Primitive::int(span, v))
 }
 
-fn expr_float<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_float<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![float]));
     let span = p.prev.span;
     let v = p
         .lexeme(&p.prev)
         .parse::<f64>()
         .map_err(|_| p.ecx.invalid_float(span))?;
-    Ok(expr::Primitive::new_num(span, v))
+    Ok(expr::Primitive::num(span, v))
 }
 
-fn expr_bool<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_bool<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![bool]));
     let v = match p.lexeme(&p.prev) {
         "true" => true,
         "false" => false,
         _ => unreachable!(),
     };
-    Ok(expr::Primitive::new_bool(p.prev.span, v))
+    Ok(expr::Primitive::bool(p.prev.span, v))
 }
 
-fn expr_str<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_str<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![str]));
     // TODO: unescape
     // TODO: fmt
-    Ok(expr::Primitive::new_str(p.prev.span, p.lexeme(&p.prev)))
+    Ok(expr::Primitive::str(p.prev.span, p.lexeme(&p.prev)))
 }
 
-fn expr_do<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_do<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![do]));
     let s = p.prev.span;
     let body = block(p)?;
-    let mut e = body.into_expr(());
+    let mut e = body.into_expr();
     e.span = s.to(e.span); // extend span to include `do` keyword
     Ok(e)
 }
 
-fn expr_array<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_array<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let s = p.span();
 
     assert!(p.eat(t!["["]));
@@ -809,14 +809,14 @@ fn expr_array<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
     Ok(expr::Array::new(p.finish(s), items))
 }
 
-fn expr_group<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_group<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t!["("]));
     let inner = expr(p)?;
     p.must(t![")"])?;
     Ok(inner)
 }
 
-fn expr_use<'src>(p: &mut Parser<'src>) -> Result<Expr<'src, ()>> {
+fn expr_use<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let ident = ident(p)?;
     Ok(expr::UseVar::new(ident.span, ident))
 }

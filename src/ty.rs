@@ -3,8 +3,9 @@ mod macros;
 
 use std::collections::BTreeMap;
 
-use crate::ast::{self, Ast, Block, Expr, Ident, Stmt};
+use crate::ast::{self, Ast, Ident};
 use crate::error::{Error, ErrorCtx, Result};
+use crate::hir::*;
 use crate::lex::Span;
 
 // TODO: don't ignore keyword args
@@ -18,23 +19,14 @@ use crate::lex::Span;
 // this information is only available against calls where the
 // callee is a function declaration
 
-#[derive(Debug)]
-pub struct Hir<'src> {
-    pub defs: Defs<'src>,
-    pub fns: Fns<'src>,
-    pub top_level: Block<'src, Ty>,
-}
-
 pub fn check<'src>(v: &Ast<'src>) -> Result<Hir<'src>, Vec<Error>> {
-    // 3. type check top-level code + all function bodies
-
     let mut tcx = TyCtx::new(v.src);
     register_primitive_types(&mut tcx);
 
     tcx.enter_scope();
     tcx.declare_types(&v.decls);
-    let pending_fns = tcx.collect_fn_sigs(&v.decls);
-    tcx.infer_fns(&v.decls, pending_fns);
+    let fns = tcx.collect_fn_sigs(&v.decls);
+    tcx.infer_fns(&v.decls, fns);
     let top_level = tcx.infer_block(&v.top_level);
     tcx.leave_scope();
 
@@ -42,10 +34,10 @@ pub fn check<'src>(v: &Ast<'src>) -> Result<Hir<'src>, Vec<Error>> {
 }
 
 struct TyCtx<'src> {
+    src: &'src str,
     ecx: ErrorCtx<'src>,
     defs: Defs<'src>,
     fns: Fns<'src>,
-
     scopes: Vec<Scope<'src>>,
 }
 
@@ -79,18 +71,19 @@ impl std::fmt::Display for SymbolKind {
 impl<'src> TyCtx<'src> {
     fn new(src: &'src str) -> Self {
         Self {
+            src,
             ecx: ErrorCtx::new(src),
             defs: Defs::new(),
             fns: Fns::new(),
-
             scopes: Vec::new(),
         }
     }
 
-    fn finish(mut self, top_level: Block<'src, Ty>) -> Result<Hir<'src>, Vec<Error>> {
+    fn finish(mut self, top_level: Block<'src>) -> Result<Hir<'src>, Vec<Error>> {
         self.ecx.finish()?;
 
         Ok(Hir {
+            src: self.src,
             defs: self.defs,
             fns: self.fns,
             top_level,
@@ -116,7 +109,7 @@ impl<'src> TyCtx<'src> {
 
         // 2. define all types and their constructors
         for (id, decl) in pending {
-            let name = decl.name.clone();
+            let name = decl.name;
             let fields = match &decl.fields {
                 ast::decl::Fields::Extern => Fields::Extern,
                 ast::decl::Fields::Named(fields) => {
@@ -129,7 +122,7 @@ impl<'src> TyCtx<'src> {
                 }
             };
 
-            self.declare_cons(id, name.clone(), &fields);
+            self.declare_cons(id, name, &fields);
             self.defs.define(id, TypeDef { id, name, fields });
         }
     }
@@ -155,7 +148,7 @@ impl<'src> TyCtx<'src> {
                     params: fields
                         .values()
                         .map(|field| Param {
-                            name: field.name.clone(),
+                            name: field.name,
                             ty: field.ty,
                         })
                         .collect(),
@@ -166,7 +159,7 @@ impl<'src> TyCtx<'src> {
         };
 
         let id = self.fns.insert(Fn {
-            name: name.clone(),
+            name,
             kind,
             sig,
             body: FnBody::Extern, // compiler-defined
@@ -183,7 +176,7 @@ impl<'src> TyCtx<'src> {
             let ast::decl::DeclKind::Fn(fn_) = &fn_.kind else {
                 continue;
             };
-            let name = fn_.name.clone();
+            let name = fn_.name;
 
             if let Err(e) = self.check_symbol(&name, SymbolKind::Fn) {
                 self.ecx.push(e);
@@ -207,7 +200,7 @@ impl<'src> TyCtx<'src> {
                     .params
                     .iter()
                     .map(|param| Param {
-                        name: param.name.clone(),
+                        name: param.name,
                         ty: self.resolve_ast_ty(&param.ty),
                     })
                     .collect(),
@@ -277,7 +270,7 @@ impl<'src> TyCtx<'src> {
     }
 
     fn resolve_field(&mut self, field: &ast::decl::Field<'src>) -> (Ident<'src>, Ty) {
-        let name = field.name.clone();
+        let name = field.name;
         let ty = self.resolve_ast_ty(&field.ty);
         (name, ty)
     }
@@ -317,7 +310,7 @@ impl<'src> TyCtx<'src> {
                 sig,
                 body,
             });
-            self.declare_symbol(fn_.name.clone(), Ty::Fn(id), SymbolKind::Fn);
+            self.declare_symbol(fn_.name, Ty::Fn(id), SymbolKind::Fn);
         }
         assert!(pending_fns.is_empty());
     }
@@ -364,7 +357,7 @@ impl<'src> TyCtx<'src> {
         }
     }
 
-    fn infer_block(&mut self, block: &Block<'src>) -> Block<'src, Ty> {
+    fn infer_block(&mut self, block: &ast::Block<'src>) -> Block<'src> {
         self.enter_scope();
         let mut body = Vec::with_capacity(block.body.len());
         for stmt in &block.body {
@@ -380,7 +373,7 @@ impl<'src> TyCtx<'src> {
         }
     }
 
-    fn infer_stmt(&mut self, stmt: &Stmt<'src>) -> Stmt<'src, Ty> {
+    fn infer_stmt(&mut self, stmt: &ast::Stmt<'src>) -> Stmt<'src> {
         match &stmt.kind {
             ast::stmt::StmtKind::Let(v) => self.infer_let(stmt.span, v),
             ast::stmt::StmtKind::Loop(v) => self.infer_loop(stmt.span, v),
@@ -388,23 +381,31 @@ impl<'src> TyCtx<'src> {
         }
     }
 
-    fn infer_let(&mut self, span: Span, v: &ast::stmt::Let<'src>) -> Stmt<'src, Ty> {
+    fn infer_let(&mut self, span: Span, v: &ast::stmt::Let<'src>) -> Stmt<'src> {
         let init = match v.ty.as_ref().map(|ty| self.resolve_ast_ty(ty)) {
             Some(ty) => self.check_expr(&v.init, ty),
             None => self.infer_expr(&v.init),
         };
         match self.check_symbol(&v.name, SymbolKind::Var) {
-            Ok(_) => self.declare_symbol(v.name.clone(), init.ty, SymbolKind::Var),
+            Ok(_) => self.declare_symbol(v.name, init.ty, SymbolKind::Var),
             Err(e) => self.ecx.push(e),
         }
-        ast::stmt::Let::new(span, v.name.clone(), v.ty.clone(), init)
+        Stmt {
+            span,
+            kind: StmtKind::Let(Box::new(Let { name: v.name, init })),
+        }
     }
 
-    fn infer_loop(&mut self, span: Span, v: &ast::stmt::Loop<'src>) -> Stmt<'src, Ty> {
-        ast::stmt::Loop::new(span, self.infer_block(&v.body))
+    fn infer_loop(&mut self, span: Span, v: &ast::stmt::Loop<'src>) -> Stmt<'src> {
+        Stmt {
+            span,
+            kind: StmtKind::Loop(Box::new(Loop {
+                body: self.infer_block(&v.body),
+            })),
+        }
     }
 
-    fn check_expr(&mut self, expr: &Expr<'src>, ty: Ty) -> Expr<'src, Ty> {
+    fn check_expr(&mut self, expr: &ast::Expr<'src>, ty: Ty) -> Expr<'src> {
         let mut expr = self.infer_expr(expr);
         if !self.type_eq(expr.ty, ty) {
             let p = ty_p!(self);
@@ -414,7 +415,7 @@ impl<'src> TyCtx<'src> {
         expr
     }
 
-    fn infer_expr(&mut self, expr: &Expr<'src>) -> Expr<'src, Ty> {
+    fn infer_expr(&mut self, expr: &ast::Expr<'src>) -> Expr<'src> {
         use ast::expr::ExprKind as E;
         match &expr.kind {
             E::Return(_) => todo!("infer:Return"),
@@ -437,12 +438,12 @@ impl<'src> TyCtx<'src> {
         }
     }
 
-    fn infer_binary(&mut self, span: Span, v: &ast::expr::Binary<'src>) -> Expr<'src, Ty> {
+    fn infer_binary(&mut self, span: Span, v: &ast::expr::Binary<'src>) -> Expr<'src> {
         fn get_binop_ret_ty<'src>(
             tcx: &mut TyCtx<'src>,
             span: Span,
-            lhs: &Expr<'src, Ty>,
-            rhs: &Expr<'src, Ty>,
+            lhs: &Expr<'src>,
+            rhs: &Expr<'src>,
             op: ast::BinaryOp,
         ) -> Ty {
             if !tcx.type_supports_binop(lhs.ty, op) {
@@ -474,22 +475,33 @@ impl<'src> TyCtx<'src> {
         }
 
         let lhs = self.infer_expr(&v.lhs);
+        let op = v.op;
         let rhs = self.infer_expr(&v.rhs);
-        let ty = get_binop_ret_ty(self, span, &lhs, &rhs, v.op);
-        ast::expr::Binary::with(ty, lhs, v.op, rhs)
-    }
+        let ty = get_binop_ret_ty(self, span, &lhs, &rhs, op);
 
-    fn infer_primitive(&mut self, span: Span, v: &ast::expr::Primitive<'src>) -> Expr<'src, Ty> {
-        use ast::expr::Primitive as P;
-        match v {
-            P::Int(v) => P::int_with(span, Ty::Def(INT), *v),
-            P::Num(v) => P::num_with(span, Ty::Def(NUM), *v),
-            P::Bool(v) => P::bool_with(span, Ty::Def(BOOL), *v),
-            P::Str(v) => P::str_with(span, Ty::Def(STR), v.clone()),
+        Expr {
+            span,
+            ty,
+            kind: ExprKind::Binary(Box::new(Binary { lhs, op, rhs })),
         }
     }
 
-    fn infer_var_expr(&mut self, span: Span, v: &ast::expr::UseVar<'src>) -> Expr<'src, Ty> {
+    fn infer_primitive(&mut self, span: Span, v: &ast::expr::Primitive<'src>) -> Expr<'src> {
+        let (ty, prim) = match v {
+            ast::expr::Primitive::Int(v) => (Ty::Def(INT), Primitive::Int(*v)),
+            ast::expr::Primitive::Num(v) => (Ty::Def(NUM), Primitive::Num(*v)),
+            ast::expr::Primitive::Bool(v) => (Ty::Def(BOOL), Primitive::Bool(*v)),
+            ast::expr::Primitive::Str(v) => (Ty::Def(STR), Primitive::Str(v.clone())),
+        };
+
+        Expr {
+            span,
+            ty,
+            kind: ExprKind::Primitive(Box::new(prim)),
+        }
+    }
+
+    fn infer_var_expr(&mut self, span: Span, v: &ast::expr::UseVar<'src>) -> Expr<'src> {
         let ty = match self.resolve_var_ty(v.name.as_str()) {
             Some(ty) => ty,
             None => {
@@ -498,24 +510,33 @@ impl<'src> TyCtx<'src> {
             }
         };
 
-        ast::expr::UseVar::with(span, ty, v.name.clone())
+        Expr {
+            span,
+            ty,
+            kind: ExprKind::UseVar(Box::new(UseVar { name: v.name })),
+        }
     }
 
-    fn infer_call_expr(&mut self, span: Span, v: &ast::expr::Call<'src>) -> Expr<'src, Ty> {
+    fn infer_call_expr(&mut self, span: Span, v: &ast::expr::Call<'src>) -> Expr<'src> {
         let callee = self.infer_expr(&v.callee);
         let args = v
             .args
             .iter()
-            .map(|arg| ast::Arg {
-                key: arg.key.clone(),
+            .map(|arg| Arg {
+                key: arg.key,
                 value: self.infer_expr(&arg.value),
             })
             .collect::<Vec<_>>();
         let ty = self.check_call(callee.span, callee.ty, &args);
-        ast::expr::Call::with(span, ty, callee, args)
+
+        Expr {
+            span,
+            ty,
+            kind: ExprKind::Call(Box::new(Call { callee, args })),
+        }
     }
 
-    fn check_call(&mut self, span: Span, callee: Ty, args: &[ast::Arg<'src, Ty>]) -> Ty {
+    fn check_call(&mut self, span: Span, callee: Ty, args: &[Arg<'src>]) -> Ty {
         match callee {
             Ty::Unit | Ty::Def(_) => {
                 let p = ty_p!(self);
@@ -598,240 +619,6 @@ impl<'src> TyCtx<'src> {
 
         true
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FnId(u32);
-
-#[derive(Debug)]
-pub struct Fns<'src> {
-    next_id: FnId,
-    id_map: BTreeMap<&'src str, FnId>,
-    array: Vec<Fn<'src>>,
-}
-
-impl<'a, 'src> std::ops::Index<&'a str> for Fns<'src> {
-    type Output = Fn<'src>;
-
-    fn index(&self, index: &'a str) -> &Self::Output {
-        self.get_by_name(index).unwrap()
-    }
-}
-
-impl<'src> std::ops::Index<FnId> for Fns<'src> {
-    type Output = Fn<'src>;
-
-    fn index(&self, index: FnId) -> &Self::Output {
-        self.get_by_id(index).unwrap()
-    }
-}
-
-impl<'src> Fns<'src> {
-    fn new() -> Self {
-        Self {
-            next_id: FnId(0),
-            id_map: BTreeMap::new(),
-            array: Vec::new(),
-        }
-    }
-
-    #[inline]
-    fn insert(&mut self, fn_: Fn<'src>) -> FnId {
-        let id = self.next_id;
-        self.next_id.0 += 1;
-
-        self.id_map.insert(fn_.name.as_str(), id);
-        self.array.push(fn_);
-
-        id
-    }
-
-    #[inline]
-    pub fn contains(&self, name: &'src str) -> bool {
-        self.id_map.contains_key(name)
-    }
-
-    #[inline]
-    pub fn get_by_id(&self, id: FnId) -> Option<&Fn<'src>> {
-        self.array.get(id.0 as usize)
-    }
-
-    #[inline]
-    pub fn id(&self, name: &str) -> Option<FnId> {
-        self.id_map.get(name).copied()
-    }
-
-    #[inline]
-    pub fn get_by_name(&self, name: &str) -> Option<&Fn<'src>> {
-        self.id(name).and_then(|id| self.get_by_id(id))
-    }
-}
-
-#[derive(Debug)]
-pub struct Fn<'src> {
-    pub name: Ident<'src>,
-    pub kind: FnKind,
-    pub sig: FnSig<'src>,
-    pub body: FnBody<'src>,
-}
-
-impl<'src> Fn<'src> {
-    fn is_extern_cons(&self) -> bool {
-        use FnKind as F;
-        matches!(self.kind, F::ExternCons)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum FnKind {
-    /// Regular function declaration
-    Function,
-
-    /// Type constructor
-    Cons,
-
-    /// Extern type constructor
-    ///
-    /// Functions of this kind may not be called,
-    /// and exist only to provide better error messages.
-    ExternCons,
-}
-
-#[derive(Debug)]
-pub struct FnSig<'src> {
-    pub params: Vec<Param<'src>>,
-    pub ret: Ty,
-    pub ret_span: Option<Span>,
-}
-
-#[derive(Debug)]
-pub enum FnBody<'src> {
-    Extern,
-    Block(Block<'src, Ty>),
-}
-
-#[derive(Debug)]
-pub struct Param<'src> {
-    pub name: Ident<'src>,
-    pub ty: Ty,
-}
-
-#[derive(Debug)]
-pub struct Defs<'src> {
-    next_id: DefId,
-    id_map: DefIdMap<'src>,
-    array: Vec<TypeDef<'src>>,
-}
-
-impl<'a, 'src> std::ops::Index<&'a str> for Defs<'src> {
-    type Output = TypeDef<'src>;
-
-    fn index(&self, index: &'a str) -> &Self::Output {
-        self.get_by_name(index).unwrap()
-    }
-}
-
-impl<'src> std::ops::Index<DefId> for Defs<'src> {
-    type Output = TypeDef<'src>;
-
-    fn index(&self, index: DefId) -> &Self::Output {
-        self.get_by_id(index).unwrap()
-    }
-}
-
-impl<'src> Defs<'src> {
-    fn new() -> Self {
-        Self {
-            next_id: DefId(0),
-            id_map: DefIdMap::new(),
-            array: Vec::new(),
-        }
-    }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.array.is_empty()
-    }
-
-    #[inline]
-    pub fn contains(&self, name: &'src str) -> bool {
-        self.id_map.contains_key(name)
-    }
-
-    #[inline]
-    pub fn get_by_id(&self, id: DefId) -> Option<&TypeDef<'src>> {
-        self.array.get(id.0 as usize)
-    }
-
-    #[inline]
-    pub fn id(&self, name: &str) -> Option<DefId> {
-        self.id_map.get(name).copied()
-    }
-
-    #[inline]
-    pub fn get_by_name(&self, name: &str) -> Option<&TypeDef<'src>> {
-        self.id(name).and_then(|id| self.get_by_id(id))
-    }
-
-    #[inline]
-    fn reserve(&mut self, name: &'src str) -> DefId {
-        let id = self.next_id;
-        self.next_id.0 += 1;
-
-        self.id_map.insert(name, id);
-        self.array.push(TypeDef {
-            id,
-            name: Ident::raw(""),
-            fields: Fields::Extern,
-        });
-
-        id
-    }
-
-    #[inline]
-    fn define(&mut self, id: DefId, def: TypeDef<'src>) {
-        assert_eq!(def.id, id);
-        self.array[id.0 as usize] = def;
-    }
-}
-
-type DefIdMap<'src> = BTreeMap<&'src str, DefId>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DefId(u32);
-
-#[derive(Debug)]
-pub struct TypeDef<'src> {
-    pub id: DefId,
-    pub name: Ident<'src>,
-    pub fields: Fields<'src>,
-}
-
-#[derive(Debug)]
-pub enum Fields<'src> {
-    Extern,
-    Named(FieldMap<'src>),
-}
-
-pub type FieldMap<'src> = BTreeMap<&'src str, Field<'src>>;
-
-#[derive(Debug)]
-pub struct Field<'src> {
-    pub name: Ident<'src>,
-    pub ty: Ty,
-    pub offset: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Ty {
-    /// Unit
-    Unit,
-    /// Type definition
-    Def(DefId),
-    /// Function
-    Fn(FnId),
-    /// Type error
-    Error,
 }
 
 macro_rules! primitives {

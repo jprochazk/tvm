@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display, Formatter, Result};
 
-impl<T> Debug for super::Ast<'_, T> {
+impl Debug for super::Ast<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Ast")
             .field("decls", &self.decls)
@@ -9,13 +9,13 @@ impl<T> Debug for super::Ast<'_, T> {
     }
 }
 
-impl<T> Debug for super::decl::Decl<'_, T> {
+impl Debug for super::decl::Decl<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         Debug::fmt(&self.kind, f)
     }
 }
 
-impl<T> Debug for super::decl::DeclKind<'_, T> {
+impl Debug for super::decl::DeclKind<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Fn(arg0) => Debug::fmt(arg0, f),
@@ -24,7 +24,7 @@ impl<T> Debug for super::decl::DeclKind<'_, T> {
     }
 }
 
-impl<T> Debug for super::decl::Fn<'_, T> {
+impl Debug for super::decl::Fn<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Fn")
             .field("name", &self.name)
@@ -35,7 +35,7 @@ impl<T> Debug for super::decl::Fn<'_, T> {
     }
 }
 
-impl<T> Debug for super::decl::Body<'_, T> {
+impl Debug for super::decl::Body<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Extern => write!(f, "Extern"),
@@ -71,13 +71,13 @@ impl Debug for super::decl::Field<'_> {
     }
 }
 
-impl<T> Debug for super::stmt::Stmt<'_, T> {
+impl Debug for super::stmt::Stmt<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         Debug::fmt(&self.kind, f)
     }
 }
 
-impl<T> Debug for super::stmt::StmtKind<'_, T> {
+impl Debug for super::stmt::StmtKind<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Let(arg0) => Debug::fmt(arg0, f),
@@ -87,7 +87,7 @@ impl<T> Debug for super::stmt::StmtKind<'_, T> {
     }
 }
 
-impl<T> Debug for super::stmt::Let<'_, T> {
+impl Debug for super::stmt::Let<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Let")
             .field("name", &self.name)
@@ -97,7 +97,7 @@ impl<T> Debug for super::stmt::Let<'_, T> {
     }
 }
 
-impl<T> Debug for super::stmt::Loop<'_, T> {
+impl Debug for super::stmt::Loop<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Loop").field("body", &self.body).finish()
     }
@@ -134,13 +134,13 @@ impl Debug for super::ty::Named<'_> {
     }
 }
 
-impl<T> Debug for super::expr::Expr<'_, T> {
+impl Debug for super::expr::Expr<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         Debug::fmt(&self.kind, f)
     }
 }
 
-impl<T> Debug for super::expr::ExprKind<'_, T> {
+impl Debug for super::expr::ExprKind<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Return(arg0) => Debug::fmt(arg0, f),
@@ -164,7 +164,7 @@ impl<T> Debug for super::expr::ExprKind<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::Return<'_, T> {
+impl Debug for super::expr::Return<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Return")
             .field("value", &self.value)
@@ -172,7 +172,7 @@ impl<T> Debug for super::expr::Return<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::If<'_, T> {
+impl Debug for super::expr::If<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("If")
             .field("branches", &self.branches)
@@ -181,7 +181,7 @@ impl<T> Debug for super::expr::If<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::Binary<'_, T> {
+impl Debug for super::expr::Binary<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Binary")
             .field("left", &self.lhs)
@@ -191,7 +191,7 @@ impl<T> Debug for super::expr::Binary<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::Unary<'_, T> {
+impl Debug for super::expr::Unary<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Unary")
             .field("op", &self.op)
@@ -211,7 +211,7 @@ impl Debug for super::expr::Primitive<'_> {
     }
 }
 
-impl<T> Debug for super::expr::Array<'_, T> {
+impl Debug for super::expr::Array<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Array").field("items", &self.items).finish()
     }
@@ -223,7 +223,7 @@ impl Debug for super::expr::UseVar<'_> {
     }
 }
 
-impl<T> Debug for super::expr::UseField<'_, T> {
+impl Debug for super::expr::UseField<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("UseField")
             .field("parent", &self.parent)
@@ -232,7 +232,7 @@ impl<T> Debug for super::expr::UseField<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::UseIndex<'_, T> {
+impl Debug for super::expr::UseIndex<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("UseIndex")
             .field("parent", &self.parent)
@@ -241,7 +241,7 @@ impl<T> Debug for super::expr::UseIndex<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::AssignVar<'_, T> {
+impl Debug for super::expr::AssignVar<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("AssignVar")
             .field("name", &self.name)
@@ -251,7 +251,7 @@ impl<T> Debug for super::expr::AssignVar<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::AssignField<'_, T> {
+impl Debug for super::expr::AssignField<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("AssignField")
             .field("parent", &self.parent)
@@ -262,7 +262,7 @@ impl<T> Debug for super::expr::AssignField<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::AssignIndex<'_, T> {
+impl Debug for super::expr::AssignIndex<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("AssignIndex")
             .field("parent", &self.parent)
@@ -273,7 +273,7 @@ impl<T> Debug for super::expr::AssignIndex<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::Call<'_, T> {
+impl Debug for super::expr::Call<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Call")
             .field("callee", &self.callee)
@@ -282,7 +282,7 @@ impl<T> Debug for super::expr::Call<'_, T> {
     }
 }
 
-impl<T> Debug for super::expr::MethodCall<'_, T> {
+impl Debug for super::expr::MethodCall<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("MethodCall")
             .field("receiver", &self.receiver)
@@ -347,7 +347,7 @@ impl Debug for super::Param<'_> {
     }
 }
 
-impl<T> Debug for super::Branch<'_, T> {
+impl Debug for super::Branch<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Branch")
             .field(&self.cond)
@@ -356,7 +356,7 @@ impl<T> Debug for super::Branch<'_, T> {
     }
 }
 
-impl<T> Debug for super::Arg<'_, T> {
+impl Debug for super::Arg<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut t = f.debug_tuple("Arg");
         match &self.key {
@@ -366,7 +366,7 @@ impl<T> Debug for super::Arg<'_, T> {
     }
 }
 
-impl<T> Debug for super::Block<'_, T> {
+impl Debug for super::Block<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Block")
             .field("body", &self.body)

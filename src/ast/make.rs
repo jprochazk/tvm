@@ -2,14 +2,14 @@
 
 use super::*;
 
-impl<'src, T> decl::Fn<'src, T> {
+impl<'src> decl::Fn<'src> {
     pub fn new(
         span: impl Into<Span>,
         name: Ident<'src>,
         params: Vec<Param<'src>>,
         ret: Option<Ty<'src>>,
-        body: decl::Body<'src, T>,
-    ) -> Decl<'src, T> {
+        body: decl::Body<'src>,
+    ) -> Decl<'src> {
         Decl {
             span: span.into(),
             kind: decl::DeclKind::Fn(Box::new(Self {
@@ -23,11 +23,7 @@ impl<'src, T> decl::Fn<'src, T> {
 }
 
 impl<'src> decl::TypeDef<'src> {
-    pub fn new<T>(
-        span: impl Into<Span>,
-        name: Ident<'src>,
-        fields: decl::Fields<'src>,
-    ) -> Decl<'src, T> {
+    pub fn new(span: impl Into<Span>, name: Ident<'src>, fields: decl::Fields<'src>) -> Decl<'src> {
         Decl {
             span: span.into(),
             kind: decl::DeclKind::Type(Box::new(Self { name, fields })),
@@ -35,13 +31,13 @@ impl<'src> decl::TypeDef<'src> {
     }
 }
 
-impl<'src, T> stmt::Let<'src, T> {
+impl<'src> stmt::Let<'src> {
     pub fn new(
         span: impl Into<Span>,
         name: Ident<'src>,
         ty: Option<Ty<'src>>,
-        init: Expr<'src, T>,
-    ) -> Stmt<'src, T> {
+        init: Expr<'src>,
+    ) -> Stmt<'src> {
         Stmt {
             span: span.into(),
             kind: stmt::StmtKind::Let(Box::new(Self { name, ty, init })),
@@ -49,8 +45,8 @@ impl<'src, T> stmt::Let<'src, T> {
     }
 }
 
-impl<'src, T> stmt::Loop<'src, T> {
-    pub fn new(span: impl Into<Span>, body: Block<'src, T>) -> Stmt<'src, T> {
+impl<'src> stmt::Loop<'src> {
+    pub fn new(span: impl Into<Span>, body: Block<'src>) -> Stmt<'src> {
         Stmt {
             span: span.into(),
             kind: stmt::StmtKind::Loop(Box::new(Self { body })),
@@ -76,8 +72,8 @@ impl<'src> ty::Named<'src> {
     }
 }
 
-impl<'src, T> Expr<'src, T> {
-    pub fn into_stmt(self) -> Stmt<'src, T> {
+impl<'src> Expr<'src> {
+    pub fn into_stmt(self) -> Stmt<'src> {
         Stmt {
             span: self.span,
             kind: stmt::StmtKind::Expr(self),
@@ -86,246 +82,125 @@ impl<'src, T> Expr<'src, T> {
 }
 
 impl<'src> expr::Break {
-    pub fn new<T>(span: impl Into<Span>, ty: T) -> Expr<'src, T> {
+    pub fn new(span: impl Into<Span>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty,
-            kind: expr::ExprKind::Break,
-        }
-    }
-}
 
-impl<'src> expr::Break {
-    pub fn with<T>(span: impl Into<Span>, ty: T) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
             kind: expr::ExprKind::Break,
         }
     }
 }
 
 impl<'src> expr::Continue {
-    pub fn new<T>(span: impl Into<Span>, ty: T) -> Expr<'src, T> {
+    pub fn new(span: impl Into<Span>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty,
+
             kind: expr::ExprKind::Continue,
         }
     }
 }
 
-impl<'src> expr::Continue {
-    pub fn with<T>(span: impl Into<Span>, ty: T) -> Expr<'src, T> {
+impl<'src> expr::Return<'src> {
+    pub fn new(span: impl Into<Span>, value: Option<Expr<'src>>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty,
-            kind: expr::ExprKind::Continue,
-        }
-    }
-}
 
-impl<'src, T: Default> expr::Return<'src, T> {
-    pub fn new(span: impl Into<Span>, value: Option<Expr<'src, T>>) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty: Default::default(),
             kind: expr::ExprKind::Return(Box::new(expr::Return { value })),
         }
     }
 }
 
-impl<'src, T> expr::Return<'src, T> {
-    pub fn with(span: impl Into<Span>, ty: T, value: Option<Expr<'src, T>>) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::Return(Box::new(expr::Return { value })),
-        }
-    }
-}
-
-impl<'src, T: Default> expr::If<'src, T> {
+impl<'src> expr::If<'src> {
     pub fn new(
         span: impl Into<Span>,
-        branches: Vec<Branch<'src, T>>,
-        tail: Option<Block<'src, T>>,
-    ) -> Expr<'src, T> {
+        branches: Vec<Branch<'src>>,
+        tail: Option<Block<'src>>,
+    ) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::If(Box::new(expr::If { branches, tail })),
         }
     }
 }
 
-impl<'src, T> expr::If<'src, T> {
-    pub fn with(
-        span: impl Into<Span>,
-        ty: T,
-        branches: Vec<Branch<'src, T>>,
-        tail: Option<Block<'src, T>>,
-    ) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::If(Box::new(expr::If { branches, tail })),
-        }
-    }
-}
-
-impl<'src, T: Default> expr::Binary<'src, T> {
-    pub fn new(lhs: Expr<'src, T>, op: BinaryOp, rhs: Expr<'src, T>) -> Expr<'src, T> {
+impl<'src> expr::Binary<'src> {
+    pub fn new(lhs: Expr<'src>, op: BinaryOp, rhs: Expr<'src>) -> Expr<'src> {
         Expr {
             span: lhs.span.to(rhs.span),
-            ty: Default::default(),
+
             kind: expr::ExprKind::Binary(Box::new(expr::Binary { lhs, op, rhs })),
         }
     }
 }
 
-impl<'src, T> expr::Binary<'src, T> {
-    pub fn with(ty: T, lhs: Expr<'src, T>, op: BinaryOp, rhs: Expr<'src, T>) -> Expr<'src, T> {
-        Expr {
-            span: lhs.span.to(rhs.span),
-            ty,
-            kind: expr::ExprKind::Binary(Box::new(expr::Binary { lhs, op, rhs })),
-        }
-    }
-}
-
-impl<'src, T: Default> expr::Unary<'src, T> {
-    pub fn new(span: impl Into<Span>, op: UnaryOp, rhs: Expr<'src, T>) -> Expr<'src, T> {
+impl<'src> expr::Unary<'src> {
+    pub fn new(span: impl Into<Span>, op: UnaryOp, rhs: Expr<'src>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
-            kind: expr::ExprKind::Unary(Box::new(expr::Unary { op, rhs })),
-        }
-    }
-}
 
-impl<'src, T> expr::Unary<'src, T> {
-    pub fn with(span: impl Into<Span>, ty: T, op: UnaryOp, rhs: Expr<'src, T>) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
             kind: expr::ExprKind::Unary(Box::new(expr::Unary { op, rhs })),
         }
     }
 }
 
 impl<'src> expr::UseVar<'src> {
-    pub fn new<T: Default>(span: impl Into<Span>, name: Ident<'src>) -> Expr<'src, T> {
+    pub fn new(span: impl Into<Span>, name: Ident<'src>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::UseVar(Box::new(expr::UseVar { name })),
         }
     }
 }
 
-impl<'src> expr::UseVar<'src> {
-    pub fn with<T>(span: impl Into<Span>, ty: T, name: Ident<'src>) -> Expr<'src, T> {
+impl<'src> expr::UseField<'src> {
+    pub fn new(span: impl Into<Span>, parent: Expr<'src>, name: Ident<'src>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty,
-            kind: expr::ExprKind::UseVar(Box::new(expr::UseVar { name })),
-        }
-    }
-}
 
-impl<'src, T: Default> expr::UseField<'src, T> {
-    pub fn new(span: impl Into<Span>, parent: Expr<'src, T>, name: Ident<'src>) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty: Default::default(),
             kind: expr::ExprKind::UseField(Box::new(expr::UseField { parent, name })),
         }
     }
 }
 
-impl<'src, T> expr::UseField<'src, T> {
-    pub fn with(
-        span: impl Into<Span>,
-        ty: T,
-        parent: Expr<'src, T>,
-        name: Ident<'src>,
-    ) -> Expr<'src, T> {
+impl<'src> expr::UseIndex<'src> {
+    pub fn new(span: impl Into<Span>, parent: Expr<'src>, key: Expr<'src>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty,
-            kind: expr::ExprKind::UseField(Box::new(expr::UseField { parent, name })),
-        }
-    }
-}
 
-impl<'src, T: Default> expr::UseIndex<'src, T> {
-    pub fn new(span: impl Into<Span>, parent: Expr<'src, T>, key: Expr<'src, T>) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty: Default::default(),
             kind: expr::ExprKind::UseIndex(Box::new(expr::UseIndex { parent, key })),
         }
     }
 }
 
-impl<'src, T> expr::UseIndex<'src, T> {
-    pub fn with(
-        span: impl Into<Span>,
-        ty: T,
-        parent: Expr<'src, T>,
-        key: Expr<'src, T>,
-    ) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::UseIndex(Box::new(expr::UseIndex { parent, key })),
-        }
-    }
-}
-
-impl<'src, T: Default> expr::AssignVar<'src, T> {
+impl<'src> expr::AssignVar<'src> {
     pub fn new(
         span: impl Into<Span>,
         name: Ident<'src>,
         op: Option<BinaryOp>,
-        value: Expr<'src, T>,
-    ) -> Expr<'src, T> {
+        value: Expr<'src>,
+    ) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::AssignVar(Box::new(expr::AssignVar { name, op, value })),
         }
     }
 }
 
-impl<'src, T> expr::AssignVar<'src, T> {
-    pub fn with(
-        span: impl Into<Span>,
-        ty: T,
-        name: Ident<'src>,
-        op: Option<BinaryOp>,
-        value: Expr<'src, T>,
-    ) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::AssignVar(Box::new(expr::AssignVar { name, op, value })),
-        }
-    }
-}
-
-impl<'src, T: Default> expr::AssignField<'src, T> {
+impl<'src> expr::AssignField<'src> {
     pub fn new(
         span: impl Into<Span>,
-        parent: Expr<'src, T>,
+        parent: Expr<'src>,
         name: Ident<'src>,
         op: Option<BinaryOp>,
-        value: Expr<'src, T>,
-    ) -> Expr<'src, T> {
+        value: Expr<'src>,
+    ) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::AssignField(Box::new(expr::AssignField {
                 parent,
                 name,
@@ -336,39 +211,17 @@ impl<'src, T: Default> expr::AssignField<'src, T> {
     }
 }
 
-impl<'src, T> expr::AssignField<'src, T> {
-    pub fn with(
-        span: impl Into<Span>,
-        ty: T,
-        parent: Expr<'src, T>,
-        name: Ident<'src>,
-        op: Option<BinaryOp>,
-        value: Expr<'src, T>,
-    ) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::AssignField(Box::new(expr::AssignField {
-                parent,
-                name,
-                op,
-                value,
-            })),
-        }
-    }
-}
-
-impl<'src, T: Default> expr::AssignIndex<'src, T> {
+impl<'src> expr::AssignIndex<'src> {
     pub fn new(
         span: impl Into<Span>,
-        parent: Expr<'src, T>,
-        key: Expr<'src, T>,
+        parent: Expr<'src>,
+        key: Expr<'src>,
         op: Option<BinaryOp>,
-        value: Expr<'src, T>,
-    ) -> Expr<'src, T> {
+        value: Expr<'src>,
+    ) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::AssignIndex(Box::new(expr::AssignIndex {
                 parent,
                 key,
@@ -379,67 +232,26 @@ impl<'src, T: Default> expr::AssignIndex<'src, T> {
     }
 }
 
-impl<'src, T> expr::AssignIndex<'src, T> {
-    pub fn with(
-        span: impl Into<Span>,
-        ty: T,
-        parent: Expr<'src, T>,
-        key: Expr<'src, T>,
-        op: Option<BinaryOp>,
-        value: Expr<'src, T>,
-    ) -> Expr<'src, T> {
+impl<'src> expr::Call<'src> {
+    pub fn new(span: impl Into<Span>, callee: Expr<'src>, args: Vec<Arg<'src>>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty,
-            kind: expr::ExprKind::AssignIndex(Box::new(expr::AssignIndex {
-                parent,
-                key,
-                op,
-                value,
-            })),
-        }
-    }
-}
 
-impl<'src, T: Default> expr::Call<'src, T> {
-    pub fn new(
-        span: impl Into<Span>,
-        callee: Expr<'src, T>,
-        args: Vec<Arg<'src, T>>,
-    ) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty: Default::default(),
             kind: expr::ExprKind::Call(Box::new(expr::Call { callee, args })),
         }
     }
 }
 
-impl<'src, T> expr::Call<'src, T> {
-    pub fn with(
-        span: impl Into<Span>,
-        ty: T,
-        callee: Expr<'src, T>,
-        args: Vec<Arg<'src, T>>,
-    ) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::Call(Box::new(expr::Call { callee, args })),
-        }
-    }
-}
-
-impl<'src, T: Default> expr::MethodCall<'src, T> {
+impl<'src> expr::MethodCall<'src> {
     pub fn new(
         span: impl Into<Span>,
-        receiver: Expr<'src, T>,
+        receiver: Expr<'src>,
         method: Ident<'src>,
-        args: Vec<Arg<'src, T>>,
-    ) -> Expr<'src, T> {
+        args: Vec<Arg<'src>>,
+    ) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::MethodCall(Box::new(expr::MethodCall {
                 receiver,
                 method,
@@ -449,137 +261,66 @@ impl<'src, T: Default> expr::MethodCall<'src, T> {
     }
 }
 
-impl<'src, T> expr::MethodCall<'src, T> {
-    pub fn with(
-        span: impl Into<Span>,
-        ty: T,
-        receiver: Expr<'src, T>,
-        method: Ident<'src>,
-        args: Vec<Arg<'src, T>>,
-    ) -> Expr<'src, T> {
+impl<'src> expr::Array<'src> {
+    pub fn new(span: impl Into<Span>, items: Vec<Expr<'src>>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty,
-            kind: expr::ExprKind::MethodCall(Box::new(expr::MethodCall {
-                receiver,
-                method,
-                args,
-            })),
-        }
-    }
-}
 
-impl<'src, T: Default> expr::Array<'src, T> {
-    pub fn new(span: impl Into<Span>, items: Vec<Expr<'src, T>>) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty: Default::default(),
-            kind: expr::ExprKind::Array(Box::new(Self { items })),
-        }
-    }
-}
-
-impl<'src, T> expr::Array<'src, T> {
-    pub fn with(span: impl Into<Span>, ty: T, items: Vec<Expr<'src, T>>) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
             kind: expr::ExprKind::Array(Box::new(Self { items })),
         }
     }
 }
 
 impl<'src> expr::Primitive<'src> {
-    pub fn new_int<T: Default>(span: impl Into<Span>, value: i64) -> Expr<'src, T> {
+    pub fn int(span: impl Into<Span>, value: i64) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::Primitive(Box::new(expr::Primitive::Int(value))),
         }
     }
 
-    pub fn new_num<T: Default>(span: impl Into<Span>, value: f64) -> Expr<'src, T> {
+    pub fn num(span: impl Into<Span>, value: f64) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::Primitive(Box::new(expr::Primitive::Num(value))),
         }
     }
 
-    pub fn new_bool<T: Default>(span: impl Into<Span>, value: bool) -> Expr<'src, T> {
+    pub fn bool(span: impl Into<Span>, value: bool) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::Primitive(Box::new(expr::Primitive::Bool(value))),
         }
     }
 
-    pub fn new_str<T: Default>(
-        span: impl Into<Span>,
-        value: impl Into<Str<'src>>,
-    ) -> Expr<'src, T> {
+    pub fn str(span: impl Into<Span>, value: impl Into<Str<'src>>) -> Expr<'src> {
         Expr {
             span: span.into(),
-            ty: Default::default(),
+
             kind: expr::ExprKind::Primitive(Box::new(expr::Primitive::Str(value.into()))),
         }
     }
 }
 
-impl<'src> expr::Primitive<'src> {
-    pub fn int_with<T>(span: impl Into<Span>, ty: T, value: i64) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::Primitive(Box::new(expr::Primitive::Int(value))),
-        }
-    }
-
-    pub fn num_with<T>(span: impl Into<Span>, ty: T, value: f64) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::Primitive(Box::new(expr::Primitive::Num(value))),
-        }
-    }
-
-    pub fn bool_with<T>(span: impl Into<Span>, ty: T, value: bool) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::Primitive(Box::new(expr::Primitive::Bool(value))),
-        }
-    }
-
-    pub fn str_with<T>(span: impl Into<Span>, ty: T, value: impl Into<Str<'src>>) -> Expr<'src, T> {
-        Expr {
-            span: span.into(),
-            ty,
-            kind: expr::ExprKind::Primitive(Box::new(expr::Primitive::Str(value.into()))),
-        }
-    }
-}
-
-impl<'src, T> Block<'src, T> {
-    pub fn new(
-        span: Span,
-        body: Vec<Stmt<'src, T>>,
-        tail: Option<Expr<'src, T>>,
-    ) -> Block<'src, T> {
+impl<'src> Block<'src> {
+    pub fn new(span: Span, body: Vec<Stmt<'src>>, tail: Option<Expr<'src>>) -> Block<'src> {
         Block { span, body, tail }
     }
 
-    pub fn into_stmt(self, ty: T) -> Stmt<'src, T> {
+    pub fn into_stmt(self) -> Stmt<'src> {
         Stmt {
             span: self.span,
-            kind: stmt::StmtKind::Expr(self.into_expr(ty)),
+            kind: stmt::StmtKind::Expr(self.into_expr()),
         }
     }
 
-    pub fn into_expr(self, ty: T) -> Expr<'src, T> {
+    pub fn into_expr(self) -> Expr<'src> {
         Expr {
             span: self.span,
-            ty,
+
             kind: expr::ExprKind::Block(Box::new(self)),
         }
     }

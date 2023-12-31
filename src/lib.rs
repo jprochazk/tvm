@@ -15,6 +15,8 @@ pub mod ast;
 
 pub mod syn;
 
+pub mod hir;
+
 pub mod ty;
 
 pub mod code;

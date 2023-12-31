@@ -7,39 +7,39 @@ mod print;
 
 use std::hash::Hash;
 
-use crate::lex::{Lexer, Span, Token, TokenKind};
+use crate::lex::Span;
 use crate::Str;
 
-pub struct Ast<'src, T = ()> {
+pub struct Ast<'src> {
     pub src: &'src str,
-    pub decls: Vec<Decl<'src, T>>,
-    pub top_level: Block<'src, T>,
+    pub decls: Vec<Decl<'src>>,
+    pub top_level: Block<'src>,
 }
 
 pub use decl::Decl;
 pub mod decl {
     pub use super::*;
 
-    pub struct Decl<'src, T = ()> {
+    pub struct Decl<'src> {
         pub span: Span,
-        pub kind: DeclKind<'src, T>,
+        pub kind: DeclKind<'src>,
     }
 
-    pub enum DeclKind<'src, T = ()> {
-        Fn(Box<Fn<'src, T>>),
+    pub enum DeclKind<'src> {
+        Fn(Box<Fn<'src>>),
         Type(Box<TypeDef<'src>>),
     }
 
-    pub struct Fn<'src, T = ()> {
+    pub struct Fn<'src> {
         pub name: Ident<'src>,
         pub params: Vec<Param<'src>>,
         pub ret: Option<Ty<'src>>,
-        pub body: Body<'src, T>,
+        pub body: Body<'src>,
     }
 
-    pub enum Body<'src, T = ()> {
+    pub enum Body<'src> {
         Extern,
-        Block(Block<'src, T>),
+        Block(Block<'src>),
     }
 
     pub struct TypeDef<'src> {
@@ -62,25 +62,25 @@ pub use stmt::Stmt;
 pub mod stmt {
     pub use super::*;
 
-    pub struct Stmt<'src, T = ()> {
+    pub struct Stmt<'src> {
         pub span: Span,
-        pub kind: StmtKind<'src, T>,
+        pub kind: StmtKind<'src>,
     }
 
-    pub enum StmtKind<'src, T = ()> {
-        Let(Box<Let<'src, T>>),
-        Loop(Box<Loop<'src, T>>),
-        Expr(Expr<'src, T>),
+    pub enum StmtKind<'src> {
+        Let(Box<Let<'src>>),
+        Loop(Box<Loop<'src>>),
+        Expr(Expr<'src>),
     }
 
-    pub struct Let<'src, T = ()> {
+    pub struct Let<'src> {
         pub name: Ident<'src>,
         pub ty: Option<Ty<'src>>,
-        pub init: Expr<'src, T>,
+        pub init: Expr<'src>,
     }
 
-    pub struct Loop<'src, T = ()> {
-        pub body: Block<'src, T>,
+    pub struct Loop<'src> {
+        pub body: Block<'src>,
     }
 }
 
@@ -113,54 +113,53 @@ pub use expr::Expr;
 pub mod expr {
     pub use super::*;
 
-    pub struct Expr<'src, T = ()> {
+    pub struct Expr<'src> {
         pub span: Span,
-        pub ty: T,
-        pub kind: ExprKind<'src, T>,
+        pub kind: ExprKind<'src>,
     }
 
-    pub enum ExprKind<'src, T = ()> {
-        Return(Box<Return<'src, T>>),
+    pub enum ExprKind<'src> {
+        Return(Box<Return<'src>>),
         Break,
         Continue,
-        Block(Box<Block<'src, T>>),
-        If(Box<If<'src, T>>),
-        Binary(Box<Binary<'src, T>>),
-        Unary(Box<Unary<'src, T>>),
+        Block(Box<Block<'src>>),
+        If(Box<If<'src>>),
+        Binary(Box<Binary<'src>>),
+        Unary(Box<Unary<'src>>),
         Primitive(Box<Primitive<'src>>),
-        Array(Box<Array<'src, T>>),
+        Array(Box<Array<'src>>),
         UseVar(Box<UseVar<'src>>),
-        UseField(Box<UseField<'src, T>>),
-        UseIndex(Box<UseIndex<'src, T>>),
-        AssignVar(Box<AssignVar<'src, T>>),
-        AssignField(Box<AssignField<'src, T>>),
-        AssignIndex(Box<AssignIndex<'src, T>>),
-        Call(Box<Call<'src, T>>),
-        MethodCall(Box<MethodCall<'src, T>>),
+        UseField(Box<UseField<'src>>),
+        UseIndex(Box<UseIndex<'src>>),
+        AssignVar(Box<AssignVar<'src>>),
+        AssignField(Box<AssignField<'src>>),
+        AssignIndex(Box<AssignIndex<'src>>),
+        Call(Box<Call<'src>>),
+        MethodCall(Box<MethodCall<'src>>),
     }
 
-    pub struct Return<'src, T = ()> {
-        pub value: Option<Expr<'src, T>>,
+    pub struct Return<'src> {
+        pub value: Option<Expr<'src>>,
     }
 
     pub struct Break;
 
     pub struct Continue;
 
-    pub struct If<'src, T = ()> {
-        pub branches: Vec<Branch<'src, T>>,
-        pub tail: Option<Block<'src, T>>,
+    pub struct If<'src> {
+        pub branches: Vec<Branch<'src>>,
+        pub tail: Option<Block<'src>>,
     }
 
-    pub struct Binary<'src, T = ()> {
-        pub lhs: Expr<'src, T>,
+    pub struct Binary<'src> {
+        pub lhs: Expr<'src>,
         pub op: BinaryOp,
-        pub rhs: Expr<'src, T>,
+        pub rhs: Expr<'src>,
     }
 
-    pub struct Unary<'src, T = ()> {
+    pub struct Unary<'src> {
         pub op: UnaryOp,
-        pub rhs: Expr<'src, T>,
+        pub rhs: Expr<'src>,
     }
 
     pub enum Primitive<'src> {
@@ -170,53 +169,53 @@ pub mod expr {
         Str(Str<'src>),
     }
 
-    pub struct Array<'src, T = ()> {
-        pub items: Vec<Expr<'src, T>>,
+    pub struct Array<'src> {
+        pub items: Vec<Expr<'src>>,
     }
 
     pub struct UseVar<'src> {
         pub name: Ident<'src>,
     }
 
-    pub struct UseField<'src, T = ()> {
-        pub parent: Expr<'src, T>,
+    pub struct UseField<'src> {
+        pub parent: Expr<'src>,
         pub name: Ident<'src>,
     }
 
-    pub struct UseIndex<'src, T = ()> {
-        pub parent: Expr<'src, T>,
-        pub key: Expr<'src, T>,
+    pub struct UseIndex<'src> {
+        pub parent: Expr<'src>,
+        pub key: Expr<'src>,
     }
 
-    pub struct AssignVar<'src, T = ()> {
+    pub struct AssignVar<'src> {
         pub name: Ident<'src>,
         pub op: Option<BinaryOp>,
-        pub value: Expr<'src, T>,
+        pub value: Expr<'src>,
     }
 
-    pub struct AssignField<'src, T = ()> {
-        pub parent: Expr<'src, T>,
+    pub struct AssignField<'src> {
+        pub parent: Expr<'src>,
         pub name: Ident<'src>,
         pub op: Option<BinaryOp>,
-        pub value: Expr<'src, T>,
+        pub value: Expr<'src>,
     }
 
-    pub struct AssignIndex<'src, T = ()> {
-        pub parent: Expr<'src, T>,
-        pub key: Expr<'src, T>,
+    pub struct AssignIndex<'src> {
+        pub parent: Expr<'src>,
+        pub key: Expr<'src>,
         pub op: Option<BinaryOp>,
-        pub value: Expr<'src, T>,
+        pub value: Expr<'src>,
     }
 
-    pub struct Call<'src, T = ()> {
-        pub callee: Expr<'src, T>,
-        pub args: Vec<Arg<'src, T>>,
+    pub struct Call<'src> {
+        pub callee: Expr<'src>,
+        pub args: Vec<Arg<'src>>,
     }
 
-    pub struct MethodCall<'src, T = ()> {
-        pub receiver: Expr<'src, T>,
+    pub struct MethodCall<'src> {
+        pub receiver: Expr<'src>,
         pub method: Ident<'src>,
-        pub args: Vec<Arg<'src, T>>,
+        pub args: Vec<Arg<'src>>,
     }
 }
 
@@ -225,14 +224,14 @@ pub struct Param<'src> {
     pub ty: Ty<'src>,
 }
 
-pub struct Branch<'src, T = ()> {
-    pub cond: Expr<'src, T>,
-    pub body: Block<'src, T>,
+pub struct Branch<'src> {
+    pub cond: Expr<'src>,
+    pub body: Block<'src>,
 }
 
-pub struct Arg<'src, T = ()> {
+pub struct Arg<'src> {
     pub key: Option<Ident<'src>>,
-    pub value: Expr<'src, T>,
+    pub value: Expr<'src>,
 }
 
 #[derive(Clone, Copy)]
@@ -285,10 +284,10 @@ macro_rules! unop {
   [?] => ($crate::ast::UnaryOp::Opt);
 }
 
-pub struct Block<'src, T = ()> {
+pub struct Block<'src> {
     pub span: Span,
-    pub body: Vec<Stmt<'src, T>>,
-    pub tail: Option<Expr<'src, T>>,
+    pub body: Vec<Stmt<'src>>,
+    pub tail: Option<Expr<'src>>,
 }
 
 #[derive(Clone, Copy)]

@@ -8,6 +8,7 @@ mod print;
 use std::hash::Hash;
 
 use crate::lex::Span;
+use crate::value::f64n;
 use crate::Str;
 
 pub struct Ast<'src> {
@@ -164,7 +165,7 @@ pub mod expr {
 
     pub enum Primitive<'src> {
         Int(i64),
-        Num(f64),
+        Num(f64n),
         Bool(bool),
         Str(Str<'src>),
     }
@@ -328,5 +329,23 @@ impl Ord for Ident<'_> {
 impl Hash for Ident<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.lexeme.hash(state);
+    }
+}
+
+impl AsRef<str> for Ident<'_> {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+impl std::borrow::Borrow<str> for Ident<'_> {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+impl std::ops::Deref for Ident<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
     }
 }

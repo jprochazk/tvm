@@ -3,6 +3,7 @@ use std::fmt::Debug;
 
 use crate::ast::{BinaryOp, Ident, UnaryOp};
 use crate::lex::Span;
+use crate::value::f64n;
 use crate::Str;
 
 pub struct Hir<'src> {
@@ -190,6 +191,13 @@ impl<'src> Fns<'src> {
     pub fn get_by_name(&self, name: &str) -> Option<&Fn<'src>> {
         self.id(name).and_then(|id| self.get_by_id(id))
     }
+
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = (&'src str, FnId, &Fn<'src>)> {
+        self.id_map
+            .iter()
+            .map(|(name, id)| (*name, *id, self.get_by_id(*id).unwrap()))
+    }
 }
 
 #[derive(Debug)]
@@ -245,6 +253,15 @@ pub struct Block<'src> {
     pub span: Span,
     pub body: Vec<Stmt<'src>>,
     pub tail: Option<Expr<'src>>,
+}
+
+impl<'src> Block<'src> {
+    pub fn ty(&self) -> Ty {
+        match &self.tail {
+            Some(tail) => tail.ty,
+            None => Ty::Unit,
+        }
+    }
 }
 
 pub struct Stmt<'src> {
@@ -343,7 +360,7 @@ pub struct Unary<'src> {
 #[derive(Debug)]
 pub enum Primitive<'src> {
     Int(i64),
-    Num(f64),
+    Num(f64n),
     Bool(bool),
     Str(Str<'src>),
 }

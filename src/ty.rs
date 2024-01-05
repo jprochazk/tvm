@@ -184,7 +184,6 @@ impl<'src> TyCtx<'src> {
             }
 
             if let Some((existing, _)) = out.get(name.as_str()) {
-                // let existing: &Ident<'_> = existing;
                 self.ecx.emit_invalid_shadowing(
                     name.span,
                     name.as_str(),
@@ -226,15 +225,12 @@ impl<'src> TyCtx<'src> {
     }
 
     fn current_scope(&mut self) -> &mut Scope<'src> {
-        self.scopes
-            .last_mut()
-            .expect("accessing current scope without any scope available")
+        self.scopes.last_mut().expect("BUG: no open scope")
     }
 
     fn check_symbol(&mut self, name: &Ident<'src>, kind: SymbolKind) -> Result<()> {
         use SymbolKind as S;
-        let scope = self.current_scope();
-        match scope.get(name.as_str()).copied() {
+        match self.current_scope().get(name.as_str()).copied() {
             Some(existing) if matches!((existing.kind, kind), (S::Var, S::Var)) => Ok(()),
             Some(existing) => Err(self.ecx.invalid_shadowing(
                 name.span,
@@ -340,7 +336,7 @@ impl<'src> TyCtx<'src> {
                 let block = self.infer_block(block);
                 self.leave_scope();
 
-                let ret_ty = block.tail.as_ref().map(|tail| tail.ty).unwrap_or(Ty::Unit);
+                let ret_ty = block.ty();
 
                 if !self.type_eq(sig.ret, ret_ty) {
                     let p = ty_p!(self);
@@ -467,9 +463,7 @@ impl<'src> TyCtx<'src> {
             use ast::BinaryOp as Op;
             match op {
                 Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow => lhs.ty,
-                Op::Eq | Op::Ne | Op::Gt | Op::Lt | Op::Ge | Op::Le | Op::And | Op::Or => {
-                    Ty::Def(BOOL)
-                }
+                Op::Eq | Op::Ne | Op::Gt | Op::Lt | Op::Ge | Op::Le | Op::And | Op::Or => Bool.ty(),
                 Op::Opt => todo!("opt binop"),
             }
         }
@@ -488,10 +482,10 @@ impl<'src> TyCtx<'src> {
 
     fn infer_primitive(&mut self, span: Span, v: &ast::expr::Primitive<'src>) -> Expr<'src> {
         let (ty, prim) = match v {
-            ast::expr::Primitive::Int(v) => (Ty::Def(INT), Primitive::Int(*v)),
-            ast::expr::Primitive::Num(v) => (Ty::Def(NUM), Primitive::Num(*v)),
-            ast::expr::Primitive::Bool(v) => (Ty::Def(BOOL), Primitive::Bool(*v)),
-            ast::expr::Primitive::Str(v) => (Ty::Def(STR), Primitive::Str(v.clone())),
+            ast::expr::Primitive::Int(v) => (Int.ty(), Primitive::Int(*v)),
+            ast::expr::Primitive::Num(v) => (Num.ty(), Primitive::Num(*v)),
+            ast::expr::Primitive::Bool(v) => (Bool.ty(), Primitive::Bool(*v)),
+            ast::expr::Primitive::Str(v) => (Str.ty(), Primitive::Str(v.clone())),
         };
 
         Expr {
@@ -622,27 +616,35 @@ impl<'src> TyCtx<'src> {
 }
 
 macro_rules! primitives {
-    ($LIST:ident = [$($name:ident),*]) => {
+    ($($name:ident),* $(,)?) => {
         paste::paste! {
-            #[allow(clippy::upper_case_acronyms)]
+            #[allow(non_camel_case_types)]
             #[repr(u32)]
             enum _Builtins {
                 $($name),*
             }
 
             $(
-                pub const $name: DefId = DefId(_Builtins::$name as u32);
+                #[allow(non_upper_case_globals)]
+                pub const [<$name:camel>]: Prim = Prim {
+                    name: stringify!($name),
+                    id: DefId(_Builtins::$name as u32),
+                };
             )*
 
-            const $LIST: &[(&str, DefId)] = &[
-                $((stringify!([<$name:lower>]), $name)),*
-            ];
+            const _PRIMITIVES_LEN: usize = [$([<$name:camel>]),*].len();
+
+            impl Prim {
+                pub const LIST: [Prim; _PRIMITIVES_LEN] = [
+                    $([<$name:camel>]),*
+                ];
+            }
 
             impl Ty {
                 $(
                     pub fn [<is_ $name:lower>](&self) -> bool {
                         match self {
-                            Self::Def(id) => *id == $name,
+                            Self::Def(id) => *id == [<$name:camel>].id,
                             _ => false,
                         }
                     }
@@ -652,15 +654,28 @@ macro_rules! primitives {
     }
 }
 
-primitives!(PRIMITIVES = [INT, NUM, BOOL, STR]);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Prim {
+    pub name: &'static str,
+    pub id: DefId,
+}
+
+impl Prim {
+    pub fn ty(self) -> Ty {
+        Ty::Def(self.id)
+    }
+}
+
+primitives! {
+    int, num, bool, str
+}
 
 impl Ty {
     pub fn is_primitive(&self) -> bool {
         match self {
             Self::Def(id) => {
-                let first = PRIMITIVES.first().unwrap().1;
-                let last = PRIMITIVES.last().unwrap().1;
-                *id >= first && *id <= last
+                let [first, .., last] = Prim::LIST;
+                *id >= first.id && *id <= last.id
             }
             _ => false,
         }
@@ -673,7 +688,7 @@ fn register_primitive_types(tcx: &mut TyCtx<'_>) {
         "`register_builtin_types` called with some type defs already present"
     );
 
-    for (name, id) in PRIMITIVES.iter().copied() {
+    for Prim { name, id } in Prim::LIST.iter().copied() {
         assert_eq!(tcx.defs.reserve(name), id);
         tcx.defs.define(
             id,

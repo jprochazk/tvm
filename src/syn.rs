@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::error::{Error, ErrorCtx, Result};
 use crate::lex::{Lexer, Span, Token, TokenKind, EOF};
+use crate::value::f64n;
 
 /// Performs a resilient parse, in which the returned `Ast`
 /// may be incomplete if the returned list of errors is
@@ -762,17 +763,20 @@ fn expr_float<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let span = p.prev.span;
     let v = p
         .lexeme(&p.prev)
-        .parse::<f64>()
+        .parse::<f64n>()
         .map_err(|_| p.ecx.invalid_float(span))?;
     Ok(expr::Primitive::num(span, v))
 }
 
 fn expr_bool<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     assert!(p.eat(t![bool]));
-    let v = match p.lexeme(&p.prev) {
+    let lexeme = p.lexeme(&p.prev);
+    let v = match lexeme {
         "true" => true,
         "false" => false,
-        _ => unreachable!(),
+        _ => {
+            panic!("non-bool tokenized as bool: {lexeme}")
+        }
     };
     Ok(expr::Primitive::bool(p.prev.span, v))
 }

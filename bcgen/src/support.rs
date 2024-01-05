@@ -83,8 +83,8 @@ pub trait Decoder {
 
 pub trait Decode: Sized {
     /// # Safety
-    /// `dec` must have at least `size_of::<Self>` bytes left.
-    unsafe fn decode(dec: &mut impl Decoder) -> Self;
+    /// `dec` must have enough bytes left to decode `Self`.
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self;
 }
 
 impl Encoder for Vec<u8> {
@@ -199,80 +199,136 @@ impl Decoder for &'_ [u8] {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Register(u8);
-
-impl std::fmt::Display for Register {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "r{}", self.0)
-    }
-}
-
-impl Register {
+impl Decoder for std::io::Cursor<&'_ [u8]> {
     #[inline]
-    pub fn new(v: u8) -> Self {
-        Self(v)
+    unsafe fn decode_u8_unchecked(&mut self) -> u8 {
+        let pos = self.position();
+        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
+        let v = slice.decode_u8_unchecked();
+        self.set_position(pos + std::mem::size_of::<u8>() as u64);
+        v
     }
 
     #[inline]
-    pub fn to_index(self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl Encode for Register {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_u8(self.0)
-    }
-}
-
-impl Decode for Register {
-    #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
-        Self(dec.decode_u8_unchecked())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Constant(u16);
-
-impl std::fmt::Display for Constant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "c{}", self.0)
-    }
-}
-
-impl Constant {
-    #[inline]
-    pub fn new(v: u16) -> Self {
-        Self(v)
+    unsafe fn decode_u16_unchecked(&mut self) -> u16 {
+        let pos = self.position();
+        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
+        let v = slice.decode_u16_unchecked();
+        self.set_position(pos + std::mem::size_of::<u16>() as u64);
+        v
     }
 
     #[inline]
-    pub fn to_index(self) -> usize {
-        self.0 as usize
+    unsafe fn decode_u32_unchecked(&mut self) -> u32 {
+        let pos = self.position();
+        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
+        let v = slice.decode_u32_unchecked();
+        self.set_position(pos + std::mem::size_of::<u32>() as u64);
+        v
     }
-}
 
-impl Encode for Constant {
     #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_u16(self.0)
+    unsafe fn decode_u64_unchecked(&mut self) -> u64 {
+        let pos = self.position();
+        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
+        let v = slice.decode_u64_unchecked();
+        self.set_position(pos + std::mem::size_of::<u64>() as u64);
+        v
+    }
+
+    #[inline]
+    unsafe fn decode_i8_unchecked(&mut self) -> i8 {
+        let pos = self.position();
+        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
+        let v = slice.decode_i8_unchecked();
+        self.set_position(pos + std::mem::size_of::<i8>() as u64);
+        v
+    }
+
+    #[inline]
+    unsafe fn decode_i16_unchecked(&mut self) -> i16 {
+        let pos = self.position();
+        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
+        let v = slice.decode_i16_unchecked();
+        self.set_position(pos + std::mem::size_of::<i16>() as u64);
+        v
+    }
+
+    #[inline]
+    unsafe fn decode_i32_unchecked(&mut self) -> i32 {
+        let pos = self.position();
+        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
+        let v = slice.decode_i32_unchecked();
+        self.set_position(pos + std::mem::size_of::<i32>() as u64);
+        v
+    }
+
+    #[inline]
+    unsafe fn decode_i64_unchecked(&mut self) -> i64 {
+        let pos = self.position();
+        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
+        let v = slice.decode_i64_unchecked();
+        self.set_position(pos + std::mem::size_of::<i64>() as u64);
+        v
     }
 }
 
-impl Decode for Constant {
-    #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
-        Self(dec.decode_u16_unchecked())
-    }
+macro_rules! operand_type {
+    (
+        pub struct $name:ident($inner:ty) = $fmt:literal;
+    ) => {
+        #[must_use = concat!("unused ", stringify!($name))]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name($inner);
+
+        impl $name {
+            #[inline]
+            pub fn new(v: $inner) -> Self {
+                Self(v)
+            }
+
+            #[inline]
+            pub fn try_new<T>(v: T) -> Option<Self>
+            where
+                $inner: TryFrom<T>,
+            {
+                <$inner>::try_from(v).map($name).ok()
+            }
+
+            #[inline]
+            pub fn get(self) -> $inner {
+                self.0
+            }
+
+            #[inline]
+            pub fn to_index(self) -> usize {
+                self.0 as usize
+            }
+        }
+
+        impl Encode for $name {
+            #[inline]
+            fn encode<E>(self, enc: &mut E)
+            where
+                E: ?Sized + Encoder,
+            {
+                self.0.encode(enc)
+            }
+        }
+
+        impl Decode for $name {
+            #[inline(always)]
+            unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
+                Self(<$inner as Decode>::decode_unchecked(dec))
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, $fmt, self.0)
+            }
+        }
+    };
 }
 
 impl Encode for u8 {
@@ -349,56 +405,86 @@ impl Encode for i64 {
 
 impl Decode for u8 {
     #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_u8_unchecked()
     }
 }
 
 impl Decode for u16 {
     #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_u16_unchecked()
     }
 }
 
 impl Decode for u32 {
     #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_u32_unchecked()
     }
 }
 
 impl Decode for u64 {
     #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_u64_unchecked()
     }
 }
 
 impl Decode for i8 {
     #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_i8_unchecked()
     }
 }
 
 impl Decode for i16 {
     #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_i16_unchecked()
     }
 }
 
 impl Decode for i32 {
     #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_i32_unchecked()
     }
 }
 
 impl Decode for i64 {
     #[inline(always)]
-    unsafe fn decode(dec: &mut impl Decoder) -> Self {
+    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_i64_unchecked()
+    }
+}
+
+operand_type! {
+    pub struct Reg(u8) = "r{0}";
+}
+
+operand_type! {
+    pub struct Cst(u16) = "c{0}";
+}
+
+operand_type! {
+    pub struct Capture(u16) = "^{0}";
+}
+
+operand_type! {
+    pub struct Mvar(u16) = "m{0}";
+}
+
+operand_type! {
+    pub struct FnId(u16) = "{0}";
+}
+
+operand_type! {
+    pub struct Smi(i8) = "{0}";
+}
+
+impl Smi {
+    pub fn is_smi(v: i64) -> bool {
+        (i8::MIN as i64..=i8::MAX as i64).contains(&v)
     }
 }

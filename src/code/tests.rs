@@ -1,4 +1,49 @@
 use super::op::*;
+use crate::error::Error;
+
+fn report(e: Vec<Error>) -> String {
+    e.into_iter()
+        .map(|e| format!("{e}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn _emit(input: &str) -> String {
+    let ast = match crate::syn::try_parse(input) {
+        Ok(ast) => ast,
+        Err(e) => panic!("{}", report(e)),
+    };
+    let hir = match crate::ty::check(&ast) {
+        Ok(hir) => hir,
+        Err(e) => panic!("{}", report(e)),
+    };
+    match crate::code::compile(hir) {
+        Ok(m) => m.with_src(input).to_string(),
+        Err(e) => report(e),
+    }
+}
+
+macro_rules! emit {
+    ($input:literal) => {
+        _emit(indoc::indoc!($input))
+    };
+}
+
+macro_rules! test {
+    ($name:ident, $input:literal) => {
+        #[test]
+        fn $name() {
+            insta::assert_snapshot!(emit!($input))
+        }
+    };
+}
+
+test! {
+    variable,
+    r#"
+        let v = 0;
+    "#
+}
 
 struct Buffer {
     code: Vec<u8>,
@@ -17,7 +62,7 @@ impl Buffer {
         let mut v = Vec::new();
         let buf = &mut self.code.as_slice();
         while !buf.is_empty() {
-            v.push(unsafe { symbolic::Instruction::decode(buf) });
+            v.push(unsafe { symbolic::Instruction::decode_unchecked(buf) });
         }
         v
     }
@@ -30,9 +75,9 @@ fn roundtrip_bytecode() {
 
     let mut buf = Buffer::new();
 
-    let r0 = Register::new(163);
-    let c0 = Constant::new(12573);
-    let smi = -5i8;
+    let r0 = Reg::new(163);
+    let c0 = Cst::new(12573);
+    let smi = Smi::new(-5i8);
 
     buf.emit(nop());
     buf.emit(mov(r0, r0));

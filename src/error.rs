@@ -183,7 +183,7 @@ pub struct Location {
 }
 
 impl Location {
-    fn from_source_span(source: &str, span: &Span) -> Self {
+    pub(crate) fn from_source_span(source: &str, span: &Span) -> Self {
         let line_start = source[..span.start()]
             .rfind('\n')
             .map(|v| v + 1)
@@ -211,6 +211,14 @@ impl Location {
     #[inline]
     pub fn column(&self) -> usize {
         self.column
+    }
+
+    #[inline]
+    pub fn line_span(&self) -> Span {
+        Span {
+            start: self.line_start as u32,
+            end: self.line_end as u32,
+        }
     }
 }
 
@@ -567,6 +575,22 @@ impl<'src> ErrorCtx<'src> {
     ) {
         let e = self.unsupported_op(span, ty, op);
         self.push(e);
+    }
+
+    #[inline]
+    pub fn too_many_registers(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("compiler ran out of registers", span, self.src())
+            .append("note: the maximum number of registers is 255")
+            .append("help: reduce register usage by splitting code into multiple functions")
+            .into()
+    }
+
+    #[inline]
+    pub fn too_many_constants(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("compiler ran out of constant slots", span, self.src())
+            .append("note: the maximum number of registers is 65535")
+            .append("help: reduce register usage by splitting code into multiple functions")
+            .into()
     }
 }
 

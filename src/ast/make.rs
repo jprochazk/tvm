@@ -280,7 +280,7 @@ impl<'src> expr::Primitive<'src> {
         }
     }
 
-    pub fn num(span: impl Into<Span>, value: f64) -> Expr<'src> {
+    pub fn num(span: impl Into<Span>, value: f64n) -> Expr<'src> {
         Expr {
             span: span.into(),
 

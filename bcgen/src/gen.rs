@@ -50,33 +50,38 @@ fn base(buf: &mut impl Write, instructions: &[Instruction]) {
 
     // `MIN`/`MAX` constants
     {
-        let body = {
-            let (min, max) = (
-                instructions[0].name.to_case(Case::Pascal).to_ident(),
-                instructions[instructions.len() - 1]
-                    .name
-                    .to_case(Case::Pascal)
-                    .to_ident(),
-            );
-            q!([
-                const MIN: u8 = Op::#min as u8;
-                const MAX: u8 = Op::#max as u8;
-            ])
-        };
+        let (min, max) = (
+            instructions[0].name.to_case(Case::Pascal).to_ident(),
+            instructions[instructions.len() - 1]
+                .name
+                .to_case(Case::Pascal)
+                .to_ident(),
+        );
         q!(buf, [
             impl Op {
-                #body
+                const MIN: u8 = Op::#min as u8;
+                const MAX: u8 = Op::#max as u8;
             }
         ]);
         nl!(buf);
     }
 
-    // decode impl
+    // encode/decode impl
     {
         q!(buf, [
+            impl Encode for Op {
+                #[inline]
+                fn encode<E>(self, enc: &mut E)
+                where
+                    E: ?Sized + Encoder,
+                {
+                    enc.encode_u8(self as u8)
+                }
+            }
+
             impl Decode for Op {
                 #[inline(always)]
-                unsafe fn decode(buf: &mut impl Decoder) -> Self {
+                unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
                     let v = buf.decode_u8_unchecked();
                     debug_assert!(v <= Op::MAX);
                     unsafe { core::mem::transmute(v) }
@@ -98,7 +103,7 @@ fn operands(buf: &mut impl Write, instructions: &[Instruction]) {
         let decl_fields = operands.clone().map(|(name, ty)| q!([pub #name: #ty]));
         let decode_fields = operands
             .clone()
-            .map(|(name, _)| q!([#name: Decode::decode(buf)]));
+            .map(|(name, _)| q!([#name: Decode::decode_unchecked(buf)]));
         let encode_fields = operands.map(|(name, _)| q!([self.#name.encode(enc);]));
 
         q!([
@@ -109,7 +114,7 @@ fn operands(buf: &mut impl Write, instructions: &[Instruction]) {
 
             impl Decode for #name_pascal {
                 #[inline(always)]
-                unsafe fn decode(buf: &mut impl Decoder) -> Self {
+                unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
                     Self {
                         #(#decode_fields),*
                     }
@@ -122,7 +127,7 @@ fn operands(buf: &mut impl Write, instructions: &[Instruction]) {
                 where
                     E: ?Sized + Encoder,
                 {
-                    enc.encode_u8(Op::#name_pascal as u8);
+                    Op::#name_pascal.encode(enc);
                     #(#encode_fields)*
                 }
             }
@@ -185,7 +190,7 @@ fn symbolic(buf: &mut impl Write, instructions: &[Instruction]) {
 
     let decode_arms = instructions.iter().map(|inst| {
         let name_pascal = inst.name.to_case(Case::Pascal).to_ident();
-        q!([Op::#name_pascal => Instruction::#name_pascal(#name_pascal::decode(dec))])
+        q!([Op::#name_pascal => Instruction::#name_pascal(#name_pascal::decode_unchecked(dec))])
     });
 
     let display_arms = instructions.iter().map(|inst| {
@@ -215,8 +220,8 @@ fn symbolic(buf: &mut impl Write, instructions: &[Instruction]) {
             }
 
             impl Decode for Instruction {
-                unsafe fn decode(dec: &mut impl Decoder) -> Self {
-                    match Op::decode(dec) {
+                unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
+                    match Op::decode_unchecked(dec) {
                         #(#decode_arms),*
                     }
                 }
@@ -265,7 +270,7 @@ fn dispatch(buf: &mut impl Write, instructions: &[Instruction]) {
             let operand_args = operand_names.clone();
             q!([
                 Op::#name_pascal => {
-                    let #name_pascal { #(#operand_names),* } = #name_pascal::decode(inst);
+                    let #name_pascal { #(#operand_names),* } = #name_pascal::decode_unchecked(inst);
                     h.#handler_fn(#(#operand_args),*)
                 }
             ])
@@ -278,7 +283,7 @@ fn dispatch(buf: &mut impl Write, instructions: &[Instruction]) {
             #[inline(always)]
             pub unsafe fn dispatch<H: Handler>(h: &H, ip: &mut Ip, code: &Code) -> H::Result<()> {
                 let inst = &mut &code[*ip..];
-                match Op::decode(inst) {
+                match Op::decode_unchecked(inst) {
                     #(#ops),*
                 }
             }

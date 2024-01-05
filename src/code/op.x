@@ -2,24 +2,35 @@ def nop
 end
 
 def mov
-  src: Register
-  dst: Register
+  src: Reg
+  dst: Reg
 end
 
 def load_cst
-  src: Constant
-  dst: Register
+  src: Cst
+  dst: Reg
+end
+
+def load_unit
+  dst: Reg
 end
 
 def load_smi
-  val: i8
-  dst: Register
+  val: Smi
+  dst: Reg
 end
 
 def load_true
-  dst: Register
+  dst: Reg
 end
 
 def load_false
-  dst: Register
+  dst: Reg
+end
+
+def ret
+  src: Reg
+end
+
+def stop
 end

@@ -6,20 +6,15 @@
 
 #[macro_use]
 pub mod error;
-
 #[macro_use]
 pub mod lex;
-
 #[macro_use]
 pub mod ast;
-
-pub mod syn;
-
-pub mod hir;
-
-pub mod ty;
-
 pub mod code;
+pub mod hir;
+pub mod syn;
+pub mod ty;
+pub mod value;
 
 mod util;
 

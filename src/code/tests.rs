@@ -18,7 +18,7 @@ fn _emit(input: &str) -> String {
         Err(e) => panic!("{}", report(e)),
     };
     match crate::code::compile(hir) {
-        Ok(m) => m.with_src(input).to_string(),
+        Ok(m) => m.display(input).to_string(),
         Err(e) => report(e),
     }
 }
@@ -39,9 +39,36 @@ macro_rules! test {
 }
 
 test! {
-    variable,
+    variables,
     r#"
-        let v = 0;
+        let a = 0;
+        let b = 0;
+    "#
+}
+
+test! {
+    variable_shadowing,
+    r#"
+        let a = 0;
+        let a = 0;
+        let b = 0;
+    "#
+}
+
+test! {
+    variable_move,
+    r#"
+        let a = 0;
+        let a = a;
+        let b = 0;
+    "#
+}
+
+test! {
+    variable_copy,
+    r#"
+        let a = 0;
+        let b = a;
     "#
 }
 

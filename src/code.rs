@@ -8,6 +8,10 @@ use crate::lex::Span;
 use crate::value::{f64n, Constant, ConstantPoolBuilder};
 use crate::{hir, HashMap, Str};
 
+// TODO: on-the-fly peephole optimizations
+// TODO: track basic block exits and perform dead code elimination
+// TODO: bytecode serde + validation
+
 pub mod op;
 use op::*;
 
@@ -16,7 +20,7 @@ pub fn compile(hir: Hir<'_>) -> Result<Module, Vec<Error>> {
         ecx: ErrorCtx::new(hir.src),
         module_state: ModuleState {
             vars: HashMap::default(),
-            fn_table: FunctionTable::new(),
+            functions: FunctionTableBuilder::new(),
         },
     }
     .compile(hir)
@@ -31,35 +35,37 @@ impl<'src> Compiler<'src> {
     fn compile(mut self, hir: Hir<'src>) -> Result<Module, Vec<Error>> {
         // 1. reserve a slot in the function table for each function
         for (_, hir_id, _) in hir.fns.iter() {
-            self.module_state.fn_table.reserve(hir_id)
+            self.module_state.functions.reserve(hir_id)
         }
 
         // 2. compile top-level code
         let top_level = generate_main_fn(hir.top_level);
         match FunctionState::new(&mut self, &top_level).compile() {
-            Ok(fn_) => self.module_state.fn_table.main = fn_,
+            Ok(fn_) => self.module_state.functions.main = fn_,
             Err(e) => self.ecx.push(e),
         }
 
         // 3. compile all functions, place them into their respective slots
         for (_, hir_id, fn_) in hir.fns.iter() {
             match FunctionState::new(&mut self, fn_).compile() {
-                Ok(fn_) => self.module_state.fn_table.relocate(hir_id, fn_),
+                Ok(fn_) => self.module_state.functions.relocate(hir_id, fn_),
                 Err(e) => self.ecx.push(e),
             }
         }
 
+        let function_table = self.module_state.functions.finish();
+
         self.ecx.finish()?;
 
         Ok(Module {
-            fn_table: self.module_state.fn_table,
+            functions: function_table,
         })
     }
 }
 
 struct ModuleState<'src> {
     vars: HashMap<Ident<'src>, Mvar>,
-    fn_table: FunctionTable,
+    functions: FunctionTableBuilder,
 }
 
 struct FunctionState<'src, 'a> {
@@ -103,10 +109,17 @@ impl<'src, 'a> FunctionState<'src, 'a> {
             return Ok(Function::default());
         };
 
-        let val = self.alloc_reg(Span::empty())?;
-        block(&mut self, body, Some(val))?;
-
-        self.asm.emit(Span::empty(), ret(val));
+        match body.tail.is_some() {
+            true => {
+                let val = self.alloc_reg(Span::empty())?;
+                block_expr(&mut self, body, Some(val))?;
+                self.asm.emit(Span::empty(), retv(val));
+            }
+            false => {
+                block_expr(&mut self, body, None)?;
+                self.asm.emit(Span::empty(), ret());
+            }
+        }
 
         let (bytecode, spans, constants) = self.asm.finish();
         let registers = self.regalloc.total;
@@ -157,7 +170,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
     }
 
     fn resolve_function(&self, name: &str) -> Option<FnId> {
-        self.compiler.module_state.fn_table.get_id(name)
+        self.compiler.module_state.functions.get_id(name)
     }
 
     fn resolve_local_in_current_scope(&self, name: &str) -> Option<Reg> {
@@ -334,7 +347,7 @@ fn call_expr<'src, 'a>(
     todo!()
 }
 
-fn block<'src, 'a>(
+fn block_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::Block<'src>,
     dst: Option<Reg>,
@@ -370,13 +383,11 @@ fn assign_to<'src, 'a>(
 ) -> Result<()> {
     use asm::*;
 
-    match expr(f, value, Some(dst))? {
-        Some(out) => {
-            // `expr` was written to `out`
+    if let Some(out) = expr(f, value, Some(dst))? {
+        // `expr` was written to `out`
+        if out != dst {
+            // `out` and `dst` are different registers
             f.asm.emit(value.span, mov(out, dst));
-        }
-        _ => {
-            // `expr` was written to `dst`
         }
     }
 
@@ -495,10 +506,23 @@ impl Symbol {
 }
 
 pub struct Module {
-    fn_table: FunctionTable,
+    functions: FunctionTable,
+}
+
+impl Module {
+    fn functions(&self) -> impl Iterator<Item = &FnTableEntry> {
+        self.functions.entries.iter()
+    }
 }
 
 struct FunctionTable {
+    name_to_id: BTreeMap<String, FnId>,
+    reloc_table: BTreeMap<hir::FnId, FnId>,
+    main: Function,
+    entries: Vec<FnTableEntry>,
+}
+
+struct FunctionTableBuilder {
     next_id: u16,
     name_to_id: BTreeMap<String, FnId>,
     reloc_table: BTreeMap<hir::FnId, FnId>,
@@ -506,7 +530,7 @@ struct FunctionTable {
     fns: Vec<FnTableEntry>,
 }
 
-impl FunctionTable {
+impl FunctionTableBuilder {
     fn new() -> Self {
         Self {
             next_id: 0,
@@ -521,10 +545,6 @@ impl FunctionTable {
         self.name_to_id.get(name).copied()
     }
 
-    fn get(&self, id: FnId) -> Option<&FnTableEntry> {
-        self.fns.get(id.to_index())
-    }
-
     fn reserve(&mut self, hir_id: hir::FnId) {
         let table_id = FnId::new(self.next_id);
         self.next_id += 1;
@@ -536,15 +556,24 @@ impl FunctionTable {
     fn relocate(&mut self, hir_id: hir::FnId, fn_: Function) {
         self.fns[self.reloc_table[&hir_id].to_index()] = FnTableEntry::Script(fn_);
     }
+
+    fn finish(self) -> FunctionTable {
+        FunctionTable {
+            name_to_id: self.name_to_id,
+            reloc_table: self.reloc_table,
+            main: self.main,
+            entries: self.fns,
+        }
+    }
 }
 
-enum FnTableEntry {
+pub enum FnTableEntry {
     Script(Function),
     Host(ExternFunction),
 }
 
 #[derive(Default)]
-struct Function {
+pub struct Function {
     // captures: Vec<Capture>,
     name: String,
     bytecode: Vec<u8>,
@@ -553,8 +582,9 @@ struct Function {
     registers: u8,
 }
 
-struct ExternFunction {
+pub struct ExternFunction {
     // TODO: type info
+    name: String,
 }
 
 /* enum Capture {
@@ -564,47 +594,51 @@ struct ExternFunction {
 
 impl Display for Module {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", PrintFunction(&self.fn_table.main, None))?;
-        for fn_ in &self.fn_table.fns {
-            let FnTableEntry::Script(fn_) = fn_ else {
-                continue;
-            };
-            writeln!(f, "{}", PrintFunction(fn_, None))?;
-        }
-        Ok(())
+        Display::fmt(&DisplayModule(self, None), f)
     }
 }
 
 impl Module {
-    pub fn with_src<'a, 'src>(&'a self, src: &'src str) -> ModuleWithSrc<'a, 'src> {
-        ModuleWithSrc(self, src)
+    pub fn display<'a, 'src>(&'a self, src: &'src str) -> DisplayModule<'a, 'src> {
+        DisplayModule(self, Some(src))
     }
 }
 
-pub struct ModuleWithSrc<'a, 'src>(&'a Module, &'src str);
-impl<'a, 'src> Display for ModuleWithSrc<'a, 'src> {
+pub struct DisplayModule<'a, 'src>(&'a Module, Option<&'src str>);
+impl<'a, 'src> Display for DisplayModule<'a, 'src> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ModuleWithSrc(m, src) = self;
+        let DisplayModule(m, src) = self;
 
-        writeln!(f, "{}", PrintFunction(&m.fn_table.main, Some(src)))?;
-        for fn_ in &m.fn_table.fns {
-            let FnTableEntry::Script(fn_) = fn_ else {
-                continue;
-            };
-            writeln!(f, "{}", PrintFunction(fn_, Some(src)))?;
+        writeln!(f, "{}", DisplayScriptFunction(&m.functions.main, *src))?;
+        for fn_ in m.functions() {
+            match fn_ {
+                FnTableEntry::Script(fn_) => writeln!(f, "{}", DisplayScriptFunction(fn_, *src))?,
+                FnTableEntry::Host(fn_) => writeln!(f, "{}", DisplayExternFunction(fn_, *src))?,
+            }
         }
         Ok(())
     }
 }
 
-struct PrintFunction<'a, 'src>(&'a Function, Option<&'src str>);
-impl<'a, 'src> Display for PrintFunction<'a, 'src> {
+struct DisplayExternFunction<'a, 'src>(&'a ExternFunction, Option<&'src str>);
+impl<'a, 'src> Display for DisplayExternFunction<'a, 'src> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let fn_ = self.0;
+
+        writeln!(f, "function {:?} {{", fn_.name)?;
+        writeln!(f, "  extern")?;
+        writeln!(f, "}}")
+    }
+}
+
+struct DisplayScriptFunction<'a, 'src>(&'a Function, Option<&'src str>);
+impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use op::Decode as _;
 
         let fn_ = self.0;
-
         writeln!(f, "function {:?} {{", fn_.name)?;
+        writeln!(f, "  registers: {}", fn_.registers)?;
         write!(f, "  constants: ")?;
         if fn_.constants.is_empty() {
             writeln!(f, "[]")?;
@@ -615,26 +649,22 @@ impl<'a, 'src> Display for PrintFunction<'a, 'src> {
             }
             writeln!(f, "  ]")?;
         }
-
-        writeln!(f, "  bytecode: [")?;
-
+        writeln!(f, "  bytecode: ({} bytes) [", fn_.bytecode.len())?;
         // collect instructions so that we know the length of each line
         // we _could_ calculate this on the fly, but that would be way
         // more code...
-        let offset_width = crate::util::num_digits(fn_.bytecode.len());
         let mut cursor = std::io::Cursor::new(&fn_.bytecode[..]);
         let mut spans = fn_.spans.iter();
         let mut instructions = Vec::new();
         while cursor.position() < cursor.get_ref().len() as u64 {
-            let offset = cursor.position();
             let instruction = unsafe { symbolic::Instruction::decode_unchecked(&mut cursor) };
             let span = spans.next().unwrap();
-            instructions.push((*span, format!("    {offset:offset_width$}  {instruction}")));
+            instructions.push((*span, instruction.to_string()));
         }
-
         let max_len = instructions.iter().map(|(_, s)| s.len()).max().unwrap_or(0);
         let mut prev_span = Span::empty();
         for (span, instruction) in instructions {
+            f.write_str("    ")?;
             'next: {
                 if let Some(src) = self.1 {
                     write!(f, "{instruction:max_len$}  // ")?;
@@ -653,7 +683,6 @@ impl<'a, 'src> Display for PrintFunction<'a, 'src> {
             }
             f.write_str("\n")?;
         }
-
         writeln!(f, "  ")?;
         writeln!(f, "  ]")?;
         writeln!(f, "}}")

@@ -29,6 +29,9 @@ def load_false
 end
 
 def ret
+end
+
+def retv
   src: Reg
 end
 

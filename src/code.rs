@@ -8,10 +8,6 @@ use crate::lex::Span;
 use crate::value::{f64n, Constant, ConstantPoolBuilder};
 use crate::{hir, HashMap, Str};
 
-// TODO: on-the-fly peephole optimizations
-// TODO: track basic block exits and perform dead code elimination
-// TODO: bytecode serde + validation
-
 pub mod op;
 use op::*;
 

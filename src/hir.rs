@@ -25,6 +25,12 @@ pub enum Ty {
     Error,
 }
 
+impl Ty {
+    pub fn is_err(&self) -> bool {
+        matches!(self, Ty::Error)
+    }
+}
+
 #[derive(Debug)]
 pub struct TypeDef<'src> {
     pub id: DefId,
@@ -178,6 +184,11 @@ impl<'src> Fns<'src> {
     }
 
     #[inline]
+    pub(crate) fn get_by_id_mut(&mut self, id: FnId) -> Option<&mut Fn<'src>> {
+        self.array.get_mut(id.0 as usize)
+    }
+
+    #[inline]
     pub fn get_by_id(&self, id: FnId) -> Option<&Fn<'src>> {
         self.array.get(id.0 as usize)
     }
@@ -193,10 +204,10 @@ impl<'src> Fns<'src> {
     }
 
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = (&'src str, FnId, &Fn<'src>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (FnId, &Fn<'src>)> {
         self.id_map
             .iter()
-            .map(|(name, id)| (*name, *id, self.get_by_id(*id).unwrap()))
+            .map(|(_, id)| (*id, self.get_by_id(*id).unwrap()))
     }
 }
 
@@ -230,7 +241,7 @@ pub enum FnKind {
     ExternCons,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FnSig<'src> {
     pub params: Vec<Param<'src>>,
     pub ret: Ty,
@@ -243,7 +254,7 @@ pub enum FnBody<'src> {
     Block(Block<'src>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Param<'src> {
     pub name: Ident<'src>,
     pub ty: Ty,
@@ -349,6 +360,16 @@ pub struct Binary<'src> {
     pub lhs: Expr<'src>,
     pub op: BinaryOp,
     pub rhs: Expr<'src>,
+}
+
+impl<'src> Binary<'src> {
+    pub fn is_int(&self) -> bool {
+        self.lhs.ty.is_int()
+    }
+
+    pub fn is_num(&self) -> bool {
+        self.lhs.ty.is_num()
+    }
 }
 
 #[derive(Debug)]

@@ -9,20 +9,21 @@ use quote::{ToTokens, TokenStreamExt as _};
 
 use crate::decl::*;
 
-pub fn run(instructions: &[Instruction]) -> String {
+pub fn run(bytecode: &Bytecode) -> String {
     let mut buf = String::new();
 
-    base(&mut buf, instructions);
-    operands(&mut buf, instructions);
-    assembler(&mut buf, instructions);
-    symbolic(&mut buf, instructions);
-    dispatch(&mut buf, instructions);
+    base(&mut buf, bytecode);
+    operands(&mut buf, bytecode);
+    assembler(&mut buf, bytecode);
+    symbolic(&mut buf, bytecode);
+    dispatch(&mut buf, bytecode);
+    types(&mut buf, bytecode);
     p!(buf, include_str!("./support.rs"));
 
     buf
 }
 
-fn base(buf: &mut impl Write, instructions: &[Instruction]) {
+fn base(buf: &mut impl Write, bytecode: &Bytecode) {
     p!(
         buf,
         "//! Instruction encoding, decoding, disassembly, and dispatch."
@@ -32,9 +33,9 @@ fn base(buf: &mut impl Write, instructions: &[Instruction]) {
 
     // enum
     {
-        let variants = instructions.iter().enumerate().map(|(i, inst)| {
+        let variants = bytecode.ops.iter().enumerate().map(|(i, (name, _))| {
             let idx = Unsuffixed(i);
-            let name = inst.name.to_case(Case::Pascal).to_ident();
+            let name = name.to_case(Case::Pascal).to_ident();
             q!([#name = #idx])
         });
 
@@ -51,11 +52,8 @@ fn base(buf: &mut impl Write, instructions: &[Instruction]) {
     // `MIN`/`MAX` constants
     {
         let (min, max) = (
-            instructions[0].name.to_case(Case::Pascal).to_ident(),
-            instructions[instructions.len() - 1]
-                .name
-                .to_case(Case::Pascal)
-                .to_ident(),
+            bytecode.first().0.to_case(Case::Pascal).to_ident(),
+            bytecode.last().0.to_case(Case::Pascal).to_ident(),
         );
         q!(buf, [
             impl Op {
@@ -92,12 +90,12 @@ fn base(buf: &mut impl Write, instructions: &[Instruction]) {
     }
 }
 
-fn operands(buf: &mut impl Write, instructions: &[Instruction]) {
-    let items = instructions.iter().map(|inst| {
-        let name_pascal = inst.name.to_case(Case::Pascal).to_ident();
-        let operands = inst.operands.iter().map(|operand| {
-            let operand_name = operand.name.to_ident();
-            let operand_ty = operand.ty.to_ident();
+fn operands(buf: &mut impl Write, bytecode: &Bytecode) {
+    let items = bytecode.ops.iter().map(|(name, operands)| {
+        let name_pascal = name.to_case(Case::Pascal).to_ident();
+        let operands = operands.iter().map(|(name, ty)| {
+            let operand_name = name.to_ident();
+            let operand_ty = ty.to_ident();
             (operand_name, operand_ty)
         });
         let decl_fields = operands.clone().map(|(name, ty)| q!([pub #name: #ty]));
@@ -146,17 +144,17 @@ fn operands(buf: &mut impl Write, instructions: &[Instruction]) {
     nl!(buf);
 }
 
-fn assembler(buf: &mut impl Write, instructions: &[Instruction]) {
-    let items = instructions.iter().map(|inst| {
-        let name_lower = inst.name.to_case(Case::Snake).to_ident();
-        let name_pascal = inst.name.to_case(Case::Pascal).to_ident();
-        let params = inst.operands.iter().map(|operand| {
-            let name = operand.name.to_ident();
-            let ty = operand.ty.to_ident();
+fn assembler(buf: &mut impl Write, bytecode: &Bytecode) {
+    let items = bytecode.ops.iter().map(|(name, operands)| {
+        let name_lower = name.to_ident();
+        let name_pascal = name.to_case(Case::Pascal).to_ident();
+        let params = operands.iter().map(|(name, ty)| {
+            let name = name.to_ident();
+            let ty = ty.to_ident();
             q!([#name: #ty])
         });
-        let struct_fields = inst.operands.iter().map(|operand| {
-            let name = operand.name.to_ident();
+        let struct_fields = operands.iter().map(|(name, _)| {
+            let name = name.to_ident();
             q!([#name])
         });
 
@@ -182,34 +180,33 @@ fn assembler(buf: &mut impl Write, instructions: &[Instruction]) {
     nl!(buf);
 }
 
-fn symbolic(buf: &mut impl Write, instructions: &[Instruction]) {
-    let variants = instructions.iter().map(|inst| {
-        let name_pascal = inst.name.to_case(Case::Pascal).to_ident();
+fn symbolic(buf: &mut impl Write, bytecode: &Bytecode) {
+    let variants = bytecode.ops.keys().map(|name| {
+        let name_pascal = name.to_case(Case::Pascal).to_ident();
         q!([#name_pascal(#name_pascal)])
     });
 
-    let decode_arms = instructions.iter().map(|inst| {
-        let name_pascal = inst.name.to_case(Case::Pascal).to_ident();
+    let decode_arms = bytecode.ops.keys().map(|name| {
+        let name_pascal = name.to_case(Case::Pascal).to_ident();
         q!([Op::#name_pascal => Instruction::#name_pascal(#name_pascal::decode_unchecked(dec))])
     });
 
-    let display_arms = instructions.iter().map(|inst| {
-        let name_pascal = inst.name.to_case(Case::Pascal).to_ident();
-        let name_snake = inst.name.to_case(Case::Snake);
-        let operands_csv = inst
-            .operands
+    let display_arms = bytecode.ops.iter().map(|(name, operands)| {
+        let name_pascal = name.to_case(Case::Pascal).to_ident();
+        let name_snake = name;
+        let operands_csv = operands
             .iter()
-            .map(|operand| format!("{{{}}}", operand.name))
+            .map(|(name, _)| format!("{{{name}}}"))
             .collect::<Vec<_>>()
             .join(", ");
         let fmt = format!("{name_snake} {operands_csv}");
-        let fields = inst.operands.iter().map(|operand| operand.name.to_ident());
+        let fields = operands.iter().map(|(name, _)| name.to_ident());
         q!([Instruction::#name_pascal(#name_pascal { #(#fields),* }) => write!(f, #fmt)])
     });
 
     q!(buf, [
         pub mod symbolic {
-            #![doc = " Symbolic representation of instructions"]
+            #![doc = " Symbolic representation of bytecode.ops"]
 
             use super::*;
             pub use super::operands::*;
@@ -239,13 +236,13 @@ fn symbolic(buf: &mut impl Write, instructions: &[Instruction]) {
     nl!(buf);
 }
 
-fn dispatch(buf: &mut impl Write, instructions: &[Instruction]) {
+fn dispatch(buf: &mut impl Write, bytecode: &Bytecode) {
     let handler_trait = {
-        let ops = instructions.iter().map(|inst| {
-            let name_snake = quote::format_ident!("op_{}", inst.name.to_case(Case::Snake));
-            let operands = inst.operands.iter().map(|operand| {
-                let name = operand.name.to_ident();
-                let ty = operand.ty.to_ident();
+        let ops = bytecode.ops.iter().map(|(name, operands)| {
+            let name_snake = quote::format_ident!("op_{}", name);
+            let operands = operands.iter().map(|(name, ty)| {
+                let name = name.to_ident();
+                let ty = ty.to_ident();
                 q!([#name: #ty])
             });
             q!([
@@ -263,10 +260,10 @@ fn dispatch(buf: &mut impl Write, instructions: &[Instruction]) {
     };
 
     let dispatch_fn = {
-        let ops = instructions.iter().map(|inst| {
-            let name_pascal = inst.name.to_case(Case::Pascal).to_ident();
-            let handler_fn = quote::format_ident!("op_{}", inst.name);
-            let operand_names = inst.operands.iter().map(|operand| operand.name.to_ident());
+        let ops = bytecode.ops.iter().map(|(name, operands)| {
+            let name_pascal = name.to_case(Case::Pascal).to_ident();
+            let handler_fn = quote::format_ident!("op_{}", name);
+            let operand_names = operands.iter().map(|(name, _)| name.to_ident());
             let operand_args = operand_names.clone();
             q!([
                 Op::#name_pascal => {
@@ -308,6 +305,69 @@ fn dispatch(buf: &mut impl Write, instructions: &[Instruction]) {
     nl!(buf);
 }
 
+fn types(buf: &mut impl Write, bytecode: &Bytecode) {
+    for (name, ty) in bytecode.types.iter() {
+        let Type { inner, fmt } = ty;
+        let must_use = format!("unused {name}");
+        let name = name.to_ident();
+        let inner = inner.to_ident();
+        q!(buf, [
+            #[must_use = #must_use]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+            pub struct #name(#inner);
+
+            impl #name {
+                #[inline]
+                pub fn new(v: #inner) -> Self {
+                    Self(v)
+                }
+
+                #[inline]
+                pub fn try_new<T>(v: T) -> Option<Self>
+                where
+                    #inner: TryFrom<T>,
+                {
+                    <#inner>::try_from(v).map(#name).ok()
+                }
+
+                #[inline]
+                pub fn get(self) -> #inner {
+                    self.0
+                }
+
+                #[inline]
+                pub fn to_index(self) -> usize {
+                    self.0 as usize
+                }
+            }
+
+            impl Encode for #name {
+                #[inline]
+                fn encode<E>(self, enc: &mut E)
+                where
+                    E: ?Sized + Encoder,
+                {
+                    self.0.encode(enc)
+                }
+            }
+
+            impl Decode for #name {
+                #[inline(always)]
+                unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
+                    Self(<#inner as Decode>::decode_unchecked(dec))
+                }
+            }
+
+            impl std::fmt::Display for #name {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, #fmt, self.0)
+                }
+            }
+        ]);
+        nl!(buf);
+    }
+}
+
 struct Unsuffixed<T: ToLiteral + Copy>(T);
 impl<T: ToLiteral + Copy> ToTokens for Unsuffixed<T> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -335,6 +395,11 @@ impl ToIdent for String {
     }
 }
 impl ToIdent for &'_ str {
+    fn to_ident(&self) -> Ident {
+        quote::format_ident!("{self}")
+    }
+}
+impl ToIdent for std::borrow::Cow<'_, str> {
     fn to_ident(&self) -> Ident {
         quote::format_ident!("{self}")
     }

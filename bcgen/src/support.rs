@@ -273,64 +273,6 @@ impl Decoder for std::io::Cursor<&'_ [u8]> {
     }
 }
 
-macro_rules! operand_type {
-    (
-        pub struct $name:ident($inner:ty) = $fmt:literal;
-    ) => {
-        #[must_use = concat!("unused ", stringify!($name))]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name($inner);
-
-        impl $name {
-            #[inline]
-            pub fn new(v: $inner) -> Self {
-                Self(v)
-            }
-
-            #[inline]
-            pub fn try_new<T>(v: T) -> Option<Self>
-            where
-                $inner: TryFrom<T>,
-            {
-                <$inner>::try_from(v).map($name).ok()
-            }
-
-            #[inline]
-            pub fn get(self) -> $inner {
-                self.0
-            }
-
-            #[inline]
-            pub fn to_index(self) -> usize {
-                self.0 as usize
-            }
-        }
-
-        impl Encode for $name {
-            #[inline]
-            fn encode<E>(self, enc: &mut E)
-            where
-                E: ?Sized + Encoder,
-            {
-                self.0.encode(enc)
-            }
-        }
-
-        impl Decode for $name {
-            #[inline(always)]
-            unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-                Self(<$inner as Decode>::decode_unchecked(dec))
-            }
-        }
-
-        impl std::fmt::Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, $fmt, self.0)
-            }
-        }
-    };
-}
-
 impl Encode for u8 {
     fn encode<E>(self, enc: &mut E)
     where
@@ -456,35 +398,5 @@ impl Decode for i64 {
     #[inline(always)]
     unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
         dec.decode_i64_unchecked()
-    }
-}
-
-operand_type! {
-    pub struct Reg(u8) = "r{0}";
-}
-
-operand_type! {
-    pub struct Cst(u16) = "c{0}";
-}
-
-operand_type! {
-    pub struct Capture(u16) = "^{0}";
-}
-
-operand_type! {
-    pub struct Mvar(u16) = "m{0}";
-}
-
-operand_type! {
-    pub struct FnId(u16) = "{0}";
-}
-
-operand_type! {
-    pub struct Smi(i8) = "{0}";
-}
-
-impl Smi {
-    pub fn is_smi(v: i64) -> bool {
-        (i8::MIN as i64..=i8::MAX as i64).contains(&v)
     }
 }

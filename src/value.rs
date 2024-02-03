@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use crate::{HashMap, Str};
 
+#[derive(Default)]
 pub struct ConstantPoolBuilder<'src> {
     ints: HashMap<i64, u16>,
     nums: HashMap<f64n, u16>,

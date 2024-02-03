@@ -210,3 +210,22 @@ test! {
         }
     "#
 }
+
+test! {
+    strings,
+    r#"
+        "";
+        "\n";
+        "\\n";
+        "a\nb";
+        "a\\nb";
+    "#
+}
+
+test! {
+    invalid_escapes,
+    r#"
+        "\{";
+        "\}";
+    "#
+}

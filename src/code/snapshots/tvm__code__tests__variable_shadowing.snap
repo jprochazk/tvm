@@ -3,15 +3,14 @@ source: src/code/tests.rs
 expression: "emit!(r#\"\n        let a = 0;\n        let a = 0;\n        let b = 0;\n    \"#)"
 ---
 function "main" {
-  registers: 2
+  registers: 2 (0 params)
   constants: []
   bytecode: (11 bytes) [
     load_smi 0, r0  // let a = 0;
     load_smi 0, r0  // let a = 0;
     load_smi 0, r1  // let b = 0;
     ret             // 
-    stop            // 
-  
+    stop            //   
   ]
 }
 

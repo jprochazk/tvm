@@ -1,26 +1,77 @@
 mod decl;
 mod gen;
-pub mod support;
 
-use std::env::args;
+#[allow(dead_code)]
+mod support;
+
 use std::fs;
-use std::path::PathBuf;
-use std::process::{exit, Command, ExitCode};
+use std::path::Path;
+use std::process::Command;
 
-const USAGE: &str = "bcgen [input_path] [output_path]
+fn bytecode() -> decl::Bytecode {
+    decl::def! {
+        op nop()
+        op mov(src: Reg, dst: Reg)
+        op load_cst(src: Cst, dst: Reg)
+        op load_unit(dst: Reg)
+        op load_smi(val: Smi, dst: Reg)
+        op load_true(dst: Reg)
+        op load_false(dst: Reg)
+    }
+    decl::def! {
+        template bool<val>
+        "load_{val}" (dst: Reg)
+    }
+    decl::def! {
+        with bool
+        [true]
+        [false]
+    }
+    decl::def! {
+        template arithmetic<name, ty>
+        "{name}_{ty}" (lhs: Reg, rhs: Reg, dst: Reg)
+    }
+    decl::def! {
+        with arithmetic
+        [add, int]
+        [add, num]
+        [sub, int]
+        [sub, num]
+        [mul, int]
+        [mul, num]
+        [div, int]
+        [div, num]
+        [rem, int]
+        [rem, num]
+    }
+    decl::def! {
+        op call0_direct(fnid: Fnid, ret: Reg)
+        op call_direct(fnid: Fnid, ret: Reg)
+        op call0_indirect(fnr: Reg, ret: Reg)
+        op call_indirect(fnr: Reg, ret: Reg)
+    }
+    decl::def! {
+        op ret()
+        op retv(src: Reg)
+    }
+    decl::def! {
+        op stop()
+    }
 
-Arguments:
-  input_path    bytecode definition file path
-  output_path   generated file path
-";
+    decl::def! {
+        type Reg: u8 = "r{0}"
+        type Cst: u16 = "c{0}"
+        type Cap: u16 = "^{0}"
+        type Mvar: u16 = "m{0}"
+        type Fnid: u16 = "{0}"
+        type Smi: i8 = "{0}"
+    }
 
-fn main() -> ExitCode {
-    let args = Args::parse_from_env();
+    decl::finish()
+}
 
-    let input = std::fs::read_to_string(&args.input_path).expect("failed to read input file");
-    let instructions = decl::parse(&input);
-
-    let code = gen::run(&instructions);
+fn main() -> anyhow::Result<()> {
+    let code = gen::run(&bytecode());
 
     let now = chrono::Utc::now().to_rfc2822();
     let text = format!(
@@ -31,62 +82,23 @@ fn main() -> ExitCode {
     );
     let code = format!("{text}\n{code}");
 
-    fs::write(&args.output_path, code).expect("failed to write output file");
+    let output_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("src/code/op.rs");
+
+    fs::write(&output_path, code).expect("failed to write output file");
 
     let result = Command::new("cargo")
         .args(["fmt", "--"])
-        .arg(&args.output_path)
+        .arg(&output_path)
         .spawn()
         .unwrap()
         .wait()
         .unwrap();
     if !result.success() {
-        eprintln!("failed to run `cargo fmt` on the generated file");
-        return ExitCode::FAILURE;
+        anyhow::bail!("failed to run `cargo fmt` on the generated file");
     }
 
-    ExitCode::SUCCESS
-}
-
-struct Args {
-    input_path: PathBuf,
-    output_path: PathBuf,
-}
-
-impl Args {
-    fn parse_from_env() -> Self {
-        let mut input_path = None;
-        let mut output_path = None;
-
-        for arg in args().skip(1) {
-            match arg.as_str() {
-                _ if input_path.is_none() => {
-                    input_path = Some(PathBuf::from(arg));
-                }
-                _ if output_path.is_none() => {
-                    output_path = Some(PathBuf::from(arg));
-                }
-                _ => {
-                    eprintln!("too many positional arguments");
-                    eprintln!("{USAGE}");
-                    exit(1);
-                }
-            }
-        }
-
-        let Some(input_path) = input_path else {
-            eprintln!("missing positional arguments: input_path, output_path");
-            exit(1);
-        };
-
-        let Some(output_path) = output_path else {
-            eprintln!("missing positional arguments: output_path");
-            exit(1);
-        };
-
-        Self {
-            input_path,
-            output_path,
-        }
-    }
+    Ok(())
 }

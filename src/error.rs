@@ -592,6 +592,11 @@ impl<'src> ErrorCtx<'src> {
             .append("help: reduce register usage by splitting code into multiple functions")
             .into()
     }
+
+    #[inline]
+    pub fn invalid_escape_sequence(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("invalid escape sequence", span, self.src()).into()
+    }
 }
 
 pub struct BadReturnType<'a, 'src> {

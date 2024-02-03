@@ -1,0 +1,12 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n        \"\\{\";\n        \"\\}\";\n    \"#)"
+---
+error: invalid escape sequence
+1 |  "\{";
+  |   ^
+
+error: invalid escape sequence
+2 |  "\}";
+  |   ^
+

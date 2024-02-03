@@ -1,0 +1,35 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v + g()\n        }\n\n        fn g() -> int {\n            2\n        }\n    \"#)"
+---
+function "main" {
+  registers: 0 (0 params)
+  constants: []
+  bytecode: (2 bytes) [
+    ret    // 
+    stop   //   
+  ]
+}
+
+function "f" #0 {
+  registers: 3 (1 params)
+  constants: []
+  bytecode: (11 bytes) [
+    call0_direct 1, r2  // v + g()
+    add_int r0, r2, r1  // 
+    retv r1             // 
+    stop                //   
+  ]
+}
+
+function "g" #1 {
+  registers: 1 (0 params)
+  constants: []
+  bytecode: (6 bytes) [
+    load_smi 2, r0  // 2
+    retv r0         // 
+    stop            //   
+  ]
+}
+
+

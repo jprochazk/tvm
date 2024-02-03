@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 
-use crate::ast::Ident;
+use crate::ast::{BinaryOp, Ident};
 use crate::error::{Error, ErrorCtx, Location, Result};
 use crate::hir::Hir;
 use crate::lex::Span;
@@ -30,20 +30,20 @@ struct Compiler<'src> {
 impl<'src> Compiler<'src> {
     fn compile(mut self, hir: Hir<'src>) -> Result<Module, Vec<Error>> {
         // 1. reserve a slot in the function table for each function
-        for (_, hir_id, _) in hir.fns.iter() {
-            self.module_state.functions.reserve(hir_id)
+        for (hir_id, fn_) in hir.fns.iter() {
+            self.module_state.functions.reserve(fn_.name, hir_id);
         }
 
         // 2. compile top-level code
         let top_level = generate_main_fn(hir.top_level);
-        match FunctionState::new(&mut self, &top_level).compile() {
+        match function(&mut self, &top_level) {
             Ok(fn_) => self.module_state.functions.main = fn_,
             Err(e) => self.ecx.push(e),
         }
 
         // 3. compile all functions, place them into their respective slots
-        for (_, hir_id, fn_) in hir.fns.iter() {
-            match FunctionState::new(&mut self, fn_).compile() {
+        for (hir_id, fn_) in hir.fns.iter() {
+            match function(&mut self, fn_) {
                 Ok(fn_) => self.module_state.functions.relocate(hir_id, fn_),
                 Err(e) => self.ecx.push(e),
             }
@@ -86,41 +86,54 @@ fn generate_main_fn(block: hir::Block<'_>) -> hir::Fn<'_> {
     }
 }
 
-impl<'src, 'a> FunctionState<'src, 'a> {
-    fn new(compiler: &'a mut Compiler<'src>, hir: &'a hir::Fn<'src>) -> Self {
-        Self {
-            compiler,
-            hir,
-            current_loop: None,
-            asm: Assembler::new(),
-            regalloc: RegisterAllocator::new(),
-            locals: Vec::new(),
-        }
+fn function<'src, 'a>(
+    compiler: &'a mut Compiler<'src>,
+    hir: &'a hir::Fn<'src>,
+) -> Result<Function> {
+    FunctionState {
+        compiler,
+        hir,
+        current_loop: None,
+        asm: Assembler::new(),
+        regalloc: RegisterAllocator::new(),
+        locals: Vec::new(),
     }
+    .compile()
+}
 
+impl<'src, 'a> FunctionState<'src, 'a> {
     fn compile(mut self) -> Result<Function> {
-        use asm::*;
-
         let hir::FnBody::Block(body) = &self.hir.body else {
             return Ok(Function::default());
         };
 
-        match body.tail.is_some() {
-            true => {
-                let val = self.alloc_reg(Span::empty())?;
-                block_expr(&mut self, body, Some(val))?;
-                self.asm.emit(Span::empty(), retv(val));
+        self.scope(|f| -> Result<()> {
+            for param in &self.hir.sig.params {
+                let reg = f.alloc_reg(param.name.span)?;
+                f.declare_local(param.name, reg);
             }
-            false => {
-                block_expr(&mut self, body, None)?;
-                self.asm.emit(Span::empty(), ret());
+
+            use asm::*;
+            match body.tail.is_some() {
+                true => {
+                    let val = f.alloc_reg(Span::empty())?;
+                    block_expr(f, body, Some(val))?;
+                    f.asm.emit(Span::empty(), retv(val));
+                }
+                false => {
+                    block_expr(f, body, None)?;
+                    f.asm.emit(Span::empty(), ret());
+                }
             }
-        }
+
+            Ok(())
+        })?;
 
         let (bytecode, spans, constants) = self.asm.finish();
         let registers = self.regalloc.total;
         Ok(Function {
             name: self.hir.name.to_string(),
+            params: self.hir.sig.params.len() as u8,
             bytecode,
             spans,
             constants,
@@ -165,7 +178,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         self.compiler.module_state.vars.get(name).copied()
     }
 
-    fn resolve_function(&self, name: &str) -> Option<FnId> {
+    fn resolve_function(&self, name: &str) -> Option<Fnid> {
         self.compiler.module_state.functions.get_id(name)
     }
 
@@ -186,6 +199,10 @@ impl<'src, 'a> FunctionState<'src, 'a> {
             Some(reg) => Ok(reg),
             None => Err(self.compiler.ecx.too_many_registers(span)),
         }
+    }
+
+    fn free_reg(&mut self, reg: Reg) {
+        self.regalloc.free(reg);
     }
 
     fn alloc_const_int(&mut self, span: Span, v: i64) -> Result<Cst> {
@@ -211,16 +228,31 @@ impl<'src, 'a> FunctionState<'src, 'a> {
             .map(Cst::new)
             .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
     }
-}
 
-fn scope<'src, 'a, T>(
-    f: &mut FunctionState<'src, 'a>,
-    inner: impl FnOnce(&mut FunctionState<'src, 'a>) -> T,
-) -> T {
-    f.locals.push(HashMap::default());
-    let r = inner(f);
-    f.locals.pop().unwrap();
-    r
+    fn scope<T>(&mut self, inner: impl FnOnce(&mut Self) -> T) -> T {
+        self.locals.push(HashMap::default());
+        let r = inner(self);
+        self.locals.pop().unwrap();
+        r
+    }
+
+    #[inline]
+    fn with_reg<T>(
+        &mut self,
+        span: Span,
+        reg: Option<Reg>,
+        inner: impl FnOnce(&mut Self, Reg) -> Result<T>,
+    ) -> Result<T> {
+        let (free, reg) = match reg {
+            Some(reg) => (false, reg),
+            None => (true, self.alloc_reg(span)?),
+        };
+        let result = inner(self, reg);
+        if free {
+            self.free_reg(reg);
+        }
+        result
+    }
 }
 
 fn stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Stmt<'src>) -> Result<()> {
@@ -282,7 +314,46 @@ fn binary_expr<'src, 'a>(
     hir: &'a hir::Binary<'src>,
     dst: Option<Reg>,
 ) -> Result<Option<Reg>> {
-    todo!()
+    f.with_reg(span, dst, |f, dst| {
+        let lhs = expr(f, &hir.lhs, Some(dst))?.unwrap_or(dst);
+        let fresh_rhs = f.alloc_reg(span)?;
+        let rhs = expr(f, &hir.rhs, Some(fresh_rhs))?.unwrap_or(fresh_rhs);
+
+        use asm::*;
+
+        macro_rules! emit_binop {
+            ($kind:ident) => {
+                if hir.lhs.ty.is_int() {
+                    f.asm.emit(span, paste::paste!([<$kind:lower _int>])(lhs, rhs, dst));
+                } else if hir.lhs.ty.is_num() {
+                    f.asm.emit(span, paste::paste!([<$kind:lower _num>])(lhs, rhs, dst));
+                } else {
+                    unreachable!("BUG: binary expr consisting of non-numeric types: {hir:#?}");
+                }
+            }
+        }
+
+        use BinaryOp as O;
+        match hir.op {
+            O::Add => emit_binop!(Add),
+            O::Sub => emit_binop!(Sub),
+            O::Mul => emit_binop!(Mul),
+            O::Div => emit_binop!(Div),
+            O::Rem => emit_binop!(Rem),
+            // O::Pow => emit_binop!(Pow),
+            // O::Eq => emit_binop!(Eq),
+            // O::Ne => emit_binop!(Ne),
+            // O::Gt => emit_binop!(Gt),
+            // O::Lt => emit_binop!(Lt),
+            // O::Ge => emit_binop!(Ge),
+            // O::Le => emit_binop!(Le),
+            _ => {}
+        }
+
+        f.free_reg(fresh_rhs);
+
+        Ok(None)
+    })
 }
 
 fn primitive_expr<'src, 'a>(
@@ -340,7 +411,86 @@ fn call_expr<'src, 'a>(
     hir: &'a hir::Call<'src>,
     dst: Option<Reg>,
 ) -> Result<Option<Reg>> {
+    if let hir::ExprKind::UseVar(var) = &hir.callee.kind {
+        if let SymbolKind::Fn(fnid) = f.resolve_symbol(var.name).kind {
+            // can do direct function call for code like this:
+            //   fn f() {}
+            //   f(); // directly references a function
+            return call_expr_direct(f, span, hir, fnid, dst);
+        }
+    }
+
+    // boring value call:
+    //   fn f() {}
+    //   let indirection = f;
+    //   indirection();
+    call_expr_value(f, span, hir, dst)
+}
+
+fn call_expr_direct<'src, 'a>(
+    f: &mut FunctionState<'src, 'a>,
+    span: Span,
+    hir: &'a hir::Call<'src>,
+    fnid: op::Fnid,
+    dst: Option<Reg>,
+) -> Result<Option<Reg>> {
+    // caller: [.., ret, a, b, c]
+    // callee:     [ret, a, b, c, ..]
+
+    f.with_reg(span, dst, |f, dst| {
+        let is_dst_flat = dst.get() + 1 == f.regalloc.current;
+        let ret = match is_dst_flat {
+            true => dst,
+            false => f.alloc_reg(span)?, // must emit move
+        };
+
+        let mut args = Vec::with_capacity(hir.args.len());
+        for arg in &hir.args {
+            args.push(f.alloc_reg(arg.value.span)?);
+        }
+
+        for (arg, reg) in hir.args.iter().zip(args.iter()) {
+            assign_to(f, &arg.value, *reg)?;
+        }
+
+        use asm::*;
+        match hir.args.len() {
+            0 => f.asm.emit(span, call0_direct(fnid, ret)),
+            _ => f.asm.emit(span, call_direct(fnid, ret)),
+        }
+
+        if !is_dst_flat {
+            f.asm.emit(span, mov(ret, dst));
+            f.free_reg(ret); // implicitly frees arg regs
+        } else if let Some(arg0) = args.first() {
+            f.free_reg(*arg0);
+        }
+
+        Ok(None)
+    })
+}
+
+fn call_expr_value<'src, 'a>(
+    f: &mut FunctionState<'src, 'a>,
+    span: Span,
+    hir: &'a hir::Call<'src>,
+    dst: Option<Reg>,
+) -> Result<Option<Reg>> {
     todo!()
+    /* f.with_reg(span, dst, |f, dst| {
+        let is_flat_dst = dst.get() + 1 == f.regalloc.current;
+        let (free_fn, fn_reg) = match is_flat_dst {
+            true => (false, dst),
+            false => (true, f.alloc_reg(span)?),
+        };
+
+        let mut args = Vec::with_capacity(f.hir.sig.params.len());
+        for param in &f.hir.sig.params {
+            args.push(f.alloc_reg(param.name.span)?);
+        }
+
+        todo!()
+    }) */
 }
 
 fn block_expr<'src, 'a>(
@@ -350,7 +500,7 @@ fn block_expr<'src, 'a>(
 ) -> Result<()> {
     use asm::*;
 
-    scope(f, |f| {
+    f.scope(|f| {
         for v in &hir.body {
             stmt(f, v)?;
         }
@@ -395,6 +545,7 @@ struct LoopState {
     end: MultiLabel,
 }
 
+#[derive(Default)]
 struct Assembler<'src> {
     bytecode: Vec<u8>,
     spans: Vec<Span>,
@@ -403,11 +554,7 @@ struct Assembler<'src> {
 
 impl<'src> Assembler<'src> {
     fn new() -> Self {
-        Self {
-            bytecode: Vec::new(),
-            spans: Vec::new(),
-            constants: ConstantPoolBuilder::new(),
-        }
+        Self::default()
     }
 
     fn emit(&mut self, span: Span, e: impl Encode) {
@@ -419,7 +566,6 @@ impl<'src> Assembler<'src> {
         if !self.bytecode.ends_with(&[Op::Stop as u8]) {
             self.emit(Span::empty(), asm::stop());
         }
-
         (self.bytecode, self.spans, self.constants.finish())
     }
 }
@@ -457,10 +603,7 @@ impl RegisterAllocator {
     }
 
     fn free(&mut self, reg: Reg) {
-        assert!(
-            self.current == reg.get() + 1,
-            "registers freed out of order"
-        );
+        assert!(self.current >= reg.get(), "registers freed out of order");
         self.current = reg.get();
     }
 }
@@ -473,13 +616,13 @@ struct Symbol {
 
 #[derive(Clone, Copy, Debug)]
 enum SymbolKind {
-    Fn(FnId),
+    Fn(Fnid),
     Mvar(Mvar),
     Var(Reg),
 }
 
 impl Symbol {
-    fn fn_(span: Span, id: FnId) -> Self {
+    fn fn_(span: Span, id: Fnid) -> Self {
         Self {
             span,
             kind: SymbolKind::Fn(id),
@@ -506,22 +649,26 @@ pub struct Module {
 }
 
 impl Module {
-    fn functions(&self) -> impl Iterator<Item = &FnTableEntry> {
-        self.functions.entries.iter()
+    fn functions(&self) -> impl Iterator<Item = (op::Fnid, &FnTableEntry)> {
+        self.functions
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, fn_)| (op::Fnid::new(i as u16), fn_))
     }
 }
 
 struct FunctionTable {
-    name_to_id: BTreeMap<String, FnId>,
-    reloc_table: BTreeMap<hir::FnId, FnId>,
+    name_to_id: BTreeMap<String, Fnid>,
+    reloc_table: BTreeMap<hir::FnId, Fnid>,
     main: Function,
     entries: Vec<FnTableEntry>,
 }
 
 struct FunctionTableBuilder {
     next_id: u16,
-    name_to_id: BTreeMap<String, FnId>,
-    reloc_table: BTreeMap<hir::FnId, FnId>,
+    name_to_id: BTreeMap<String, Fnid>,
+    reloc_table: BTreeMap<hir::FnId, Fnid>,
     main: Function,
     fns: Vec<FnTableEntry>,
 }
@@ -537,20 +684,21 @@ impl FunctionTableBuilder {
         }
     }
 
-    fn get_id(&self, name: &str) -> Option<FnId> {
+    fn get_id(&self, name: &str) -> Option<Fnid> {
         self.name_to_id.get(name).copied()
     }
 
-    fn reserve(&mut self, hir_id: hir::FnId) {
-        let table_id = FnId::new(self.next_id);
+    fn reserve(&mut self, name: Ident<'_>, hir_id: hir::FnId) {
+        let table_id = Fnid::new(self.next_id);
         self.next_id += 1;
 
+        self.name_to_id.insert(name.to_string(), table_id);
         self.reloc_table.insert(hir_id, table_id);
-        self.fns.push(FnTableEntry::Script(Function::default()));
+        self.fns.push(FnTableEntry::Script(Box::default()));
     }
 
     fn relocate(&mut self, hir_id: hir::FnId, fn_: Function) {
-        self.fns[self.reloc_table[&hir_id].to_index()] = FnTableEntry::Script(fn_);
+        self.fns[self.reloc_table[&hir_id].to_index()] = FnTableEntry::Script(Box::new(fn_));
     }
 
     fn finish(self) -> FunctionTable {
@@ -564,14 +712,15 @@ impl FunctionTableBuilder {
 }
 
 pub enum FnTableEntry {
-    Script(Function),
-    Host(ExternFunction),
+    Script(Box<Function>),
+    Host(Box<ExternFunction>),
 }
 
 #[derive(Default)]
 pub struct Function {
     // captures: Vec<Capture>,
     name: String,
+    params: u8,
     bytecode: Vec<u8>,
     spans: Vec<Span>,
     constants: Vec<Constant>,
@@ -605,41 +754,56 @@ impl<'a, 'src> Display for DisplayModule<'a, 'src> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let DisplayModule(m, src) = self;
 
-        writeln!(f, "{}", DisplayScriptFunction(&m.functions.main, *src))?;
-        for fn_ in m.functions() {
+        writeln!(
+            f,
+            "{}",
+            DisplayScriptFunction(None, &m.functions.main, *src)
+        )?;
+        for (id, fn_) in m.functions() {
             match fn_ {
-                FnTableEntry::Script(fn_) => writeln!(f, "{}", DisplayScriptFunction(fn_, *src))?,
-                FnTableEntry::Host(fn_) => writeln!(f, "{}", DisplayExternFunction(fn_, *src))?,
+                FnTableEntry::Script(fn_) => {
+                    writeln!(f, "{}", DisplayScriptFunction(Some(id), fn_, *src))?
+                }
+                FnTableEntry::Host(fn_) => writeln!(f, "{}", DisplayExternFunction(Some(id), fn_))?,
             }
         }
         Ok(())
     }
 }
 
-struct DisplayExternFunction<'a, 'src>(&'a ExternFunction, Option<&'src str>);
-impl<'a, 'src> Display for DisplayExternFunction<'a, 'src> {
+struct DisplayExternFunction<'a>(Option<op::Fnid>, &'a ExternFunction);
+impl<'a> Display for DisplayExternFunction<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let fn_ = self.0;
+        let Self(id, fn_) = self;
 
-        writeln!(f, "function {:?} {{", fn_.name)?;
+        write!(f, "function {:?}", fn_.name)?;
+        if let Some(id) = id {
+            write!(f, " #{id}")?;
+        }
+        writeln!(f, " {{")?;
         writeln!(f, "  extern")?;
         writeln!(f, "}}")
     }
 }
 
-struct DisplayScriptFunction<'a, 'src>(&'a Function, Option<&'src str>);
+struct DisplayScriptFunction<'a, 'src>(Option<op::Fnid>, &'a Function, Option<&'src str>);
 impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use op::Decode as _;
 
-        let fn_ = self.0;
-        writeln!(f, "function {:?} {{", fn_.name)?;
-        writeln!(f, "  registers: {}", fn_.registers)?;
+        let Self(id, fn_, src) = self;
+
+        write!(f, "function {:?}", fn_.name)?;
+        if let Some(id) = id {
+            write!(f, " #{id}")?;
+        }
+        writeln!(f, " {{")?;
+        writeln!(f, "  registers: {} ({} params)", fn_.registers, fn_.params)?;
         write!(f, "  constants: ")?;
         if fn_.constants.is_empty() {
             writeln!(f, "[]")?;
         } else {
-            write!(f, "[")?;
+            writeln!(f, "[")?;
             for c in &fn_.constants {
                 writeln!(f, "    {c:?}")?;
             }
@@ -658,26 +822,32 @@ impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
             instructions.push((*span, instruction.to_string()));
         }
         let max_len = instructions.iter().map(|(_, s)| s.len()).max().unwrap_or(0);
-        let mut prev_span = Span::empty();
-        for (span, instruction) in instructions {
+        let mut prev_line_span = Span::empty();
+        let mut instructions = instructions.into_iter().peekable();
+        while let Some((span, instruction)) = instructions.next() {
             f.write_str("    ")?;
             'next: {
-                if let Some(src) = self.1 {
+                if let Some(src) = src {
                     write!(f, "{instruction:max_len$}  // ")?;
 
-                    let temp = prev_span;
-                    prev_span = span;
-                    if temp == span || span.is_empty() {
+                    if span.is_empty() {
                         break 'next;
                     }
 
                     let loc = Location::from_source_span(src, &span);
+                    if prev_line_span == loc.line_span() {
+                        break 'next;
+                    }
+                    prev_line_span = loc.line_span();
+
                     f.write_str(src[loc.line_span()].trim())?;
                 } else {
                     write!(f, "{instruction}")?;
                 }
             }
-            f.write_str("\n")?;
+            if instructions.peek().is_some() {
+                f.write_str("\n")?;
+            }
         }
         writeln!(f, "  ")?;
         writeln!(f, "  ]")?;

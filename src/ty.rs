@@ -7,6 +7,7 @@ use crate::ast::{self, Ast, Ident};
 use crate::error::{Error, ErrorCtx, Result};
 use crate::hir::*;
 use crate::lex::Span;
+use crate::HashSet;
 
 // TODO: don't ignore keyword args
 // they should:
@@ -19,15 +20,14 @@ use crate::lex::Span;
 // this information is only available against calls where the
 // callee is a function declaration
 
-pub fn check<'src>(v: &Ast<'src>) -> Result<Hir<'src>, Vec<Error>> {
-    let mut tcx = TyCtx::new(v.src);
+pub fn check<'src>(ast: &Ast<'src>) -> Result<Hir<'src>, Vec<Error>> {
+    let mut tcx = TyCtx::new(ast.src);
     register_primitive_types(&mut tcx);
 
     tcx.enter_scope();
-    tcx.declare_types(&v.decls);
-    let fns = tcx.collect_fn_sigs(&v.decls);
-    tcx.infer_fns(&v.decls, fns);
-    let top_level = tcx.infer_block(&v.top_level);
+    tcx.declare_types(&ast.decls);
+    tcx.infer_fns(&ast.decls);
+    let top_level = tcx.infer_block(&ast.top_level);
     tcx.leave_scope();
 
     tcx.finish(top_level)
@@ -167,13 +167,11 @@ impl<'src> TyCtx<'src> {
         self.declare_symbol(name, Ty::Fn(id), SymbolKind::Fn);
     }
 
-    fn collect_fn_sigs(
-        &mut self,
-        fns: &[ast::Decl<'src>],
-    ) -> BTreeMap<&'src str, (Ident<'src>, FnSig<'src>)> {
-        let mut out = BTreeMap::<&str, (Ident, FnSig)>::new();
-        for fn_ in fns {
-            let ast::decl::DeclKind::Fn(fn_) = &fn_.kind else {
+    fn infer_fns(&mut self, decls: &[ast::Decl<'src>]) {
+        let mut fns = Vec::<(FnId, Ident<'_>, FnSig<'_>, &ast::decl::Body<'_>)>::new();
+        let mut seen = HashSet::<Ident<'src>>::default();
+        for decl in decls {
+            let ast::decl::DeclKind::Fn(fn_) = &decl.kind else {
                 continue;
             };
             let name = fn_.name;
@@ -183,7 +181,7 @@ impl<'src> TyCtx<'src> {
                 continue;
             }
 
-            if let Some((existing, _)) = out.get(name.as_str()) {
+            if let Some(existing) = seen.get(&name) {
                 self.ecx.emit_invalid_shadowing(
                     name.span,
                     name.as_str(),
@@ -193,6 +191,7 @@ impl<'src> TyCtx<'src> {
                 );
                 continue;
             }
+            seen.insert(name);
 
             let sig = FnSig {
                 params: fn_
@@ -211,9 +210,24 @@ impl<'src> TyCtx<'src> {
                 ret_span: fn_.ret.as_ref().map(|ty| ty.span),
             };
 
-            out.insert(name.as_str(), (name, sig));
+            fns.push((FnId(u32::MAX), name, sig, &fn_.body));
         }
-        out
+
+        for (id, name, sig, _) in &mut fns {
+            *id = self.fns.insert(Fn {
+                name: *name,
+                kind: FnKind::Function,
+                sig: sig.clone(),
+                body: FnBody::Extern,
+            });
+            self.declare_symbol(*name, Ty::Fn(*id), SymbolKind::Fn);
+        }
+
+        for (id, name, sig, body) in fns {
+            let body = self.infer_fn_body(&name, &sig, body);
+            let fn_ = self.fns.get_by_id_mut(id).unwrap();
+            fn_.body = body;
+        }
     }
 
     fn enter_scope(&mut self) {
@@ -285,30 +299,6 @@ impl<'src> TyCtx<'src> {
                 }
             },
         }
-    }
-
-    fn infer_fns(
-        &mut self,
-        fns: &[ast::Decl<'src>],
-        mut pending_fns: BTreeMap<&'src str, (Ident<'src>, FnSig<'src>)>,
-    ) {
-        for fn_ in fns {
-            let ast::decl::DeclKind::Fn(fn_) = &fn_.kind else {
-                continue;
-            };
-
-            let (name, sig) = pending_fns.remove(fn_.name.as_str()).unwrap();
-
-            let body = self.infer_fn_body(&fn_.name, &sig, &fn_.body);
-            let id = self.fns.insert(Fn {
-                name,
-                kind: FnKind::Function,
-                sig,
-                body,
-            });
-            self.declare_symbol(fn_.name, Ty::Fn(id), SymbolKind::Fn);
-        }
-        assert!(pending_fns.is_empty());
     }
 
     fn infer_fn_body(
@@ -442,6 +432,10 @@ impl<'src> TyCtx<'src> {
             rhs: &Expr<'src>,
             op: ast::BinaryOp,
         ) -> Ty {
+            if lhs.ty.is_err() || rhs.ty.is_err() {
+                return Ty::Error;
+            }
+
             if !tcx.type_supports_binop(lhs.ty, op) {
                 let p = ty_p!(tcx);
                 tcx.ecx.emit_unsupported_op(span, p(lhs.ty), op);

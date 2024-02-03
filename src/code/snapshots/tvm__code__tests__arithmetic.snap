@@ -1,0 +1,41 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        let a = 1;\n        let b = 2;\n        let r = a + b; // Some(dst)\n        a + b;         // None\n        let r = a - b; // Some(dst)\n        a - b;         // None\n        let r = a * b; // Some(dst)\n        a * b;         // None\n        let r = a / b; // Some(dst)\n        a / b;         // None\n        let r = a % b; // Some(dst)\n        a % b;         // None\n\n        let a = 1.2;\n        let b = 2.3;\n        let r = a + b; // Some(dst)\n        a + b;         // None\n        let r = a - b; // Some(dst)\n        a - b;         // None\n        let r = a * b; // Some(dst)\n        a * b;         // None\n        let r = a / b; // Some(dst)\n        a / b;         // None\n        let r = a % b; // Some(dst)\n        a % b;         // None\n    \"#)"
+---
+function "main" {
+  registers: 5 (0 params)
+  constants: [
+    Num(1.2)
+    Num(2.3)
+  ]
+  bytecode: (96 bytes) [
+    load_smi 1, r0      // let a = 1;
+    load_smi 2, r1      // let b = 2;
+    add_int r0, r1, r2  // let r = a + b; // Some(dst)
+    add_int r0, r1, r3  // a + b;         // None
+    sub_int r0, r1, r2  // let r = a - b; // Some(dst)
+    sub_int r0, r1, r3  // a - b;         // None
+    mul_int r0, r1, r2  // let r = a * b; // Some(dst)
+    mul_int r0, r1, r3  // a * b;         // None
+    div_int r0, r1, r2  // let r = a / b; // Some(dst)
+    div_int r0, r1, r3  // a / b;         // None
+    rem_int r0, r1, r2  // let r = a % b; // Some(dst)
+    rem_int r0, r1, r3  // a % b;         // None
+    load_cst c0, r0     // let a = 1.2;
+    load_cst c1, r1     // let b = 2.3;
+    add_num r0, r1, r2  // let r = a + b; // Some(dst)
+    add_num r0, r1, r3  // a + b;         // None
+    sub_num r0, r1, r2  // let r = a - b; // Some(dst)
+    sub_num r0, r1, r3  // a - b;         // None
+    mul_num r0, r1, r2  // let r = a * b; // Some(dst)
+    mul_num r0, r1, r3  // a * b;         // None
+    div_num r0, r1, r2  // let r = a / b; // Some(dst)
+    div_num r0, r1, r3  // a / b;         // None
+    rem_num r0, r1, r2  // let r = a % b; // Some(dst)
+    rem_num r0, r1, r3  // a % b;         // None
+    ret                 // 
+    stop                //   
+  ]
+}
+
+

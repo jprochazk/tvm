@@ -1,0 +1,27 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n        \"\";\n        \"\\n\";\n        \"\\\\n\";\n        \"a\\nb\";\n        \"a\\\\nb\";\n    \"#)"
+---
+Ast {
+    decls: [],
+    top_level: Block {
+        body: [
+            Str(
+                "",
+            ),
+            Str(
+                "\n",
+            ),
+            Str(
+                "\\n",
+            ),
+            Str(
+                "a\nb",
+            ),
+            Str(
+                "a\\nb",
+            ),
+        ],
+        tail: None,
+    },
+}

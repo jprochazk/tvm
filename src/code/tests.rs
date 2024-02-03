@@ -39,6 +39,18 @@ macro_rules! test {
 }
 
 test! {
+    literals,
+    r#"
+        let v = 0;
+        let v = 1.0;
+        let v = true;
+        let v = false;
+        let v = "test";
+        let v = "\nyo\n";
+    "#
+}
+
+test! {
     variables,
     r#"
         let a = 0;
@@ -69,6 +81,50 @@ test! {
     r#"
         let a = 0;
         let b = a;
+    "#
+}
+
+test! {
+    arithmetic,
+    r#"
+        let a = 1;
+        let b = 2;
+        let r = a + b; // Some(dst)
+        a + b;         // None
+        let r = a - b; // Some(dst)
+        a - b;         // None
+        let r = a * b; // Some(dst)
+        a * b;         // None
+        let r = a / b; // Some(dst)
+        a / b;         // None
+        let r = a % b; // Some(dst)
+        a % b;         // None
+
+        let a = 1.2;
+        let b = 2.3;
+        let r = a + b; // Some(dst)
+        a + b;         // None
+        let r = a - b; // Some(dst)
+        a - b;         // None
+        let r = a * b; // Some(dst)
+        a * b;         // None
+        let r = a / b; // Some(dst)
+        a / b;         // None
+        let r = a % b; // Some(dst)
+        a % b;         // None
+    "#
+}
+
+test! {
+    functions,
+    r#"
+        fn f(v: int) -> int {
+            v + g()
+        }
+
+        fn g() -> int {
+            2
+        }
     "#
 }
 

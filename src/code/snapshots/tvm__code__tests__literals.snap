@@ -1,0 +1,24 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        let v = 0;\n        let v = 1.0;\n        let v = true;\n        let v = false;\n        let v = \"test\";\n        let v = \"\\nyo\\n\";\n    \"#)"
+---
+function "main" {
+  registers: 1 (0 params)
+  constants: [
+    Num(1.0)
+    Str("test")
+    Str("\nyo\n")
+  ]
+  bytecode: (21 bytes) [
+    load_smi 0, r0   // let v = 0;
+    load_cst c0, r0  // let v = 1.0;
+    load_true r0     // let v = true;
+    load_false r0    // let v = false;
+    load_cst c1, r0  // let v = "test";
+    load_cst c2, r0  // let v = "\nyo\n";
+    ret              // 
+    stop             //   
+  ]
+}
+
+

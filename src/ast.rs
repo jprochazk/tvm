@@ -3,8 +3,6 @@
 mod make;
 mod print;
 
-// TODO: finish ast refactor
-
 use std::hash::Hash;
 
 use crate::lex::Span;

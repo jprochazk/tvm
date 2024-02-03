@@ -1,63 +1,100 @@
-#[derive(Debug)]
-pub struct Instruction {
-    /// Name of this instruction.
-    pub name: String,
+use std::borrow::Cow;
 
-    /// Operands encoded into the instruction stream.
-    pub operands: Vec<Operand>,
+use indexmap::IndexMap;
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
+
+pub type Name = Cow<'static, str>;
+
+#[derive(Clone, Default)]
+pub struct Bytecode {
+    pub ops: IndexMap<Name, Operands>,
+    pub types: IndexMap<Name, Type>,
 }
 
-#[derive(Debug)]
-pub struct Operand {
-    pub name: String,
-    pub ty: String,
-}
-
-pub fn parse(s: &str) -> Vec<Instruction> {
-    // TODO: check for duplicates
-
-    let mut instructions = Vec::new();
-
-    let mut lines = s
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .enumerate();
-
-    // parse the following format:
-    //   def NAME
-    //     NAME: TYPE
-    //     NAME: TYPE
-    //   end
-    'def: while let Some((i, line)) = lines.next() {
-        if !line.starts_with("def") {
-            continue;
-        }
-
-        let Some((_, name)) = line.split_once(' ') else {
-            eprintln!("syntax error: invalid def on line {i}:\n  {line}");
-            continue;
-        };
-        let name = name.trim().to_string();
-
-        let mut operands = Vec::new();
-        for (i, line) in lines.by_ref() {
-            if line.starts_with("end") {
-                break;
-            }
-
-            let Some((name, ty)) = line.split_once(':') else {
-                eprintln!("syntax error: invalid operand for def {name:?} on line {i}:\n  {line}");
-                continue 'def;
-            };
-            let name = name.trim().to_string();
-            let ty = ty.trim().to_string();
-
-            operands.push(Operand { name, ty });
-        }
-
-        instructions.push(Instruction { name, operands });
+impl Bytecode {
+    pub fn first(&self) -> (&Name, &Operands) {
+        self.ops.iter().next().unwrap()
     }
 
-    instructions
+    pub fn last(&self) -> (&Name, &Operands) {
+        self.ops.iter().last().unwrap()
+    }
 }
+
+pub type Operands = IndexMap<Name, Name>;
+
+#[derive(Clone)]
+pub struct Type {
+    pub inner: Name,
+    pub fmt: &'static str,
+}
+
+#[doc(hidden)]
+pub(crate) fn ensure() -> MappedMutexGuard<'static, Bytecode> {
+    static BYTECODE: Mutex<Option<Bytecode>> = Mutex::new(None);
+    MutexGuard::map(BYTECODE.lock(), |v| v.get_or_insert_with(Bytecode::default))
+}
+
+pub fn finish() -> Bytecode {
+    ensure().clone()
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __def {
+    (
+        $(op $name:ident($($arg:ident : $ty:ty),*))*
+    ) => {{
+        $(
+            $crate::decl::ensure()
+            .ops
+            .insert(
+                stringify!($name).into(),
+                [$((stringify!($arg).into(), stringify!($ty).into())),*].into_iter().collect(),
+            );
+        )*
+    }};
+
+    (
+        with $name:ident
+        $([$($sub:ident),*])*
+    ) => {{
+        $(
+            $name($(stringify!($sub)),*);
+        )*
+    }};
+
+    (
+        template $name:ident<$($sub:ident),*>
+        $name_fmt:literal ($($arg:ident : $ty:ty),*)
+    ) => {
+        fn $name($($sub : impl Into<$crate::decl::Name>),*) {
+            $crate::decl::ensure()
+                .ops
+                .insert(
+                    format!($name_fmt, $($sub=($sub).into()),*).into(),
+                    [$((stringify!($arg).into(), stringify!($ty).into())),*].into_iter().collect(),
+                );
+        }
+    };
+
+    (
+        $(
+            type $name:ident: $inner:ty = $fmt:literal
+        )*
+    ) => {{
+        $(
+            $crate::decl::ensure()
+            .types
+            .insert(
+                stringify!($name).into(),
+                $crate::decl::Type {
+                    inner: stringify!($inner).into(),
+                    fmt: $fmt,
+                }
+            );
+        )*
+    }};
+}
+
+pub use crate::__def as def;

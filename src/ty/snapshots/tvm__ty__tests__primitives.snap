@@ -15,7 +15,7 @@ Hir {
                 true,
             ),
             Str(
-                "\"test\"",
+                "test",
             ),
         ],
         tail: None,

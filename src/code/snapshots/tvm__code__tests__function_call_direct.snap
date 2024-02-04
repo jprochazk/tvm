@@ -1,0 +1,25 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v\n        }\n\n        f(10);\n    \"#)"
+---
+function "main" {
+  registers: 2 (0 params)
+  constants: []
+  bytecode: (9 bytes) [
+    load_smi 10, r1    // f(10);
+    call_direct 0, r0  // 
+    ret                // 
+    stop               //   
+  ]
+}
+
+function "f" #0 {
+  registers: 2 (1 params)
+  constants: []
+  bytecode: (3 bytes) [
+    retv r1  // 
+    stop     //   
+  ]
+}
+
+

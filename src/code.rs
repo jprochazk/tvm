@@ -108,19 +108,25 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         };
 
         self.scope(|f| -> Result<()> {
-            for param in &self.hir.sig.params {
-                let reg = f.alloc_reg(param.name.span)?;
-                f.declare_local(param.name, reg);
-            }
-
             use asm::*;
             match body.tail.is_some() {
                 true => {
-                    let val = f.alloc_reg(Span::empty())?;
-                    block_expr(f, body, Some(val))?;
-                    f.asm.emit(Span::empty(), retv(val));
+                    let ret_r = f.alloc_reg(Span::empty())?;
+
+                    for param in &self.hir.sig.params {
+                        let reg = f.alloc_reg(param.name.span)?;
+                        f.declare_local(param.name, reg);
+                    }
+
+                    let ret_r = block_expr(f, body, Some(ret_r))?.unwrap_or(ret_r);
+                    f.asm.emit(Span::empty(), retv(ret_r));
                 }
                 false => {
+                    for param in &self.hir.sig.params {
+                        let reg = f.alloc_reg(param.name.span)?;
+                        f.declare_local(param.name, reg);
+                    }
+
                     block_expr(f, body, None)?;
                     f.asm.emit(Span::empty(), ret());
                 }
@@ -180,6 +186,10 @@ impl<'src, 'a> FunctionState<'src, 'a> {
 
     fn resolve_function(&self, name: &str) -> Option<Fnid> {
         self.compiler.module_state.functions.get_id(name)
+    }
+
+    fn current_scope(&self) -> &HashMap<Ident<'_>, Reg> {
+        self.locals.last().unwrap()
     }
 
     fn resolve_local_in_current_scope(&self, name: &str) -> Option<Reg> {
@@ -273,7 +283,7 @@ fn let_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Let<'src>) 
     Ok(())
 }
 
-fn loop_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Loop<'src>) -> Result<()> {
+fn loop_stmt<'src, 'a>(_f: &mut FunctionState<'src, 'a>, _hir: &'a hir::Loop<'src>) -> Result<()> {
     todo!("loop_stmt")
 }
 
@@ -290,20 +300,20 @@ fn expr<'src, 'a>(
 ) -> Result<Option<Reg>> {
     let span = hir.span;
     match &hir.kind {
-        hir::ExprKind::Return(hir) => todo!(),
-        hir::ExprKind::Break(hir) => todo!(),
-        hir::ExprKind::Continue(hir) => todo!(),
-        hir::ExprKind::Block(hir) => todo!(),
-        hir::ExprKind::If(hir) => todo!(),
+        hir::ExprKind::Return(_hir) => todo!(),
+        hir::ExprKind::Break(_hir) => todo!(),
+        hir::ExprKind::Continue(_hir) => todo!(),
+        hir::ExprKind::Block(_hir) => todo!(),
+        hir::ExprKind::If(_hir) => todo!(),
         hir::ExprKind::Binary(hir) => binary_expr(f, span, hir, dst),
-        hir::ExprKind::Unary(hir) => todo!(),
+        hir::ExprKind::Unary(_hir) => todo!(),
         hir::ExprKind::Primitive(hir) => primitive_expr(f, span, hir, dst),
         hir::ExprKind::UseVar(hir) => use_var_expr(f, span, hir, dst),
-        hir::ExprKind::UseField(hir) => todo!(),
-        hir::ExprKind::UseIndex(hir) => todo!(),
-        hir::ExprKind::AssignVar(hir) => todo!(),
-        hir::ExprKind::AssignField(hir) => todo!(),
-        hir::ExprKind::AssignIndex(hir) => todo!(),
+        hir::ExprKind::UseField(_hir) => todo!(),
+        hir::ExprKind::UseIndex(_hir) => todo!(),
+        hir::ExprKind::AssignVar(_hir) => todo!(),
+        hir::ExprKind::AssignField(_hir) => todo!(),
+        hir::ExprKind::AssignIndex(_hir) => todo!(),
         hir::ExprKind::Call(hir) => call_expr(f, span, hir, dst),
     }
 }
@@ -397,12 +407,20 @@ fn use_var_expr<'src, 'a>(
     hir: &'a hir::UseVar<'src>,
     dst: Option<Reg>,
 ) -> Result<Option<Reg>> {
+    use asm::*;
+
     let symbol = f.resolve_symbol(hir.name);
-    match symbol.kind {
-        SymbolKind::Fn(v) => todo!("use function as value"),
-        SymbolKind::Mvar(v) => todo!("module variables"),
-        SymbolKind::Var(v) => Ok(Some(v)),
-    }
+    let ret = match symbol.kind {
+        SymbolKind::Fn(id) => {
+            let Some(dst) = dst else { return Ok(None) };
+            f.asm.emit(span, load_fn(id, dst));
+            None
+        }
+        SymbolKind::Mvar(_v) => todo!("module variables"),
+        SymbolKind::Var(reg) => Some(reg),
+    };
+
+    Ok(ret)
 }
 
 fn call_expr<'src, 'a>(
@@ -476,28 +494,49 @@ fn call_expr_value<'src, 'a>(
     hir: &'a hir::Call<'src>,
     dst: Option<Reg>,
 ) -> Result<Option<Reg>> {
-    todo!()
-    /* f.with_reg(span, dst, |f, dst| {
-        let is_flat_dst = dst.get() + 1 == f.regalloc.current;
-        let (free_fn, fn_reg) = match is_flat_dst {
-            true => (false, dst),
-            false => (true, f.alloc_reg(span)?),
+    // caller: [.., fn, a, b, c]
+    // callee:     [ret, a, b, c, ..]
+
+    f.with_reg(span, dst, |f, dst| {
+        let is_dst_flat = dst.get() + 1 == f.regalloc.current;
+        let fn_ = match is_dst_flat {
+            true => dst,
+            false => f.alloc_reg(span)?, // must emit move
         };
 
-        let mut args = Vec::with_capacity(f.hir.sig.params.len());
-        for param in &f.hir.sig.params {
-            args.push(f.alloc_reg(param.name.span)?);
+        let mut args = Vec::with_capacity(hir.args.len());
+        for arg in &hir.args {
+            args.push(f.alloc_reg(arg.value.span)?);
         }
 
-        todo!()
-    }) */
+        assign_to(f, &hir.callee, fn_)?;
+        for (arg, reg) in hir.args.iter().zip(args.iter()) {
+            assign_to(f, &arg.value, *reg)?;
+        }
+
+        use asm::*;
+        match hir.args.len() {
+            0 => f.asm.emit(span, call0_indirect(fn_)),
+            _ => f.asm.emit(span, call_indirect(fn_)),
+        }
+
+        let ret = fn_;
+        if !is_dst_flat {
+            f.asm.emit(span, mov(ret, dst));
+            f.free_reg(ret); // implicitly frees arg regs
+        } else if let Some(arg0) = args.first() {
+            f.free_reg(*arg0);
+        }
+
+        Ok(None)
+    })
 }
 
 fn block_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::Block<'src>,
     dst: Option<Reg>,
-) -> Result<()> {
+) -> Result<Option<Reg>> {
     use asm::*;
 
     f.scope(|f| {
@@ -507,18 +546,37 @@ fn block_expr<'src, 'a>(
 
         match (&hir.tail, dst) {
             (Some(tail), Some(dst)) => {
-                assign_to(f, tail, dst)?;
+                if let Some(out) = expr(f, tail, Some(dst))? {
+                    // if `dst` refers to variable in an outer scope
+                    // then we don't need to emit a `mov`, and can instead
+                    // just return the register directly
+                    //
+                    // if `dst` refers to a variable in an inner scope,
+                    // we must emit a `mov`, because the variable will
+                    // no longer be live after the end of this block
+
+                    if out != dst && f.current_scope().values().any(|v| *v == out) {
+                        // `dst` is in current scope
+                        f.asm.emit(tail.span, mov(out, dst));
+                        Ok(None)
+                    } else {
+                        // `dst` is in outer scope
+                        Ok(Some(out))
+                    }
+                } else {
+                    Ok(None)
+                }
             }
             (Some(tail), None) => {
                 expr(f, tail, None)?;
+                Ok(None)
             }
             (None, Some(dst)) => {
                 f.asm.emit(Span::empty(), load_unit(dst));
+                Ok(None)
             }
-            (None, None) => {}
+            (None, None) => Ok(None),
         }
-
-        Ok(())
     })
 }
 

@@ -1,6 +1,6 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v + g()\n        }\n\n        fn g() -> int {\n            2\n        }\n    \"#)"
+expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v + 1\n        }\n\n        fn g() -> int {\n            2\n        }\n    \"#)"
 ---
 function "main" {
   registers: 0 (0 params)
@@ -14,10 +14,10 @@ function "main" {
 function "f" #0 {
   registers: 3 (1 params)
   constants: []
-  bytecode: (11 bytes) [
-    call0_direct 1, r2  // v + g()
-    add_int r0, r2, r1  // 
-    retv r1             // 
+  bytecode: (10 bytes) [
+    load_smi 1, r2      // v + 1
+    add_int r1, r2, r0  // 
+    retv r0             // 
     stop                //   
   ]
 }

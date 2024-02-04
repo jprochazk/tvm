@@ -206,8 +206,8 @@ impl<'src> Fns<'src> {
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = (FnId, &Fn<'src>)> {
         self.id_map
-            .iter()
-            .map(|(_, id)| (*id, self.get_by_id(*id).unwrap()))
+            .values()
+            .map(|id| (*id, self.get_by_id(*id).unwrap()))
     }
 }
 

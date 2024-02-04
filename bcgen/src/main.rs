@@ -14,6 +14,7 @@ fn bytecode() -> decl::Bytecode {
         op mov(src: Reg, dst: Reg)
         op load_cst(src: Cst, dst: Reg)
         op load_unit(dst: Reg)
+        op load_fn(id: Fnid, dst: Reg)
         op load_smi(val: Smi, dst: Reg)
         op load_true(dst: Reg)
         op load_false(dst: Reg)
@@ -45,10 +46,10 @@ fn bytecode() -> decl::Bytecode {
         [rem, num]
     }
     decl::def! {
-        op call0_direct(fnid: Fnid, ret: Reg)
-        op call_direct(fnid: Fnid, ret: Reg)
-        op call0_indirect(fnr: Reg, ret: Reg)
-        op call_indirect(fnr: Reg, ret: Reg)
+        op call0_direct(id: Fnid, ret: Reg)
+        op call_direct(id: Fnid, ret: Reg)
+        op call0_indirect(ret: Reg)
+        op call_indirect(ret: Reg)
     }
     decl::def! {
         op ret()

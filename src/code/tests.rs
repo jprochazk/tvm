@@ -119,12 +119,35 @@ test! {
     functions,
     r#"
         fn f(v: int) -> int {
-            v + g()
+            v + 1
         }
 
         fn g() -> int {
             2
         }
+    "#
+}
+
+test! {
+    function_call_direct,
+    r#"
+        fn f(v: int) -> int {
+            v
+        }
+
+        f(10);
+    "#
+}
+
+test! {
+    function_call_indirect,
+    r#"
+        fn f(v: int) -> int {
+            v
+        }
+
+        let g = f;
+        g(10);
     "#
 }
 

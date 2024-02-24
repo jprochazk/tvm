@@ -67,7 +67,7 @@ struct ModuleState<'src> {
 struct FunctionState<'src, 'a> {
     compiler: &'a mut Compiler<'src>,
     hir: &'a hir::Fn<'src>,
-    current_loop: Option<LoopState>,
+    current_loop: Option<Loop>,
     asm: Assembler<'src>,
     regalloc: RegisterAllocator,
     locals: Vec<HashMap<Ident<'src>, Reg>>,
@@ -219,7 +219,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         self.asm
             .constants
             .insert_int(v)
-            .map(Cst::new)
+            .map(Cst)
             .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
     }
 
@@ -227,7 +227,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         self.asm
             .constants
             .insert_num(v)
-            .map(Cst::new)
+            .map(Cst)
             .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
     }
 
@@ -235,7 +235,15 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         self.asm
             .constants
             .insert_str(v)
-            .map(Cst::new)
+            .map(Cst)
+            .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
+    }
+
+    fn alloc_const_jump_offset(&mut self, span: Span, v: usize) -> Result<Cst> {
+        self.asm
+            .constants
+            .insert_jump_offset(v)
+            .map(Cst)
             .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
     }
 
@@ -283,8 +291,37 @@ fn let_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Let<'src>) 
     Ok(())
 }
 
-fn loop_stmt<'src, 'a>(_f: &mut FunctionState<'src, 'a>, _hir: &'a hir::Loop<'src>) -> Result<()> {
-    todo!("loop_stmt")
+fn loop_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Loop<'src>) -> Result<()> {
+    use asm::*;
+
+    let state = Loop {
+        entry: BackwardJumpLabel::bind(f)?,
+        exit: ForwardJumpLabel::new(),
+    };
+    let state = loop_body(f, state, |f| {
+        block_expr(f, &hir.body, None)?;
+        Ok(())
+    })?;
+
+    match state.entry.offset {
+        Offset::Rel(offset) => f.asm.emit(hir.body.span, br_r(offset)),
+        Offset::Cst(index) => f.asm.emit(hir.body.span, brc_r(index)),
+    }
+    state.exit.bind(f)?;
+
+    todo!()
+}
+
+fn loop_body<'src, 'a>(
+    f: &mut FunctionState<'src, 'a>,
+    in_: Loop,
+    body: impl FnOnce(&mut FunctionState<'src, 'a>) -> Result<()>,
+) -> Result<Loop> {
+    let prev_state = std::mem::replace(&mut f.current_loop, Some(in_));
+    let result = body(f);
+    let in_ = std::mem::replace(&mut f.current_loop, prev_state).unwrap();
+    result?;
+    Ok(in_)
 }
 
 fn expr_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Expr<'src>) -> Result<()> {
@@ -598,9 +635,9 @@ fn assign_to<'src, 'a>(
     Ok(())
 }
 
-struct LoopState {
-    start: MultiLabel,
-    end: MultiLabel,
+struct Loop {
+    entry: BackwardJumpLabel,
+    exit: ForwardJumpLabel,
 }
 
 #[derive(Default)]
@@ -620,6 +657,33 @@ impl<'src> Assembler<'src> {
         self.spans.push(span);
     }
 
+    fn patch_jump(&mut self, referrer: usize, offset: Offset) {
+        use asm::*;
+
+        let op = self.bytecode[referrer].into();
+        let buf = &mut self.bytecode[referrer..];
+        match op {
+            Op::Br => match offset {
+                Offset::Rel(offset) => br(offset).encode(buf),
+                Offset::Cst(index) => brc(index).encode(buf),
+            },
+            Op::BrR => match offset {
+                Offset::Rel(offset) => br_r(offset).encode(buf),
+                Offset::Cst(index) => brc_r(index).encode(buf),
+            },
+            Op::BrIf => {
+                let cond = unsafe { Reg::decode_unchecked(&mut self.bytecode[referrer + 1..]) };
+                match offset {
+                    Offset::Rel(offset) => br_if(cond, offset).encode(buf),
+                    Offset::Cst(index) => brc_if(cond, index).encode(buf),
+                }
+            }
+            _ => {
+                unreachable!("cannot patch {op:?}@{referrer} as a jump");
+            }
+        }
+    }
+
     fn finish(mut self) -> (Vec<u8>, Vec<Span>, Vec<Constant>) {
         if !self.bytecode.ends_with(&[Op::Stop as u8]) {
             self.emit(Span::empty(), asm::stop());
@@ -628,12 +692,62 @@ impl<'src> Assembler<'src> {
     }
 }
 
-struct Label {
-    referrer: Option<usize>,
+struct BackwardJumpLabel {
+    /// Byte position of the block entry.
+    ///
+    /// Used as the target of backward jumps, such as `br_r`.
+    offset: Offset,
 }
 
-struct MultiLabel {
+#[derive(Clone, Copy)]
+enum Offset {
+    Rel(Rel),
+    Cst(Cst),
+}
+
+impl Offset {
+    fn get(f: &mut FunctionState) -> Result<Self> {
+        let offset = f.asm.bytecode.len();
+        let offset = if offset > u16::MAX as usize {
+            Offset::Cst(f.alloc_const_jump_offset(Span::empty(), offset)?)
+        } else {
+            Offset::Rel(Rel(offset as u16))
+        };
+        Ok(offset)
+    }
+}
+
+impl BackwardJumpLabel {
+    fn bind(f: &mut FunctionState) -> Result<Self> {
+        Ok(Self {
+            offset: Offset::get(f)?,
+        })
+    }
+}
+
+struct ForwardJumpLabel {
+    /// List of byte positions of jumps to this exit.
+    ///
+    /// Used as the target of forward jumps, such as `br` and `br_if`.
     referrers: Vec<usize>,
+}
+
+impl ForwardJumpLabel {
+    fn new() -> Self {
+        Self {
+            referrers: Vec::new(),
+        }
+    }
+
+    fn bind(self, f: &mut FunctionState) -> Result<()> {
+        let offset = Offset::get(f)?;
+
+        for referrer in self.referrers {
+            f.asm.patch_jump(referrer, offset);
+        }
+
+        Ok(())
+    }
 }
 
 struct RegisterAllocator {
@@ -657,7 +771,7 @@ impl RegisterAllocator {
         let reg = self.current;
         self.current += 1;
         self.total = std::cmp::max(self.current, self.total);
-        Some(Reg::new(reg))
+        Some(Reg(reg))
     }
 
     fn free(&mut self, reg: Reg) {

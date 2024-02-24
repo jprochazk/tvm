@@ -11,7 +11,7 @@ fn _parse(input: &str) -> String {
 
 macro_rules! parse {
     ($input:literal) => {
-        _parse(indoc::indoc!($input))
+        _parse(($input))
     };
 }
 

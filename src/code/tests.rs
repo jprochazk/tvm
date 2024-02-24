@@ -25,7 +25,7 @@ fn _emit(input: &str) -> String {
 
 macro_rules! emit {
     ($input:literal) => {
-        _emit(indoc::indoc!($input))
+        _emit(($input))
     };
 }
 
@@ -181,9 +181,9 @@ fn roundtrip_bytecode() {
 
     let mut buf = Buffer::new();
 
-    let r0 = Reg::new(163);
-    let c0 = Cst::new(12573);
-    let smi = Smi::new(-5i8);
+    let r0 = Reg(163);
+    let c0 = Cst(12573);
+    let smi = Smi(-5i8);
 
     buf.emit(nop());
     buf.emit(mov(r0, r0));

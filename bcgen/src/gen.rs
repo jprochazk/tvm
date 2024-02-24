@@ -50,6 +50,7 @@ fn base(buf: &mut impl Write, bytecode: &Bytecode) {
     }
 
     // `MIN`/`MAX` constants
+    // `From<u8>`
     {
         let (min, max) = (
             bytecode.first().0.to_case(Case::Pascal).to_ident(),
@@ -59,6 +60,14 @@ fn base(buf: &mut impl Write, bytecode: &Bytecode) {
             impl Op {
                 const MIN: u8 = Op::#min as u8;
                 const MAX: u8 = Op::#max as u8;
+            }
+
+            impl From<u8> for Op {
+                #[inline]
+                fn from(v: u8) -> Self {
+                    assert!(v <= Self::MAX);
+                    unsafe { core::mem::transmute(v) }
+                }
             }
         ]);
         nl!(buf);
@@ -314,14 +323,9 @@ fn types(buf: &mut impl Write, bytecode: &Bytecode) {
         q!(buf, [
             #[must_use = #must_use]
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-            pub struct #name(#inner);
+            pub struct #name(pub #inner);
 
             impl #name {
-                #[inline]
-                pub fn new(v: #inner) -> Self {
-                    Self(v)
-                }
-
                 #[inline]
                 pub fn try_new<T>(v: T) -> Option<Self>
                 where

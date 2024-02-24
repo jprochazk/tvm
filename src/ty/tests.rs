@@ -20,7 +20,7 @@ fn _check(input: &str) -> String {
 
 macro_rules! check {
     ($input:literal) => {
-        _check(indoc::indoc!($input))
+        _check(($input))
     };
 }
 

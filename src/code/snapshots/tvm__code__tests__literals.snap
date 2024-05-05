@@ -9,15 +9,15 @@ function "main" {
     Str("test")
     Str("\nyo\n")
   ]
-  bytecode: (21 bytes) [
-    load_smi 0, r0   // let v = 0;
-    load_cst c0, r0  // let v = 1.0;
-    load_true r0     // let v = true;
-    load_false r0    // let v = false;
-    load_cst c1, r0  // let v = "test";
-    load_cst c2, r0  // let v = "\nyo\n";
-    ret              // 
-    stop             //   
+  bytecode: (8 ops) [
+    smi 0, r0       // let v = 0;
+    cst [0], r0     // let v = 1.0;
+    bool true, r0   // let v = true;
+    bool false, r0  // let v = false;
+    cst [1], r0     // let v = "test";
+    cst [2], r0     // let v = "\nyo\n";
+    ret             // 
+    stop            //   
   ]
 }
 

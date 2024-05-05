@@ -1,3 +1,2 @@
 [alias]
 snap = "insta test --review --unreferenced delete"
-gen  = "run --release -p bcgen"

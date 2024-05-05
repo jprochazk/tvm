@@ -49,24 +49,6 @@ impl<'src> ErrorCtx<'src> {
     }
 }
 
-pub(crate) trait FoldError: Sized + private::Sealed {
-    fn fold_error(self, e: &mut ErrorCtx);
-}
-
-impl private::Sealed for Result<()> {}
-impl FoldError for Result<()> {
-    fn fold_error(self, ecx: &mut ErrorCtx) {
-        match self {
-            Ok(_) => (),
-            Err(e) => ecx.push(e),
-        }
-    }
-}
-
-mod private {
-    pub trait Sealed {}
-}
-
 #[derive(Clone)]
 pub struct Error {
     kind: ErrorKind,

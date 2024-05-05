@@ -1,17 +1,15 @@
+use crate::util::JoinIter as _;
+
 fn _parse(input: &str) -> String {
     match super::try_parse(input) {
         Ok(ast) => format!("{ast:#?}"),
-        Err(e) => e
-            .into_iter()
-            .map(|e| format!("{e}"))
-            .collect::<Vec<_>>()
-            .join("\n"),
+        Err(e) => e.into_iter().join("\n").to_string(),
     }
 }
 
 macro_rules! parse {
     ($input:literal) => {
-        _parse(($input))
+        _parse(indoc::indoc!($input))
     };
 }
 

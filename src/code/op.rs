@@ -5,1277 +5,172 @@ You can regenerate it by running `cargo gen`.
 //! Instruction encoding, decoding, disassembly, and dispatch.
 #![allow(dead_code, unused_variables)]
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Op {
-    Nop = 0,
-    Mov = 1,
-    LoadCst = 2,
-    LoadUnit = 3,
-    LoadFn = 4,
-    LoadSmi = 5,
-    LoadTrue = 6,
-    LoadFalse = 7,
-    Br = 8,
-    Brc = 9,
-    BrR = 10,
-    BrcR = 11,
-    BrIf = 12,
-    BrcIf = 13,
-    AddInt = 14,
-    AddNum = 15,
-    SubInt = 16,
-    SubNum = 17,
-    MulInt = 18,
-    MulNum = 19,
-    DivInt = 20,
-    DivNum = 21,
-    RemInt = 22,
-    RemNum = 23,
-    Call0Direct = 24,
-    CallDirect = 25,
-    Call0Indirect = 26,
-    CallIndirect = 27,
-    Ret = 28,
-    Retv = 29,
-    Stop = 30,
-}
-
-impl Op {
-    const MIN: u8 = Op::Nop as u8;
-    const MAX: u8 = Op::Stop as u8;
-}
-impl From<u8> for Op {
-    #[inline]
-    fn from(v: u8) -> Self {
-        assert!(v <= Self::MAX);
-        unsafe { core::mem::transmute(v) }
-    }
-}
-
-impl Encode for Op {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_u8(self as u8)
-    }
-}
-impl Decode for Op {
-    #[inline(always)]
-    unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-        let v = buf.decode_u8_unchecked();
-        debug_assert!(v <= Op::MAX);
-        unsafe { core::mem::transmute(v) }
-    }
-}
-
-pub mod operands {
-    #![doc = " Operand encoding and decoding"]
-    use super::*;
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Nop {}
-    impl Decode for Nop {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {}
-        }
-    }
-    impl Encode for Nop {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Nop.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Mov {
-        pub src: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for Mov {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                src: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for Mov {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Mov.encode(enc);
-            self.src.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct LoadCst {
-        pub src: Cst,
-        pub dst: Reg,
-    }
-    impl Decode for LoadCst {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                src: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for LoadCst {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::LoadCst.encode(enc);
-            self.src.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct LoadUnit {
-        pub dst: Reg,
-    }
-    impl Decode for LoadUnit {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for LoadUnit {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::LoadUnit.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct LoadFn {
-        pub id: Fnid,
-        pub dst: Reg,
-    }
-    impl Decode for LoadFn {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                id: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for LoadFn {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::LoadFn.encode(enc);
-            self.id.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct LoadSmi {
-        pub val: Smi,
-        pub dst: Reg,
-    }
-    impl Decode for LoadSmi {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                val: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for LoadSmi {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::LoadSmi.encode(enc);
-            self.val.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct LoadTrue {
-        pub dst: Reg,
-    }
-    impl Decode for LoadTrue {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for LoadTrue {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::LoadTrue.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct LoadFalse {
-        pub dst: Reg,
-    }
-    impl Decode for LoadFalse {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for LoadFalse {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::LoadFalse.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Br {
-        pub offset: Rel,
-    }
-    impl Decode for Br {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                offset: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for Br {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Br.encode(enc);
-            self.offset.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Brc {
-        pub offset: Cst,
-    }
-    impl Decode for Brc {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                offset: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for Brc {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Brc.encode(enc);
-            self.offset.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct BrR {
-        pub offset: Rel,
-    }
-    impl Decode for BrR {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                offset: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for BrR {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::BrR.encode(enc);
-            self.offset.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct BrcR {
-        pub offset: Cst,
-    }
-    impl Decode for BrcR {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                offset: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for BrcR {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::BrcR.encode(enc);
-            self.offset.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct BrIf {
-        pub cond: Reg,
-        pub offset: Rel,
-    }
-    impl Decode for BrIf {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                cond: Decode::decode_unchecked(buf),
-                offset: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for BrIf {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::BrIf.encode(enc);
-            self.cond.encode(enc);
-            self.offset.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct BrcIf {
-        pub cond: Reg,
-        pub offset: Cst,
-    }
-    impl Decode for BrcIf {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                cond: Decode::decode_unchecked(buf),
-                offset: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for BrcIf {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::BrcIf.encode(enc);
-            self.cond.encode(enc);
-            self.offset.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct AddInt {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for AddInt {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for AddInt {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::AddInt.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct AddNum {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for AddNum {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for AddNum {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::AddNum.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct SubInt {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for SubInt {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for SubInt {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::SubInt.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct SubNum {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for SubNum {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for SubNum {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::SubNum.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct MulInt {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for MulInt {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for MulInt {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::MulInt.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct MulNum {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for MulNum {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for MulNum {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::MulNum.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct DivInt {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for DivInt {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for DivInt {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::DivInt.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct DivNum {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for DivNum {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for DivNum {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::DivNum.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct RemInt {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for RemInt {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for RemInt {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::RemInt.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct RemNum {
-        pub lhs: Reg,
-        pub rhs: Reg,
-        pub dst: Reg,
-    }
-    impl Decode for RemNum {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                lhs: Decode::decode_unchecked(buf),
-                rhs: Decode::decode_unchecked(buf),
-                dst: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for RemNum {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::RemNum.encode(enc);
-            self.lhs.encode(enc);
-            self.rhs.encode(enc);
-            self.dst.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Call0Direct {
-        pub id: Fnid,
-        pub ret: Reg,
-    }
-    impl Decode for Call0Direct {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                id: Decode::decode_unchecked(buf),
-                ret: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for Call0Direct {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Call0Direct.encode(enc);
-            self.id.encode(enc);
-            self.ret.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct CallDirect {
-        pub id: Fnid,
-        pub ret: Reg,
-    }
-    impl Decode for CallDirect {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                id: Decode::decode_unchecked(buf),
-                ret: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for CallDirect {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::CallDirect.encode(enc);
-            self.id.encode(enc);
-            self.ret.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Call0Indirect {
-        pub ret: Reg,
-    }
-    impl Decode for Call0Indirect {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                ret: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for Call0Indirect {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Call0Indirect.encode(enc);
-            self.ret.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct CallIndirect {
-        pub ret: Reg,
-    }
-    impl Decode for CallIndirect {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                ret: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for CallIndirect {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::CallIndirect.encode(enc);
-            self.ret.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Ret {}
-    impl Decode for Ret {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {}
-        }
-    }
-    impl Encode for Ret {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Ret.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Retv {
-        pub src: Reg,
-    }
-    impl Decode for Retv {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {
-                src: Decode::decode_unchecked(buf),
-            }
-        }
-    }
-    impl Encode for Retv {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Retv.encode(enc);
-            self.src.encode(enc);
-        }
-    }
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Stop {}
-    impl Decode for Stop {
-        #[inline(always)]
-        unsafe fn decode_unchecked(buf: &mut impl Decoder) -> Self {
-            Self {}
-        }
-    }
-    impl Encode for Stop {
-        #[inline]
-        fn encode<E>(self, enc: &mut E)
-        where
-            E: ?Sized + Encoder,
-        {
-            Op::Stop.encode(enc);
-        }
-    }
+    Nop,
+    Mov { src: Reg, dst: Reg },
+    Load_Const { src: Cst, dst: Reg },
+    Load_Unit { dst: Reg },
+    Load_Fn { id: Fnid, dst: Reg },
+    Load_Smi { val: Smi, dst: Reg },
+    Load_Bool { val: bool, dst: Reg },
+    Jump { offset: Rel },
+    Jump_Const { offset: Cst },
+    JumpIfFalse { cond: Reg, offset: Rel },
+    JumpIfFalse_Const { cond: Reg, offset: Cst },
+    Add_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Add_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Sub_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Sub_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Mul_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Mul_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Div_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Div_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Rem_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Rem_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+    Call_Id { callee: Fnid, ret: Reg },
+    Call_Reg { callee: Reg },
+    Ret,
+    Ret_V { src: Reg },
+    Stop = 255,
 }
 
 pub mod asm {
     #![doc = " Bytecode assembler"]
     use super::*;
-    #[inline]
-    pub fn nop() -> impl Encode {
-        operands::Nop {}
-    }
-    #[inline]
-    pub fn mov(src: Reg, dst: Reg) -> impl Encode {
-        operands::Mov { src, dst }
-    }
-    #[inline]
-    pub fn load_cst(src: Cst, dst: Reg) -> impl Encode {
-        operands::LoadCst { src, dst }
-    }
-    #[inline]
-    pub fn load_unit(dst: Reg) -> impl Encode {
-        operands::LoadUnit { dst }
-    }
-    #[inline]
-    pub fn load_fn(id: Fnid, dst: Reg) -> impl Encode {
-        operands::LoadFn { id, dst }
-    }
-    #[inline]
-    pub fn load_smi(val: Smi, dst: Reg) -> impl Encode {
-        operands::LoadSmi { val, dst }
-    }
-    #[inline]
-    pub fn load_true(dst: Reg) -> impl Encode {
-        operands::LoadTrue { dst }
-    }
-    #[inline]
-    pub fn load_false(dst: Reg) -> impl Encode {
-        operands::LoadFalse { dst }
-    }
-    #[inline]
-    pub fn br(offset: Rel) -> impl Encode {
-        operands::Br { offset }
-    }
-    #[inline]
-    pub fn brc(offset: Cst) -> impl Encode {
-        operands::Brc { offset }
-    }
-    #[inline]
-    pub fn br_r(offset: Rel) -> impl Encode {
-        operands::BrR { offset }
-    }
-    #[inline]
-    pub fn brc_r(offset: Cst) -> impl Encode {
-        operands::BrcR { offset }
-    }
-    #[inline]
-    pub fn br_if(cond: Reg, offset: Rel) -> impl Encode {
-        operands::BrIf { cond, offset }
-    }
-    #[inline]
-    pub fn brc_if(cond: Reg, offset: Cst) -> impl Encode {
-        operands::BrcIf { cond, offset }
-    }
-    #[inline]
-    pub fn add_int(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::AddInt { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn add_num(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::AddNum { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn sub_int(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::SubInt { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn sub_num(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::SubNum { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn mul_int(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::MulInt { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn mul_num(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::MulNum { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn div_int(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::DivInt { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn div_num(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::DivNum { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn rem_int(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::RemInt { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn rem_num(lhs: Reg, rhs: Reg, dst: Reg) -> impl Encode {
-        operands::RemNum { lhs, rhs, dst }
-    }
-    #[inline]
-    pub fn call0_direct(id: Fnid, ret: Reg) -> impl Encode {
-        operands::Call0Direct { id, ret }
-    }
-    #[inline]
-    pub fn call_direct(id: Fnid, ret: Reg) -> impl Encode {
-        operands::CallDirect { id, ret }
-    }
-    #[inline]
-    pub fn call0_indirect(ret: Reg) -> impl Encode {
-        operands::Call0Indirect { ret }
-    }
-    #[inline]
-    pub fn call_indirect(ret: Reg) -> impl Encode {
-        operands::CallIndirect { ret }
-    }
-    #[inline]
-    pub fn ret() -> impl Encode {
-        operands::Ret {}
-    }
-    #[inline]
-    pub fn retv(src: Reg) -> impl Encode {
-        operands::Retv { src }
-    }
-    #[inline]
-    pub fn stop() -> impl Encode {
-        operands::Stop {}
-    }
-}
 
-pub mod symbolic {
-    #![doc = " Symbolic representation of bytecode.ops"]
-    pub use super::operands::*;
-    use super::*;
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum Instruction {
-        Nop(Nop),
-        Mov(Mov),
-        LoadCst(LoadCst),
-        LoadUnit(LoadUnit),
-        LoadFn(LoadFn),
-        LoadSmi(LoadSmi),
-        LoadTrue(LoadTrue),
-        LoadFalse(LoadFalse),
-        Br(Br),
-        Brc(Brc),
-        BrR(BrR),
-        BrcR(BrcR),
-        BrIf(BrIf),
-        BrcIf(BrcIf),
-        AddInt(AddInt),
-        AddNum(AddNum),
-        SubInt(SubInt),
-        SubNum(SubNum),
-        MulInt(MulInt),
-        MulNum(MulNum),
-        DivInt(DivInt),
-        DivNum(DivNum),
-        RemInt(RemInt),
-        RemNum(RemNum),
-        Call0Direct(Call0Direct),
-        CallDirect(CallDirect),
-        Call0Indirect(Call0Indirect),
-        CallIndirect(CallIndirect),
-        Ret(Ret),
-        Retv(Retv),
-        Stop(Stop),
+    #[inline]
+    pub fn nop() -> Op {
+        Op::Nop {}
     }
-    impl Decode for Instruction {
-        unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-            match Op::decode_unchecked(dec) {
-                Op::Nop => Instruction::Nop(Nop::decode_unchecked(dec)),
-                Op::Mov => Instruction::Mov(Mov::decode_unchecked(dec)),
-                Op::LoadCst => Instruction::LoadCst(LoadCst::decode_unchecked(dec)),
-                Op::LoadUnit => Instruction::LoadUnit(LoadUnit::decode_unchecked(dec)),
-                Op::LoadFn => Instruction::LoadFn(LoadFn::decode_unchecked(dec)),
-                Op::LoadSmi => Instruction::LoadSmi(LoadSmi::decode_unchecked(dec)),
-                Op::LoadTrue => Instruction::LoadTrue(LoadTrue::decode_unchecked(dec)),
-                Op::LoadFalse => Instruction::LoadFalse(LoadFalse::decode_unchecked(dec)),
-                Op::Br => Instruction::Br(Br::decode_unchecked(dec)),
-                Op::Brc => Instruction::Brc(Brc::decode_unchecked(dec)),
-                Op::BrR => Instruction::BrR(BrR::decode_unchecked(dec)),
-                Op::BrcR => Instruction::BrcR(BrcR::decode_unchecked(dec)),
-                Op::BrIf => Instruction::BrIf(BrIf::decode_unchecked(dec)),
-                Op::BrcIf => Instruction::BrcIf(BrcIf::decode_unchecked(dec)),
-                Op::AddInt => Instruction::AddInt(AddInt::decode_unchecked(dec)),
-                Op::AddNum => Instruction::AddNum(AddNum::decode_unchecked(dec)),
-                Op::SubInt => Instruction::SubInt(SubInt::decode_unchecked(dec)),
-                Op::SubNum => Instruction::SubNum(SubNum::decode_unchecked(dec)),
-                Op::MulInt => Instruction::MulInt(MulInt::decode_unchecked(dec)),
-                Op::MulNum => Instruction::MulNum(MulNum::decode_unchecked(dec)),
-                Op::DivInt => Instruction::DivInt(DivInt::decode_unchecked(dec)),
-                Op::DivNum => Instruction::DivNum(DivNum::decode_unchecked(dec)),
-                Op::RemInt => Instruction::RemInt(RemInt::decode_unchecked(dec)),
-                Op::RemNum => Instruction::RemNum(RemNum::decode_unchecked(dec)),
-                Op::Call0Direct => Instruction::Call0Direct(Call0Direct::decode_unchecked(dec)),
-                Op::CallDirect => Instruction::CallDirect(CallDirect::decode_unchecked(dec)),
-                Op::Call0Indirect => {
-                    Instruction::Call0Indirect(Call0Indirect::decode_unchecked(dec))
-                }
-                Op::CallIndirect => Instruction::CallIndirect(CallIndirect::decode_unchecked(dec)),
-                Op::Ret => Instruction::Ret(Ret::decode_unchecked(dec)),
-                Op::Retv => Instruction::Retv(Retv::decode_unchecked(dec)),
-                Op::Stop => Instruction::Stop(Stop::decode_unchecked(dec)),
-            }
+
+    #[inline]
+    pub fn mov(src: Reg, dst: Reg) -> Op {
+        Op::Mov { src, dst }
+    }
+
+    #[inline]
+    pub fn load_cst(src: Cst, dst: Reg) -> Op {
+        Op::Load_Const { src, dst }
+    }
+
+    #[inline]
+    pub fn load_unit(dst: Reg) -> Op {
+        Op::Load_Unit { dst }
+    }
+
+    #[inline]
+    pub fn load_fn(id: Fnid, dst: Reg) -> Op {
+        Op::Load_Fn { id, dst }
+    }
+
+    #[inline]
+    pub fn load_smi(val: Smi, dst: Reg) -> Op {
+        Op::Load_Smi { val, dst }
+    }
+
+    #[inline]
+    pub fn load_bool(val: bool, dst: Reg) -> Op {
+        Op::Load_Bool { val, dst }
+    }
+
+    #[inline]
+    pub fn jmp(offset: Rel) -> Op {
+        Op::Jump { offset }
+    }
+
+    #[inline]
+    pub fn jmp_c(offset: Cst) -> Op {
+        Op::Jump_Const { offset }
+    }
+
+    #[inline]
+    pub fn jmpf(cond: Reg, offset: Rel) -> Op {
+        Op::JumpIfFalse { cond, offset }
+    }
+
+    #[inline]
+    pub fn jmpf_c(cond: Reg, offset: Cst) -> Op {
+        Op::JumpIfFalse_Const { cond, offset }
+    }
+
+    pub enum Type {
+        I64,
+        F64,
+    }
+    pub use Type::*;
+
+    #[inline]
+    pub fn add(ty: Type, lhs: Reg, rhs: Reg, dst: Reg) -> Op {
+        match ty {
+            I64 => Op::Add_I64 { lhs, rhs, dst },
+            F64 => Op::Add_F64 { lhs, rhs, dst },
         }
     }
-    impl std::fmt::Display for Instruction {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                Instruction::Nop(Nop {}) => write!(f, "nop "),
-                Instruction::Mov(Mov { src, dst }) => write!(f, "mov {src}, {dst}"),
-                Instruction::LoadCst(LoadCst { src, dst }) => write!(f, "load_cst {src}, {dst}"),
-                Instruction::LoadUnit(LoadUnit { dst }) => write!(f, "load_unit {dst}"),
-                Instruction::LoadFn(LoadFn { id, dst }) => write!(f, "load_fn {id}, {dst}"),
-                Instruction::LoadSmi(LoadSmi { val, dst }) => write!(f, "load_smi {val}, {dst}"),
-                Instruction::LoadTrue(LoadTrue { dst }) => write!(f, "load_true {dst}"),
-                Instruction::LoadFalse(LoadFalse { dst }) => write!(f, "load_false {dst}"),
-                Instruction::Br(Br { offset }) => write!(f, "br {offset}"),
-                Instruction::Brc(Brc { offset }) => write!(f, "brc {offset}"),
-                Instruction::BrR(BrR { offset }) => write!(f, "br_r {offset}"),
-                Instruction::BrcR(BrcR { offset }) => write!(f, "brc_r {offset}"),
-                Instruction::BrIf(BrIf { cond, offset }) => write!(f, "br_if {cond}, {offset}"),
-                Instruction::BrcIf(BrcIf { cond, offset }) => write!(f, "brc_if {cond}, {offset}"),
-                Instruction::AddInt(AddInt { lhs, rhs, dst }) => {
-                    write!(f, "add_int {lhs}, {rhs}, {dst}")
-                }
-                Instruction::AddNum(AddNum { lhs, rhs, dst }) => {
-                    write!(f, "add_num {lhs}, {rhs}, {dst}")
-                }
-                Instruction::SubInt(SubInt { lhs, rhs, dst }) => {
-                    write!(f, "sub_int {lhs}, {rhs}, {dst}")
-                }
-                Instruction::SubNum(SubNum { lhs, rhs, dst }) => {
-                    write!(f, "sub_num {lhs}, {rhs}, {dst}")
-                }
-                Instruction::MulInt(MulInt { lhs, rhs, dst }) => {
-                    write!(f, "mul_int {lhs}, {rhs}, {dst}")
-                }
-                Instruction::MulNum(MulNum { lhs, rhs, dst }) => {
-                    write!(f, "mul_num {lhs}, {rhs}, {dst}")
-                }
-                Instruction::DivInt(DivInt { lhs, rhs, dst }) => {
-                    write!(f, "div_int {lhs}, {rhs}, {dst}")
-                }
-                Instruction::DivNum(DivNum { lhs, rhs, dst }) => {
-                    write!(f, "div_num {lhs}, {rhs}, {dst}")
-                }
-                Instruction::RemInt(RemInt { lhs, rhs, dst }) => {
-                    write!(f, "rem_int {lhs}, {rhs}, {dst}")
-                }
-                Instruction::RemNum(RemNum { lhs, rhs, dst }) => {
-                    write!(f, "rem_num {lhs}, {rhs}, {dst}")
-                }
-                Instruction::Call0Direct(Call0Direct { id, ret }) => {
-                    write!(f, "call0_direct {id}, {ret}")
-                }
-                Instruction::CallDirect(CallDirect { id, ret }) => {
-                    write!(f, "call_direct {id}, {ret}")
-                }
-                Instruction::Call0Indirect(Call0Indirect { ret }) => {
-                    write!(f, "call0_indirect {ret}")
-                }
-                Instruction::CallIndirect(CallIndirect { ret }) => write!(f, "call_indirect {ret}"),
-                Instruction::Ret(Ret {}) => write!(f, "ret "),
-                Instruction::Retv(Retv { src }) => write!(f, "retv {src}"),
-                Instruction::Stop(Stop {}) => write!(f, "stop "),
-            }
+
+    #[inline]
+    pub fn sub(ty: Type, lhs: Reg, rhs: Reg, dst: Reg) -> Op {
+        match ty {
+            I64 => Op::Sub_I64 { lhs, rhs, dst },
+            F64 => Op::Sub_F64 { lhs, rhs, dst },
         }
     }
-}
 
-pub mod dispatch {
-    #![doc = " Dispatch loop"]
-    use operands::*;
-
-    use super::*;
-    type Code = [u8];
-    type Ip = usize;
-    pub trait Handler {
-        type Result<T>;
-        fn op_nop(&self) -> Self::Result<()>;
-        fn op_mov(&self, src: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_load_cst(&self, src: Cst, dst: Reg) -> Self::Result<()>;
-        fn op_load_unit(&self, dst: Reg) -> Self::Result<()>;
-        fn op_load_fn(&self, id: Fnid, dst: Reg) -> Self::Result<()>;
-        fn op_load_smi(&self, val: Smi, dst: Reg) -> Self::Result<()>;
-        fn op_load_true(&self, dst: Reg) -> Self::Result<()>;
-        fn op_load_false(&self, dst: Reg) -> Self::Result<()>;
-        fn op_br(&self, offset: Rel) -> Self::Result<()>;
-        fn op_brc(&self, offset: Cst) -> Self::Result<()>;
-        fn op_br_r(&self, offset: Rel) -> Self::Result<()>;
-        fn op_brc_r(&self, offset: Cst) -> Self::Result<()>;
-        fn op_br_if(&self, cond: Reg, offset: Rel) -> Self::Result<()>;
-        fn op_brc_if(&self, cond: Reg, offset: Cst) -> Self::Result<()>;
-        fn op_add_int(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_add_num(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_sub_int(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_sub_num(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_mul_int(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_mul_num(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_div_int(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_div_num(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_rem_int(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_rem_num(&self, lhs: Reg, rhs: Reg, dst: Reg) -> Self::Result<()>;
-        fn op_call0_direct(&self, id: Fnid, ret: Reg) -> Self::Result<()>;
-        fn op_call_direct(&self, id: Fnid, ret: Reg) -> Self::Result<()>;
-        fn op_call0_indirect(&self, ret: Reg) -> Self::Result<()>;
-        fn op_call_indirect(&self, ret: Reg) -> Self::Result<()>;
-        fn op_ret(&self) -> Self::Result<()>;
-        fn op_retv(&self, src: Reg) -> Self::Result<()>;
-        fn op_stop(&self) -> Self::Result<()>;
-    }
-    #[doc = " Dispatch a single instruction"]
-    #[doc = " # Safety"]
-    #[doc = " - `&code[*ip..]` must contain a valid bytecode instruction"]
-    #[inline(always)]
-    pub unsafe fn dispatch<H: Handler>(h: &H, ip: &mut Ip, code: &Code) -> H::Result<()> {
-        let inst = &mut &code[*ip..];
-        match Op::decode_unchecked(inst) {
-            Op::Nop => {
-                let Nop {} = Nop::decode_unchecked(inst);
-                h.op_nop()
-            }
-            Op::Mov => {
-                let Mov { src, dst } = Mov::decode_unchecked(inst);
-                h.op_mov(src, dst)
-            }
-            Op::LoadCst => {
-                let LoadCst { src, dst } = LoadCst::decode_unchecked(inst);
-                h.op_load_cst(src, dst)
-            }
-            Op::LoadUnit => {
-                let LoadUnit { dst } = LoadUnit::decode_unchecked(inst);
-                h.op_load_unit(dst)
-            }
-            Op::LoadFn => {
-                let LoadFn { id, dst } = LoadFn::decode_unchecked(inst);
-                h.op_load_fn(id, dst)
-            }
-            Op::LoadSmi => {
-                let LoadSmi { val, dst } = LoadSmi::decode_unchecked(inst);
-                h.op_load_smi(val, dst)
-            }
-            Op::LoadTrue => {
-                let LoadTrue { dst } = LoadTrue::decode_unchecked(inst);
-                h.op_load_true(dst)
-            }
-            Op::LoadFalse => {
-                let LoadFalse { dst } = LoadFalse::decode_unchecked(inst);
-                h.op_load_false(dst)
-            }
-            Op::Br => {
-                let Br { offset } = Br::decode_unchecked(inst);
-                h.op_br(offset)
-            }
-            Op::Brc => {
-                let Brc { offset } = Brc::decode_unchecked(inst);
-                h.op_brc(offset)
-            }
-            Op::BrR => {
-                let BrR { offset } = BrR::decode_unchecked(inst);
-                h.op_br_r(offset)
-            }
-            Op::BrcR => {
-                let BrcR { offset } = BrcR::decode_unchecked(inst);
-                h.op_brc_r(offset)
-            }
-            Op::BrIf => {
-                let BrIf { cond, offset } = BrIf::decode_unchecked(inst);
-                h.op_br_if(cond, offset)
-            }
-            Op::BrcIf => {
-                let BrcIf { cond, offset } = BrcIf::decode_unchecked(inst);
-                h.op_brc_if(cond, offset)
-            }
-            Op::AddInt => {
-                let AddInt { lhs, rhs, dst } = AddInt::decode_unchecked(inst);
-                h.op_add_int(lhs, rhs, dst)
-            }
-            Op::AddNum => {
-                let AddNum { lhs, rhs, dst } = AddNum::decode_unchecked(inst);
-                h.op_add_num(lhs, rhs, dst)
-            }
-            Op::SubInt => {
-                let SubInt { lhs, rhs, dst } = SubInt::decode_unchecked(inst);
-                h.op_sub_int(lhs, rhs, dst)
-            }
-            Op::SubNum => {
-                let SubNum { lhs, rhs, dst } = SubNum::decode_unchecked(inst);
-                h.op_sub_num(lhs, rhs, dst)
-            }
-            Op::MulInt => {
-                let MulInt { lhs, rhs, dst } = MulInt::decode_unchecked(inst);
-                h.op_mul_int(lhs, rhs, dst)
-            }
-            Op::MulNum => {
-                let MulNum { lhs, rhs, dst } = MulNum::decode_unchecked(inst);
-                h.op_mul_num(lhs, rhs, dst)
-            }
-            Op::DivInt => {
-                let DivInt { lhs, rhs, dst } = DivInt::decode_unchecked(inst);
-                h.op_div_int(lhs, rhs, dst)
-            }
-            Op::DivNum => {
-                let DivNum { lhs, rhs, dst } = DivNum::decode_unchecked(inst);
-                h.op_div_num(lhs, rhs, dst)
-            }
-            Op::RemInt => {
-                let RemInt { lhs, rhs, dst } = RemInt::decode_unchecked(inst);
-                h.op_rem_int(lhs, rhs, dst)
-            }
-            Op::RemNum => {
-                let RemNum { lhs, rhs, dst } = RemNum::decode_unchecked(inst);
-                h.op_rem_num(lhs, rhs, dst)
-            }
-            Op::Call0Direct => {
-                let Call0Direct { id, ret } = Call0Direct::decode_unchecked(inst);
-                h.op_call0_direct(id, ret)
-            }
-            Op::CallDirect => {
-                let CallDirect { id, ret } = CallDirect::decode_unchecked(inst);
-                h.op_call_direct(id, ret)
-            }
-            Op::Call0Indirect => {
-                let Call0Indirect { ret } = Call0Indirect::decode_unchecked(inst);
-                h.op_call0_indirect(ret)
-            }
-            Op::CallIndirect => {
-                let CallIndirect { ret } = CallIndirect::decode_unchecked(inst);
-                h.op_call_indirect(ret)
-            }
-            Op::Ret => {
-                let Ret {} = Ret::decode_unchecked(inst);
-                h.op_ret()
-            }
-            Op::Retv => {
-                let Retv { src } = Retv::decode_unchecked(inst);
-                h.op_retv(src)
-            }
-            Op::Stop => {
-                let Stop {} = Stop::decode_unchecked(inst);
-                h.op_stop()
-            }
+    #[inline]
+    pub fn mul(ty: Type, lhs: Reg, rhs: Reg, dst: Reg) -> Op {
+        match ty {
+            I64 => Op::Mul_I64 { lhs, rhs, dst },
+            F64 => Op::Mul_F64 { lhs, rhs, dst },
         }
+    }
+
+    #[inline]
+    pub fn div(ty: Type, lhs: Reg, rhs: Reg, dst: Reg) -> Op {
+        match ty {
+            I64 => Op::Div_I64 { lhs, rhs, dst },
+            F64 => Op::Div_F64 { lhs, rhs, dst },
+        }
+    }
+
+    #[inline]
+    pub fn rem(ty: Type, lhs: Reg, rhs: Reg, dst: Reg) -> Op {
+        match ty {
+            I64 => Op::Rem_I64 { lhs, rhs, dst },
+            F64 => Op::Rem_F64 { lhs, rhs, dst },
+        }
+    }
+
+    #[inline]
+    pub fn call_id(callee: Fnid, ret: Reg) -> Op {
+        Op::Call_Id { callee, ret }
+    }
+
+    #[inline]
+    pub fn call_reg(callee: Reg) -> Op {
+        Op::Call_Reg { callee }
+    }
+
+    #[inline]
+    pub fn ret() -> Op {
+        Op::Ret {}
+    }
+
+    #[inline]
+    pub fn retv(src: Reg) -> Op {
+        Op::Ret_V { src }
+    }
+
+    #[inline]
+    pub fn stop() -> Op {
+        Op::Stop {}
     }
 }
 
 #[must_use = "unused Reg"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct Reg(pub u8);
 impl Reg {
     #[inline]
@@ -1294,21 +189,7 @@ impl Reg {
         self.0 as usize
     }
 }
-impl Encode for Reg {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        self.0.encode(enc)
-    }
-}
-impl Decode for Reg {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        Self(<u8 as Decode>::decode_unchecked(dec))
-    }
-}
+
 impl std::fmt::Display for Reg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "r{0}", self.0)
@@ -1317,7 +198,9 @@ impl std::fmt::Display for Reg {
 
 #[must_use = "unused Cst"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
 pub struct Cst(pub u16);
+
 impl Cst {
     #[inline]
     pub fn try_new<T>(v: T) -> Option<Self>
@@ -1335,71 +218,17 @@ impl Cst {
         self.0 as usize
     }
 }
-impl Encode for Cst {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        self.0.encode(enc)
-    }
-}
-impl Decode for Cst {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        Self(<u16 as Decode>::decode_unchecked(dec))
-    }
-}
+
 impl std::fmt::Display for Cst {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "c{0}", self.0)
-    }
-}
-
-#[must_use = "unused Cap"]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Cap(pub u16);
-impl Cap {
-    #[inline]
-    pub fn try_new<T>(v: T) -> Option<Self>
-    where
-        u16: TryFrom<T>,
-    {
-        <u16>::try_from(v).map(Cap).ok()
-    }
-    #[inline]
-    pub fn get(self) -> u16 {
-        self.0
-    }
-    #[inline]
-    pub fn to_index(self) -> usize {
-        self.0 as usize
-    }
-}
-impl Encode for Cap {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        self.0.encode(enc)
-    }
-}
-impl Decode for Cap {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        Self(<u16 as Decode>::decode_unchecked(dec))
-    }
-}
-impl std::fmt::Display for Cap {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "^{0}", self.0)
+        write!(f, "[{0}]", self.0)
     }
 }
 
 #[must_use = "unused Mvar"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mvar(pub u16);
+
 impl Mvar {
     #[inline]
     pub fn try_new<T>(v: T) -> Option<Self>
@@ -1417,21 +246,7 @@ impl Mvar {
         self.0 as usize
     }
 }
-impl Encode for Mvar {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        self.0.encode(enc)
-    }
-}
-impl Decode for Mvar {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        Self(<u16 as Decode>::decode_unchecked(dec))
-    }
-}
+
 impl std::fmt::Display for Mvar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "m{0}", self.0)
@@ -1441,6 +256,7 @@ impl std::fmt::Display for Mvar {
 #[must_use = "unused Fnid"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Fnid(pub u16);
+
 impl Fnid {
     #[inline]
     pub fn try_new<T>(v: T) -> Option<Self>
@@ -1458,30 +274,17 @@ impl Fnid {
         self.0 as usize
     }
 }
-impl Encode for Fnid {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        self.0.encode(enc)
-    }
-}
-impl Decode for Fnid {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        Self(<u16 as Decode>::decode_unchecked(dec))
-    }
-}
+
 impl std::fmt::Display for Fnid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{0}", self.0)
+        write!(f, "f{0}", self.0)
     }
 }
 
 #[must_use = "unused Smi"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Smi(pub i8);
+
 impl Smi {
     #[inline]
     pub fn try_new<T>(v: T) -> Option<Self>
@@ -1499,21 +302,7 @@ impl Smi {
         self.0 as usize
     }
 }
-impl Encode for Smi {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        self.0.encode(enc)
-    }
-}
-impl Decode for Smi {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        Self(<i8 as Decode>::decode_unchecked(dec))
-    }
-}
+
 impl std::fmt::Display for Smi {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{0}", self.0)
@@ -1522,17 +311,18 @@ impl std::fmt::Display for Smi {
 
 #[must_use = "unused Rel"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Rel(pub u16);
+pub struct Rel(pub i16);
+
 impl Rel {
     #[inline]
     pub fn try_new<T>(v: T) -> Option<Self>
     where
-        u16: TryFrom<T>,
+        i16: TryFrom<T>,
     {
-        <u16>::try_from(v).map(Rel).ok()
+        <i16>::try_from(v).map(Rel).ok()
     }
     #[inline]
-    pub fn get(self) -> u16 {
+    pub fn get(self) -> i16 {
         self.0
     }
     #[inline]
@@ -1540,426 +330,71 @@ impl Rel {
         self.0 as usize
     }
 }
-impl Encode for Rel {
-    #[inline]
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        self.0.encode(enc)
-    }
-}
-impl Decode for Rel {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        Self(<u16 as Decode>::decode_unchecked(dec))
-    }
-}
+
 impl std::fmt::Display for Rel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{0}", self.0)
+        match self.0.signum() {
+            0 => write!(f, "0"),
+            -1 => write!(f, "-{}", self.0),
+            1 => write!(f, "+{}", self.0),
+            _ => unreachable!(),
+        }
     }
 }
 
-pub trait Encoder {
-    fn encode_slice(&mut self, v: &[u8]);
-
-    #[inline]
-    fn encode_u8(&mut self, v: u8) {
-        self.encode_slice(&v.to_le_bytes());
-    }
-
-    #[inline]
-    fn encode_u16(&mut self, v: u16) {
-        self.encode_slice(&v.to_le_bytes());
-    }
-
-    #[inline]
-    fn encode_u32(&mut self, v: u32) {
-        self.encode_slice(&v.to_le_bytes());
-    }
-
-    #[inline]
-    fn encode_u64(&mut self, v: u64) {
-        self.encode_slice(&v.to_le_bytes());
-    }
-
-    fn encode_i8(&mut self, v: i8) {
-        self.encode_slice(&v.to_le_bytes());
-    }
-
-    #[inline]
-    fn encode_i16(&mut self, v: i16) {
-        self.encode_slice(&v.to_le_bytes());
-    }
-
-    #[inline]
-    fn encode_i32(&mut self, v: i32) {
-        self.encode_slice(&v.to_le_bytes());
-    }
-
-    #[inline]
-    fn encode_i64(&mut self, v: i64) {
-        self.encode_slice(&v.to_le_bytes());
-    }
-}
-
-pub trait Encode {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder;
-}
-
-pub trait Decoder {
-    /// # Safety
-    /// `self` must have enough bytes left to decode a `u8`.
-    unsafe fn decode_u8_unchecked(&mut self) -> u8;
-
-    /// # Safety
-    /// `self` must have enough bytes left to decode a `u16`.
-    unsafe fn decode_u16_unchecked(&mut self) -> u16;
-
-    /// # Safety
-    /// `self` must have enough bytes left to decode a `u32`.
-    unsafe fn decode_u32_unchecked(&mut self) -> u32;
-
-    /// # Safety
-    /// `self` must have enough bytes left to decode a `u64`.
-    unsafe fn decode_u64_unchecked(&mut self) -> u64;
-
-    /// # Safety
-    /// `self` must have enough bytes left to decode an `i8`.
-    unsafe fn decode_i8_unchecked(&mut self) -> i8;
-
-    /// # Safety
-    /// `self` must have enough bytes left to decode an `i16`.
-    unsafe fn decode_i16_unchecked(&mut self) -> i16;
-
-    /// # Safety
-    /// `self` must have enough bytes left to decode an `i32`.
-    unsafe fn decode_i32_unchecked(&mut self) -> i32;
-
-    /// # Safety
-    /// `self` must have enough bytes left to decode an `i64`.
-    unsafe fn decode_i64_unchecked(&mut self) -> i64;
-}
-
-pub trait Decode: Sized {
-    /// # Safety
-    /// `dec` must have enough bytes left to decode `Self`.
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self;
-}
-
-impl Encoder for Vec<u8> {
-    #[inline]
-    fn encode_slice(&mut self, v: &[u8]) {
-        self.extend_from_slice(v);
-    }
-}
-
-#[inline(always)]
-unsafe fn unsafe_advance(slice: &mut &[u8], n: usize) {
-    use std::ops::Sub;
-    use std::slice::from_raw_parts;
-
-    debug_assert!(n <= slice.len());
-    let (ptr, len) = ((*slice).as_ptr(), (*slice).len());
-    let remainder = from_raw_parts(ptr.add(n), len.sub(n));
-    *slice = remainder;
-}
-
-impl Decoder for &'_ [u8] {
-    #[inline(always)]
-    unsafe fn decode_u8_unchecked(&mut self) -> u8 {
-        debug_assert!(self.len() >= std::mem::size_of::<u8>());
-        let v = u8::from_le_bytes([*self.get_unchecked(0)]);
-        unsafe_advance(self, std::mem::size_of::<u8>());
-        v
-    }
-
-    #[inline(always)]
-    unsafe fn decode_u16_unchecked(&mut self) -> u16 {
-        debug_assert!(self.len() >= std::mem::size_of::<u16>());
-        let v = u16::from_le_bytes([*self.get_unchecked(0), *self.get_unchecked(1)]);
-        unsafe_advance(self, std::mem::size_of::<u16>());
-        v
-    }
-
-    #[inline(always)]
-    unsafe fn decode_u32_unchecked(&mut self) -> u32 {
-        debug_assert!(self.len() >= std::mem::size_of::<u32>());
-        let v = u32::from_le_bytes([
-            *self.get_unchecked(0),
-            *self.get_unchecked(1),
-            *self.get_unchecked(2),
-            *self.get_unchecked(3),
-        ]);
-        unsafe_advance(self, std::mem::size_of::<u32>());
-        v
-    }
-
-    #[inline(always)]
-    unsafe fn decode_u64_unchecked(&mut self) -> u64 {
-        debug_assert!(self.len() >= std::mem::size_of::<u64>());
-        let v = u64::from_le_bytes([
-            *self.get_unchecked(0),
-            *self.get_unchecked(1),
-            *self.get_unchecked(2),
-            *self.get_unchecked(3),
-            *self.get_unchecked(4),
-            *self.get_unchecked(5),
-            *self.get_unchecked(6),
-            *self.get_unchecked(7),
-        ]);
-        unsafe_advance(self, std::mem::size_of::<u64>());
-        v
-    }
-
-    #[inline(always)]
-    unsafe fn decode_i8_unchecked(&mut self) -> i8 {
-        debug_assert!(self.len() >= std::mem::size_of::<i8>());
-        let v = i8::from_le_bytes([*self.get_unchecked(0)]);
-        unsafe_advance(self, std::mem::size_of::<i8>());
-        v
-    }
-
-    #[inline(always)]
-    unsafe fn decode_i16_unchecked(&mut self) -> i16 {
-        debug_assert!(self.len() >= std::mem::size_of::<i16>());
-        let v = i16::from_le_bytes([*self.get_unchecked(0), *self.get_unchecked(1)]);
-        unsafe_advance(self, std::mem::size_of::<i16>());
-        v
-    }
-
-    #[inline(always)]
-    unsafe fn decode_i32_unchecked(&mut self) -> i32 {
-        debug_assert!(self.len() >= std::mem::size_of::<i32>());
-        let v = i32::from_le_bytes([
-            *self.get_unchecked(0),
-            *self.get_unchecked(1),
-            *self.get_unchecked(2),
-            *self.get_unchecked(3),
-        ]);
-        unsafe_advance(self, std::mem::size_of::<i32>());
-        v
-    }
-
-    #[inline(always)]
-    unsafe fn decode_i64_unchecked(&mut self) -> i64 {
-        debug_assert!(self.len() >= std::mem::size_of::<i64>());
-        let v = i64::from_le_bytes([
-            *self.get_unchecked(0),
-            *self.get_unchecked(1),
-            *self.get_unchecked(2),
-            *self.get_unchecked(3),
-            *self.get_unchecked(4),
-            *self.get_unchecked(5),
-            *self.get_unchecked(6),
-            *self.get_unchecked(7),
-        ]);
-        unsafe_advance(self, std::mem::size_of::<i64>());
-        v
-    }
-}
-
-impl Decoder for std::io::Cursor<&'_ [u8]> {
-    #[inline]
-    unsafe fn decode_u8_unchecked(&mut self) -> u8 {
-        let pos = self.position();
-        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
-        let v = slice.decode_u8_unchecked();
-        self.set_position(pos + std::mem::size_of::<u8>() as u64);
-        v
-    }
-
-    #[inline]
-    unsafe fn decode_u16_unchecked(&mut self) -> u16 {
-        let pos = self.position();
-        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
-        let v = slice.decode_u16_unchecked();
-        self.set_position(pos + std::mem::size_of::<u16>() as u64);
-        v
-    }
-
-    #[inline]
-    unsafe fn decode_u32_unchecked(&mut self) -> u32 {
-        let pos = self.position();
-        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
-        let v = slice.decode_u32_unchecked();
-        self.set_position(pos + std::mem::size_of::<u32>() as u64);
-        v
-    }
-
-    #[inline]
-    unsafe fn decode_u64_unchecked(&mut self) -> u64 {
-        let pos = self.position();
-        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
-        let v = slice.decode_u64_unchecked();
-        self.set_position(pos + std::mem::size_of::<u64>() as u64);
-        v
-    }
-
-    #[inline]
-    unsafe fn decode_i8_unchecked(&mut self) -> i8 {
-        let pos = self.position();
-        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
-        let v = slice.decode_i8_unchecked();
-        self.set_position(pos + std::mem::size_of::<i8>() as u64);
-        v
-    }
-
-    #[inline]
-    unsafe fn decode_i16_unchecked(&mut self) -> i16 {
-        let pos = self.position();
-        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
-        let v = slice.decode_i16_unchecked();
-        self.set_position(pos + std::mem::size_of::<i16>() as u64);
-        v
-    }
-
-    #[inline]
-    unsafe fn decode_i32_unchecked(&mut self) -> i32 {
-        let pos = self.position();
-        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
-        let v = slice.decode_i32_unchecked();
-        self.set_position(pos + std::mem::size_of::<i32>() as u64);
-        v
-    }
-
-    #[inline]
-    unsafe fn decode_i64_unchecked(&mut self) -> i64 {
-        let pos = self.position();
-        let slice = &mut &*self.get_ref().get_unchecked(pos as usize..);
-        let v = slice.decode_i64_unchecked();
-        self.set_position(pos + std::mem::size_of::<i64>() as u64);
-        v
-    }
-}
-
-impl Encode for u8 {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_u8(self)
-    }
-}
-
-impl Encode for u16 {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_u16(self)
-    }
-}
-
-impl Encode for u32 {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_u32(self)
-    }
-}
-
-impl Encode for u64 {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_u64(self)
-    }
-}
-
-impl Encode for i8 {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_i8(self)
-    }
-}
-
-impl Encode for i16 {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_i16(self)
-    }
-}
-
-impl Encode for i32 {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_i32(self)
-    }
-}
-
-impl Encode for i64 {
-    fn encode<E>(self, enc: &mut E)
-    where
-        E: ?Sized + Encoder,
-    {
-        enc.encode_i64(self)
-    }
-}
-
-impl Decode for u8 {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        dec.decode_u8_unchecked()
-    }
-}
-
-impl Decode for u16 {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        dec.decode_u16_unchecked()
-    }
-}
-
-impl Decode for u32 {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        dec.decode_u32_unchecked()
-    }
-}
-
-impl Decode for u64 {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        dec.decode_u64_unchecked()
-    }
-}
-
-impl Decode for i8 {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        dec.decode_i8_unchecked()
-    }
-}
-
-impl Decode for i16 {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        dec.decode_i16_unchecked()
-    }
-}
-
-impl Decode for i32 {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        dec.decode_i32_unchecked()
-    }
-}
-
-impl Decode for i64 {
-    #[inline(always)]
-    unsafe fn decode_unchecked(dec: &mut impl Decoder) -> Self {
-        dec.decode_i64_unchecked()
+impl std::fmt::Display for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Op::Nop => write!(f, "nop "),
+            Op::Mov { src, dst } => write!(f, "mov {src}, {dst}"),
+            Op::Load_Const { src, dst } => write!(f, "cst {src}, {dst}"),
+            Op::Load_Unit { dst } => write!(f, "unit {dst}"),
+            Op::Load_Fn { id, dst } => write!(f, "fn {id}, {dst}"),
+            Op::Load_Smi { val, dst } => write!(f, "smi {val}, {dst}"),
+            Op::Load_Bool { val, dst } => write!(f, "bool {val}, {dst}"),
+            Op::Jump { offset } => write!(f, "jmp {offset}"),
+            Op::Jump_Const { offset } => write!(f, "jmp {offset}"),
+            Op::JumpIfFalse { cond, offset } => write!(f, "jmpf {cond}, {offset}"),
+            Op::JumpIfFalse_Const { cond, offset } => write!(f, "jmpf {cond}, {offset}"),
+            Op::Add_I64 { lhs, rhs, dst } => {
+                write!(f, "add <i64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Add_F64 { lhs, rhs, dst } => {
+                write!(f, "add <f64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Sub_I64 { lhs, rhs, dst } => {
+                write!(f, "sub <i64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Sub_F64 { lhs, rhs, dst } => {
+                write!(f, "sub <f64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Mul_I64 { lhs, rhs, dst } => {
+                write!(f, "mul <i64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Mul_F64 { lhs, rhs, dst } => {
+                write!(f, "mul <f64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Div_I64 { lhs, rhs, dst } => {
+                write!(f, "div <i64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Div_F64 { lhs, rhs, dst } => {
+                write!(f, "div <f64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Rem_I64 { lhs, rhs, dst } => {
+                write!(f, "rem <i64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Rem_F64 { lhs, rhs, dst } => {
+                write!(f, "rem <f64> {lhs}, {rhs}, {dst}")
+            }
+            Op::Call_Id { callee, ret } => {
+                write!(f, "call {callee}, {ret}")
+            }
+            Op::Call_Reg { callee } => {
+                write!(f, "call {callee}")
+            }
+            Op::Ret {} => write!(f, "ret "),
+            Op::Ret_V { src } => write!(f, "retv {src}"),
+            Op::Stop => write!(f, "stop "),
+        }
     }
 }

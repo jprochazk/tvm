@@ -5,20 +5,20 @@ expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v\n        }
 function "main" {
   registers: 3 (0 params)
   constants: []
-  bytecode: (14 bytes) [
-    load_fn 0, r0     // let g = f;
-    mov r0, r1        // g(10);
-    load_smi 10, r2   // 
-    call_indirect r1  // 
-    ret               // 
-    stop              //   
+  bytecode: (6 ops) [
+    fn f0, r0   // let g = f;
+    mov r0, r1  // g(10);
+    smi 10, r2  // 
+    call r1     // 
+    ret         // 
+    stop        //   
   ]
 }
 
 function "f" #0 {
   registers: 2 (1 params)
   constants: []
-  bytecode: (3 bytes) [
+  bytecode: (2 ops) [
     retv r1  // 
     stop     //   
   ]

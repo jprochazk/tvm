@@ -1,10 +1,8 @@
 use crate::error::Error;
+use crate::util::JoinIter as _;
 
 fn report(e: Vec<Error>) -> String {
-    e.into_iter()
-        .map(|e| format!("{e}"))
-        .collect::<Vec<_>>()
-        .join("\n")
+    e.into_iter().join("\n").to_string()
 }
 
 fn _check(input: &str) -> String {
@@ -20,7 +18,7 @@ fn _check(input: &str) -> String {
 
 macro_rules! check {
     ($input:literal) => {
-        _check(($input))
+        _check(indoc::indoc!($input))
     };
 }
 

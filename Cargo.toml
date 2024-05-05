@@ -1,10 +1,3 @@
-[workspace]
-members = ["bcgen"]
-
-[workspace.dependencies]
-beef = "0.5.2"
-logos = "0.13.0"
-
 [package]
 name = "tvm"
 version = "0.0.0"
@@ -16,8 +9,8 @@ publish = true
 [features]
 
 [dependencies]
-beef.workspace = true
-logos.workspace = true
+beef = "0.5.2"
+logos = "0.13.0"
 paste = "1.0.13"
 rustc-hash = "1.1.0"
 

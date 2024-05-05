@@ -239,7 +239,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
             .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
     }
 
-    fn alloc_const_jump_offset(&mut self, span: Span, v: usize) -> Result<Cst> {
+    fn alloc_const_jump_offset(&mut self, span: Span, v: isize) -> Result<Cst> {
         self.asm
             .constants
             .insert_jump_offset(v)
@@ -304,8 +304,8 @@ fn loop_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Loop<'src>
     })?;
 
     match state.entry.offset {
-        Offset::Rel(offset) => f.asm.emit(hir.body.span, br_r(offset)),
-        Offset::Cst(index) => f.asm.emit(hir.body.span, brc_r(index)),
+        Offset::Rel(offset) => f.asm.emit(hir.body.span, jmp(offset)),
+        Offset::Cst(index) => f.asm.emit(hir.body.span, jmp_c(index)),
     }
     state.exit.bind(f)?;
 
@@ -371,22 +371,22 @@ fn binary_expr<'src, 'a>(
         macro_rules! emit_binop {
             ($kind:ident) => {
                 if hir.lhs.ty.is_int() {
-                    f.asm.emit(span, paste::paste!([<$kind:lower _int>])(lhs, rhs, dst));
+                    f.asm.emit(span, $kind(I64, lhs, rhs, dst));
                 } else if hir.lhs.ty.is_num() {
-                    f.asm.emit(span, paste::paste!([<$kind:lower _num>])(lhs, rhs, dst));
+                    f.asm.emit(span, $kind(F64, lhs, rhs, dst));
                 } else {
                     unreachable!("BUG: binary expr consisting of non-numeric types: {hir:#?}");
                 }
-            }
+            };
         }
 
         use BinaryOp as O;
         match hir.op {
-            O::Add => emit_binop!(Add),
-            O::Sub => emit_binop!(Sub),
-            O::Mul => emit_binop!(Mul),
-            O::Div => emit_binop!(Div),
-            O::Rem => emit_binop!(Rem),
+            O::Add => emit_binop!(add),
+            O::Sub => emit_binop!(sub),
+            O::Mul => emit_binop!(mul),
+            O::Div => emit_binop!(div),
+            O::Rem => emit_binop!(rem),
             // O::Pow => emit_binop!(Pow),
             // O::Eq => emit_binop!(Eq),
             // O::Ne => emit_binop!(Ne),
@@ -425,10 +425,9 @@ fn primitive_expr<'src, 'a>(
             let idx = f.alloc_const_num(span, *v)?;
             f.asm.emit(span, load_cst(idx, dst));
         }
-        hir::Primitive::Bool(v) => match v {
-            true => f.asm.emit(span, load_true(dst)),
-            false => f.asm.emit(span, load_false(dst)),
-        },
+        hir::Primitive::Bool(v) => {
+            f.asm.emit(span, load_bool(*v, dst));
+        }
         hir::Primitive::Str(v) => {
             let idx = f.alloc_const_str(span, v.clone())?;
             f.asm.emit(span, load_cst(idx, dst));
@@ -509,10 +508,7 @@ fn call_expr_direct<'src, 'a>(
         }
 
         use asm::*;
-        match hir.args.len() {
-            0 => f.asm.emit(span, call0_direct(fnid, ret)),
-            _ => f.asm.emit(span, call_direct(fnid, ret)),
-        }
+        f.asm.emit(span, call_id(fnid, ret));
 
         if !is_dst_flat {
             f.asm.emit(span, mov(ret, dst));
@@ -552,10 +548,7 @@ fn call_expr_value<'src, 'a>(
         }
 
         use asm::*;
-        match hir.args.len() {
-            0 => f.asm.emit(span, call0_indirect(fn_)),
-            _ => f.asm.emit(span, call_indirect(fn_)),
-        }
+        f.asm.emit(span, call_reg(fn_));
 
         let ret = fn_;
         if !is_dst_flat {
@@ -642,7 +635,7 @@ struct Loop {
 
 #[derive(Default)]
 struct Assembler<'src> {
-    bytecode: Vec<u8>,
+    bytecode: Vec<Op>,
     spans: Vec<Span>,
     constants: ConstantPoolBuilder<'src>,
 }
@@ -652,40 +645,33 @@ impl<'src> Assembler<'src> {
         Self::default()
     }
 
-    fn emit(&mut self, span: Span, e: impl Encode) {
-        e.encode(&mut self.bytecode);
+    fn emit(&mut self, span: Span, op: Op) {
+        self.bytecode.push(op);
         self.spans.push(span);
     }
 
     fn patch_jump(&mut self, referrer: usize, offset: Offset) {
         use asm::*;
 
-        let op = self.bytecode[referrer].into();
-        let buf = &mut self.bytecode[referrer..];
-        match op {
-            Op::Br => match offset {
-                Offset::Rel(offset) => br(offset).encode(buf),
-                Offset::Cst(index) => brc(index).encode(buf),
+        let op = self.bytecode[referrer];
+        let patched = match op {
+            Op::Jump { .. } | Op::Jump_Const { .. } => match offset {
+                Offset::Rel(offset) => jmp(offset),
+                Offset::Cst(index) => jmp_c(index),
             },
-            Op::BrR => match offset {
-                Offset::Rel(offset) => br_r(offset).encode(buf),
-                Offset::Cst(index) => brc_r(index).encode(buf),
+            Op::JumpIfFalse { cond, .. } | Op::JumpIfFalse_Const { cond, .. } => match offset {
+                Offset::Rel(offset) => jmpf(cond, offset),
+                Offset::Cst(index) => jmpf_c(cond, index),
             },
-            Op::BrIf => {
-                let cond = unsafe { Reg::decode_unchecked(&mut self.bytecode[referrer + 1..]) };
-                match offset {
-                    Offset::Rel(offset) => br_if(cond, offset).encode(buf),
-                    Offset::Cst(index) => brc_if(cond, index).encode(buf),
-                }
-            }
             _ => {
                 unreachable!("cannot patch {op:?}@{referrer} as a jump");
             }
-        }
+        };
+        self.bytecode[referrer] = patched;
     }
 
-    fn finish(mut self) -> (Vec<u8>, Vec<Span>, Vec<Constant>) {
-        if !self.bytecode.ends_with(&[Op::Stop as u8]) {
+    fn finish(mut self) -> (Vec<Op>, Vec<Span>, Vec<Constant>) {
+        if !self.bytecode.ends_with(&[Op::Stop]) {
             self.emit(Span::empty(), asm::stop());
         }
         (self.bytecode, self.spans, self.constants.finish())
@@ -693,7 +679,7 @@ impl<'src> Assembler<'src> {
 }
 
 struct BackwardJumpLabel {
-    /// Byte position of the block entry.
+    /// Position of the block entry.
     ///
     /// Used as the target of backward jumps, such as `br_r`.
     offset: Offset,
@@ -707,11 +693,11 @@ enum Offset {
 
 impl Offset {
     fn get(f: &mut FunctionState) -> Result<Self> {
-        let offset = f.asm.bytecode.len();
-        let offset = if offset > u16::MAX as usize {
+        let offset = f.asm.bytecode.len() as isize;
+        let offset = if offset > i16::MAX as isize {
             Offset::Cst(f.alloc_const_jump_offset(Span::empty(), offset)?)
         } else {
-            Offset::Rel(Rel(offset as u16))
+            Offset::Rel(Rel(offset as i16))
         };
         Ok(offset)
     }
@@ -726,9 +712,9 @@ impl BackwardJumpLabel {
 }
 
 struct ForwardJumpLabel {
-    /// List of byte positions of jumps to this exit.
+    /// List of positions of jumps to this exit.
     ///
-    /// Used as the target of forward jumps, such as `br` and `br_if`.
+    /// Used as the target of forward jumps, such as `jmp` and `jmpf`.
     referrers: Vec<usize>,
 }
 
@@ -826,7 +812,7 @@ impl Module {
             .entries
             .iter()
             .enumerate()
-            .map(|(i, fn_)| (op::Fnid::new(i as u16), fn_))
+            .map(|(i, fn_)| (op::Fnid(i as u16), fn_))
     }
 }
 
@@ -861,7 +847,7 @@ impl FunctionTableBuilder {
     }
 
     fn reserve(&mut self, name: Ident<'_>, hir_id: hir::FnId) {
-        let table_id = Fnid::new(self.next_id);
+        let table_id = Fnid(self.next_id);
         self.next_id += 1;
 
         self.name_to_id.insert(name.to_string(), table_id);
@@ -893,7 +879,7 @@ pub struct Function {
     // captures: Vec<Capture>,
     name: String,
     params: u8,
-    bytecode: Vec<u8>,
+    bytecode: Vec<Op>,
     spans: Vec<Span>,
     constants: Vec<Constant>,
     registers: u8,
@@ -961,13 +947,11 @@ impl<'a> Display for DisplayExternFunction<'a> {
 struct DisplayScriptFunction<'a, 'src>(Option<op::Fnid>, &'a Function, Option<&'src str>);
 impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use op::Decode as _;
-
         let Self(id, fn_, src) = self;
 
         write!(f, "function {:?}", fn_.name)?;
         if let Some(id) = id {
-            write!(f, " #{id}")?;
+            write!(f, " #{}", id.0)?;
         }
         writeln!(f, " {{")?;
         writeln!(f, "  registers: {} ({} params)", fn_.registers, fn_.params)?;
@@ -981,22 +965,19 @@ impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
             }
             writeln!(f, "  ]")?;
         }
-        writeln!(f, "  bytecode: ({} bytes) [", fn_.bytecode.len())?;
-        // collect instructions so that we know the length of each line
-        // we _could_ calculate this on the fly, but that would be way
-        // more code...
-        let mut cursor = std::io::Cursor::new(&fn_.bytecode[..]);
-        let mut spans = fn_.spans.iter();
-        let mut instructions = Vec::new();
-        while cursor.position() < cursor.get_ref().len() as u64 {
-            let instruction = unsafe { symbolic::Instruction::decode_unchecked(&mut cursor) };
-            let span = spans.next().unwrap();
-            instructions.push((*span, instruction.to_string()));
+        writeln!(f, "  bytecode: ({} ops) [", fn_.bytecode.len())?;
+
+        let mut max_len = 0;
+        let mut instructions = Vec::with_capacity(fn_.bytecode.len());
+        for op in fn_.bytecode.iter() {
+            let s = op.to_string();
+            max_len = std::cmp::max(max_len, s.len());
+            instructions.push(s);
         }
-        let max_len = instructions.iter().map(|(_, s)| s.len()).max().unwrap_or(0);
+
         let mut prev_line_span = Span::empty();
-        let mut instructions = instructions.into_iter().peekable();
-        while let Some((span, instruction)) = instructions.next() {
+        let mut instructions = instructions.into_iter().zip(fn_.spans.iter()).peekable();
+        while let Some((instruction, span)) = instructions.next() {
             f.write_str("    ")?;
             'next: {
                 if let Some(src) = src {
@@ -1006,7 +987,7 @@ impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
                         break 'next;
                     }
 
-                    let loc = Location::from_source_span(src, &span);
+                    let loc = Location::from_source_span(src, span);
                     if prev_line_span == loc.line_span() {
                         break 'next;
                     }

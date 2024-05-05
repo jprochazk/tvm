@@ -9,7 +9,7 @@ pub struct ConstantPoolBuilder<'src> {
     ints: HashMap<i64, u16>,
     nums: HashMap<f64n, u16>,
     strings: HashMap<Str<'src>, u16>,
-    jump_offsets: HashMap<usize, u16>,
+    jump_offsets: HashMap<isize, u16>,
     pool: Vec<Constant>,
 }
 
@@ -36,7 +36,7 @@ impl<'src> ConstantPoolBuilder<'src> {
         insert_or_get_in(&mut self.strings, &mut self.pool, v)
     }
 
-    pub fn insert_jump_offset(&mut self, v: usize) -> Option<u16> {
+    pub fn insert_jump_offset(&mut self, v: isize) -> Option<u16> {
         insert_or_get_in(&mut self.jump_offsets, &mut self.pool, v)
     }
 
@@ -72,7 +72,7 @@ pub enum Constant {
     Int(i64),
     Num(f64n),
     Str(String),
-    Jmp(usize),
+    Jmp(isize),
 }
 
 /// An `f64` which is guaranteed to be non-NaN
@@ -182,7 +182,7 @@ impl ToConstant for Str<'_> {
     }
 }
 
-impl ToConstant for usize {
+impl ToConstant for isize {
     fn to_constant(self) -> Constant {
         Constant::Jmp(self)
     }

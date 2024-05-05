@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::cell::RefCell;
 use std::fmt::Display;
 
@@ -5,33 +7,6 @@ pub(crate) fn num_digits(v: usize) -> usize {
     use core::iter::successors;
 
     successors(Some(v), |&n| (n >= 10).then_some(n / 10)).count()
-}
-
-pub(crate) trait Discard {
-    type Output;
-    fn discard(self) -> Self::Output;
-}
-
-impl<T, E> Discard for Result<T, E> {
-    type Output = Result<(), E>;
-
-    fn discard(self) -> Self::Output {
-        match self {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        }
-    }
-}
-
-impl<T> Discard for Option<T> {
-    type Output = Option<()>;
-
-    fn discard(self) -> Self::Output {
-        match self {
-            Some(_) => Some(()),
-            None => None,
-        }
-    }
 }
 
 pub struct Join<Iter, Sep>

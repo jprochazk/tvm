@@ -5,7 +5,7 @@ expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v + 1\n     
 function "main" {
   registers: 0 (0 params)
   constants: []
-  bytecode: (2 bytes) [
+  bytecode: (2 ops) [
     ret    // 
     stop   //   
   ]
@@ -14,21 +14,21 @@ function "main" {
 function "f" #0 {
   registers: 3 (1 params)
   constants: []
-  bytecode: (10 bytes) [
-    load_smi 1, r2      // v + 1
-    add_int r1, r2, r0  // 
-    retv r0             // 
-    stop                //   
+  bytecode: (4 ops) [
+    smi 1, r2             // v + 1
+    add <i64> r1, r2, r0  // 
+    retv r0               // 
+    stop                  //   
   ]
 }
 
 function "g" #1 {
   registers: 1 (0 params)
   constants: []
-  bytecode: (6 bytes) [
-    load_smi 2, r0  // 2
-    retv r0         // 
-    stop            //   
+  bytecode: (3 ops) [
+    smi 2, r0  // 2
+    retv r0    // 
+    stop       //   
   ]
 }
 

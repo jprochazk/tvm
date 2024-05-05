@@ -1,0 +1,16 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        loop {\n            let v = 0;\n        }\n    \"#)"
+---
+function "main" {
+  registers: 1 (0 params)
+  constants: []
+  bytecode: (4 ops) [
+    smi 0, r0  // let v = 0;
+    jmp -1     // }
+    ret        // 
+    stop       //   
+  ]
+}
+
+

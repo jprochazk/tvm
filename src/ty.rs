@@ -405,8 +405,8 @@ impl<'src> TyCtx<'src> {
         use ast::expr::ExprKind as E;
         match &expr.kind {
             E::Return(_) => todo!("infer:Return"),
-            E::Break => todo!("infer:Break"),
-            E::Continue => todo!("infer:Continue"),
+            E::Break => self.infer_break(expr.span),
+            E::Continue => self.infer_continue(expr.span),
             E::Block(_) => todo!("infer:Block"),
             E::If(_) => todo!("infer:If"),
             E::Binary(v) => self.infer_binary(expr.span, v),
@@ -421,6 +421,22 @@ impl<'src> TyCtx<'src> {
             E::AssignIndex(_) => todo!("infer:AssignIndex"),
             E::Call(v) => self.infer_call_expr(expr.span, v),
             E::MethodCall(_) => todo!("infer:MethodCall"),
+        }
+    }
+
+    fn infer_break(&mut self, span: Span) -> Expr<'src> {
+        Expr {
+            span,
+            ty: Ty::Unit,
+            kind: ExprKind::Break(Break),
+        }
+    }
+
+    fn infer_continue(&mut self, span: Span) -> Expr<'src> {
+        Expr {
+            span,
+            ty: Ty::Unit,
+            kind: ExprKind::Continue(Continue),
         }
     }
 

@@ -579,6 +579,16 @@ impl<'src> ErrorCtx<'src> {
     pub fn invalid_escape_sequence(&mut self, span: impl Into<Span>) -> Error {
         Error::spanned("invalid escape sequence", span, self.src()).into()
     }
+
+    #[inline]
+    pub fn continue_outside_loop(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("cannot use `continue` outside of loops", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn break_outside_loop(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("cannot use `break` outside of loops", span, self.src()).into()
+    }
 }
 
 pub struct BadReturnType<'a, 'src> {

@@ -147,3 +147,41 @@ test! {
         g(10);
     "#
 }
+
+test! {
+    basic_loop_0,
+    r#"
+        loop {}
+    "#
+}
+
+test! {
+    basic_loop_1,
+    r#"
+        loop {
+            let v = 0;
+        }
+    "#
+}
+
+test! {
+    basic_loop_continue,
+    r#"
+        loop {
+            let v = 0;
+            continue;
+            let v = 1;
+        }
+    "#
+}
+
+test! {
+    basic_loop_break,
+    r#"
+        loop {
+            let v = 0;
+            break;
+            let v = 1;
+        }
+    "#
+}

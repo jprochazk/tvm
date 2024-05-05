@@ -17,10 +17,13 @@ pub struct Hir<'src> {
 pub enum Ty {
     /// Unit
     Unit,
+
     /// Type definition
     Def(DefId),
+
     /// Function
     Fn(FnId),
+
     /// Type error
     Error,
 }

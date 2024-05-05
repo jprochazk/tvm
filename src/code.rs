@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 
@@ -271,6 +272,14 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         }
         result
     }
+
+    #[inline]
+    fn in_loop<T>(&mut self, inner: impl FnOnce(&mut Self, Option<&Loop>) -> T) -> T {
+        let state = self.current_loop.take();
+        let result = inner(self, state.as_ref());
+        self.current_loop = state;
+        result
+    }
 }
 
 fn stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Stmt<'src>) -> Result<()> {
@@ -292,8 +301,6 @@ fn let_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Let<'src>) 
 }
 
 fn loop_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Loop<'src>) -> Result<()> {
-    use asm::*;
-
     let state = Loop {
         entry: BackwardJumpLabel::bind(f)?,
         exit: ForwardJumpLabel::new(),
@@ -303,13 +310,12 @@ fn loop_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Loop<'src>
         Ok(())
     })?;
 
-    match state.entry.offset {
-        Offset::Rel(offset) => f.asm.emit(hir.body.span, jmp(offset)),
-        Offset::Cst(index) => f.asm.emit(hir.body.span, jmp_c(index)),
-    }
+    state
+        .entry
+        .emit_jmp(f, (hir.body.span.end..hir.body.span.end + 1).into())?;
     state.exit.bind(f)?;
 
-    todo!()
+    Ok(())
 }
 
 fn loop_body<'src, 'a>(
@@ -338,9 +344,9 @@ fn expr<'src, 'a>(
     let span = hir.span;
     match &hir.kind {
         hir::ExprKind::Return(_hir) => todo!(),
-        hir::ExprKind::Break(_hir) => todo!(),
-        hir::ExprKind::Continue(_hir) => todo!(),
-        hir::ExprKind::Block(_hir) => todo!(),
+        hir::ExprKind::Break(_hir) => break_expr(f, span).map(|_| None),
+        hir::ExprKind::Continue(_hir) => continue_expr(f, span).map(|_| None),
+        hir::ExprKind::Block(_hir) => break_expr(f, span).map(|_| None),
         hir::ExprKind::If(_hir) => todo!(),
         hir::ExprKind::Binary(hir) => binary_expr(f, span, hir, dst),
         hir::ExprKind::Unary(_hir) => todo!(),
@@ -353,6 +359,25 @@ fn expr<'src, 'a>(
         hir::ExprKind::AssignIndex(_hir) => todo!(),
         hir::ExprKind::Call(hir) => call_expr(f, span, hir, dst),
     }
+}
+
+fn break_expr(f: &mut FunctionState, span: Span) -> Result<()> {
+    // emit a `jmp` to the current loop exit
+    f.in_loop(|f, state| match state {
+        Some(state) => {
+            state.exit.emit_jmp(f, span);
+            Ok(())
+        }
+        None => Err(f.compiler.ecx.continue_outside_loop(span)),
+    })
+}
+
+fn continue_expr(f: &mut FunctionState, span: Span) -> Result<()> {
+    // emit a `jmp` to the current loop entry
+    f.in_loop(|f, state| match state {
+        Some(state) => state.entry.emit_jmp(f, span),
+        None => Err(f.compiler.ecx.continue_outside_loop(span)),
+    })
 }
 
 fn binary_expr<'src, 'a>(
@@ -655,14 +680,8 @@ impl<'src> Assembler<'src> {
 
         let op = self.bytecode[referrer];
         let patched = match op {
-            Op::Jump { .. } | Op::Jump_Const { .. } => match offset {
-                Offset::Rel(offset) => jmp(offset),
-                Offset::Cst(index) => jmp_c(index),
-            },
-            Op::JumpIfFalse { cond, .. } | Op::JumpIfFalse_Const { cond, .. } => match offset {
-                Offset::Rel(offset) => jmpf(cond, offset),
-                Offset::Cst(index) => jmpf_c(cond, index),
-            },
+            Op::Jump { .. } => jmp(offset),
+            Op::JumpIfFalse { cond, .. } => jmpf(cond, offset),
             _ => {
                 unreachable!("cannot patch {op:?}@{referrer} as a jump");
             }
@@ -681,33 +700,31 @@ impl<'src> Assembler<'src> {
 struct BackwardJumpLabel {
     /// Position of the block entry.
     ///
-    /// Used as the target of backward jumps, such as `br_r`.
-    offset: Offset,
-}
-
-#[derive(Clone, Copy)]
-enum Offset {
-    Rel(Rel),
-    Cst(Cst),
-}
-
-impl Offset {
-    fn get(f: &mut FunctionState) -> Result<Self> {
-        let offset = f.asm.bytecode.len() as isize;
-        let offset = if offset > i16::MAX as isize {
-            Offset::Cst(f.alloc_const_jump_offset(Span::empty(), offset)?)
-        } else {
-            Offset::Rel(Rel(offset as i16))
-        };
-        Ok(offset)
-    }
+    /// Used as the target of backward jumps, such as `jmp`.
+    pos: isize,
 }
 
 impl BackwardJumpLabel {
     fn bind(f: &mut FunctionState) -> Result<Self> {
         Ok(Self {
-            offset: Offset::get(f)?,
+            pos: f.asm.bytecode.len() as isize,
         })
+    }
+
+    fn emit_jmp(&self, f: &mut FunctionState, span: Span) -> Result<()> {
+        let from = f.asm.bytecode.len() as isize;
+        let to = self.pos;
+        let offset = Offset::get(f, from, to)?;
+        f.asm.emit(span, asm::jmp(offset));
+        Ok(())
+    }
+
+    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) -> Result<()> {
+        let from = f.asm.bytecode.len() as isize;
+        let to = self.pos;
+        let offset = Offset::get(f, from, to)?;
+        f.asm.emit(span, asm::jmpf(cond, offset));
+        Ok(())
     }
 }
 
@@ -715,24 +732,49 @@ struct ForwardJumpLabel {
     /// List of positions of jumps to this exit.
     ///
     /// Used as the target of forward jumps, such as `jmp` and `jmpf`.
-    referrers: Vec<usize>,
+    referrers: RefCell<Vec<usize>>,
 }
 
 impl ForwardJumpLabel {
     fn new() -> Self {
         Self {
-            referrers: Vec::new(),
+            referrers: RefCell::new(Vec::new()),
         }
     }
 
     fn bind(self, f: &mut FunctionState) -> Result<()> {
-        let offset = Offset::get(f)?;
-
-        for referrer in self.referrers {
-            f.asm.patch_jump(referrer, offset);
+        let to = f.asm.bytecode.len() as isize;
+        for referrer in self.referrers.borrow().iter() {
+            let from = *referrer as isize;
+            let offset = Offset::get(f, from, to)?;
+            f.asm.patch_jump(*referrer, offset);
         }
 
         Ok(())
+    }
+
+    fn emit_jmp(&self, f: &mut FunctionState, span: Span) {
+        let referrer = f.asm.bytecode.len();
+        self.referrers.borrow_mut().push(referrer);
+        f.asm.emit(span, asm::jmp(Offset::placeholder()));
+    }
+
+    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) {
+        let referrer = f.asm.bytecode.len();
+        self.referrers.borrow_mut().push(referrer);
+        f.asm.emit(span, asm::jmpf(cond, Offset::placeholder()));
+    }
+}
+
+impl Offset {
+    fn get(f: &mut FunctionState, to: isize, from: isize) -> Result<Self> {
+        let offset = from - to;
+        let offset = if let Ok(offset) = i16::try_from(offset) {
+            Offset::Rel(Rel(offset))
+        } else {
+            Offset::Cst(f.alloc_const_jump_offset(Span::empty(), offset)?)
+        };
+        Ok(offset)
     }
 }
 

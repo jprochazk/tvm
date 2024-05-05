@@ -1,0 +1,15 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        loop {}\n    \"#)"
+---
+function "main" {
+  registers: 0 (0 params)
+  constants: []
+  bytecode: (3 ops) [
+    jmp 0  // loop {}
+    ret    // 
+    stop   //   
+  ]
+}
+
+

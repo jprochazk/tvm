@@ -37,6 +37,18 @@ pub enum Op {
     Stop = 255,
 }
 
+impl Op {
+    pub fn is_jump(self) -> bool {
+        match self {
+            Op::Jump { offset } => true,
+            Op::JumpIfFalse { cond, offset } => true,
+            Op::Jump_Const { offset } => false,
+            Op::JumpIfFalse_Const { cond, offset } => false,
+            _ => false,
+        }
+    }
+}
+
 pub mod asm {
     #![doc = " Bytecode assembler"]
     use super::*;
@@ -77,23 +89,19 @@ pub mod asm {
     }
 
     #[inline]
-    pub fn jmp(offset: Rel) -> Op {
-        Op::Jump { offset }
+    pub fn jmp(offset: Offset) -> Op {
+        match offset {
+            Offset::Rel(offset) => Op::Jump { offset },
+            Offset::Cst(offset) => Op::Jump_Const { offset },
+        }
     }
 
     #[inline]
-    pub fn jmp_c(offset: Cst) -> Op {
-        Op::Jump_Const { offset }
-    }
-
-    #[inline]
-    pub fn jmpf(cond: Reg, offset: Rel) -> Op {
-        Op::JumpIfFalse { cond, offset }
-    }
-
-    #[inline]
-    pub fn jmpf_c(cond: Reg, offset: Cst) -> Op {
-        Op::JumpIfFalse_Const { cond, offset }
+    pub fn jmpf(cond: Reg, offset: Offset) -> Op {
+        match offset {
+            Offset::Rel(offset) => Op::JumpIfFalse { cond, offset },
+            Offset::Cst(offset) => Op::JumpIfFalse_Const { cond, offset },
+        }
     }
 
     pub enum Type {
@@ -335,10 +343,22 @@ impl std::fmt::Display for Rel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0.signum() {
             0 => write!(f, "0"),
-            -1 => write!(f, "-{}", self.0),
+            -1 => write!(f, "{}", self.0),
             1 => write!(f, "+{}", self.0),
             _ => unreachable!(),
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum Offset {
+    Rel(Rel),
+    Cst(Cst),
+}
+
+impl Offset {
+    pub fn placeholder() -> Self {
+        Self::Rel(Rel(i16::MIN))
     }
 }
 

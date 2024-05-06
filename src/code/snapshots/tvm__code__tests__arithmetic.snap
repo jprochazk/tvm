@@ -3,36 +3,37 @@ source: src/code/tests.rs
 expression: "emit!(r#\"\n        let a = 1;\n        let b = 2;\n        let r = a + b; // Some(dst)\n        a + b;         // None\n        let r = a - b; // Some(dst)\n        a - b;         // None\n        let r = a * b; // Some(dst)\n        a * b;         // None\n        let r = a / b; // Some(dst)\n        a / b;         // None\n        let r = a % b; // Some(dst)\n        a % b;         // None\n\n        let a = 1.2;\n        let b = 2.3;\n        let r = a + b; // Some(dst)\n        a + b;         // None\n        let r = a - b; // Some(dst)\n        a - b;         // None\n        let r = a * b; // Some(dst)\n        a * b;         // None\n        let r = a / b; // Some(dst)\n        a / b;         // None\n        let r = a % b; // Some(dst)\n        a % b;         // None\n    \"#)"
 ---
 function "main" {
-  registers: 5 (0 params)
-  constants: [
+  registers: 6 (0 params)
+  literals: [
     Num(1.2)
     Num(2.3)
   ]
-  bytecode: (26 ops) [
-    smi 1, r0             // let a = 1;
-    smi 2, r1             // let b = 2;
-    add <i64> r0, r1, r2  // let r = a + b; // Some(dst)
-    add <i64> r0, r1, r3  // a + b;         // None
-    sub <i64> r0, r1, r2  // let r = a - b; // Some(dst)
-    sub <i64> r0, r1, r3  // a - b;         // None
-    mul <i64> r0, r1, r2  // let r = a * b; // Some(dst)
-    mul <i64> r0, r1, r3  // a * b;         // None
-    div <i64> r0, r1, r2  // let r = a / b; // Some(dst)
-    div <i64> r0, r1, r3  // a / b;         // None
-    rem <i64> r0, r1, r2  // let r = a % b; // Some(dst)
-    rem <i64> r0, r1, r3  // a % b;         // None
-    cst [0], r0           // let a = 1.2;
-    cst [1], r1           // let b = 2.3;
-    add <f64> r0, r1, r2  // let r = a + b; // Some(dst)
-    add <f64> r0, r1, r3  // a + b;         // None
-    sub <f64> r0, r1, r2  // let r = a - b; // Some(dst)
-    sub <f64> r0, r1, r3  // a - b;         // None
-    mul <f64> r0, r1, r2  // let r = a * b; // Some(dst)
-    mul <f64> r0, r1, r3  // a * b;         // None
-    div <f64> r0, r1, r2  // let r = a / b; // Some(dst)
-    div <f64> r0, r1, r3  // a / b;         // None
-    rem <f64> r0, r1, r2  // let r = a % b; // Some(dst)
-    rem <f64> r0, r1, r3  // a % b;         // None
+  bytecode: (27 ops) [
+    smi 1, r1             // let a = 1;
+    smi 2, r2             // let b = 2;
+    add <i64> r1, r2, r3  // let r = a + b; // Some(dst)
+    add <i64> r1, r2, r4  // a + b;         // None
+    sub <i64> r1, r2, r3  // let r = a - b; // Some(dst)
+    sub <i64> r1, r2, r4  // a - b;         // None
+    mul <i64> r1, r2, r3  // let r = a * b; // Some(dst)
+    mul <i64> r1, r2, r4  // a * b;         // None
+    div <i64> r1, r2, r3  // let r = a / b; // Some(dst)
+    div <i64> r1, r2, r4  // a / b;         // None
+    rem <i64> r1, r2, r3  // let r = a % b; // Some(dst)
+    rem <i64> r1, r2, r4  // a % b;         // None
+    lit [0], r1           // let a = 1.2;
+    lit [1], r2           // let b = 2.3;
+    add <f64> r1, r2, r3  // let r = a + b; // Some(dst)
+    add <f64> r1, r2, r4  // a + b;         // None
+    sub <f64> r1, r2, r3  // let r = a - b; // Some(dst)
+    sub <f64> r1, r2, r4  // a - b;         // None
+    mul <f64> r1, r2, r3  // let r = a * b; // Some(dst)
+    mul <f64> r1, r2, r4  // a * b;         // None
+    div <f64> r1, r2, r3  // let r = a / b; // Some(dst)
+    div <f64> r1, r2, r4  // a / b;         // None
+    rem <f64> r1, r2, r3  // let r = a % b; // Some(dst)
+    rem <f64> r1, r2, r4  // a % b;         // None
+    unit r0               // 
     ret                   // 
     stop                  //   
   ]

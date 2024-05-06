@@ -5,15 +5,15 @@ use std::str::FromStr;
 use crate::{HashMap, Str};
 
 #[derive(Default)]
-pub struct ConstantPoolBuilder<'src> {
+pub struct LiteralPool<'src> {
     ints: HashMap<i64, u16>,
     nums: HashMap<f64n, u16>,
     strings: HashMap<Str<'src>, u16>,
     jump_offsets: HashMap<isize, u16>,
-    pool: Vec<Constant>,
+    pool: Vec<Literal>,
 }
 
-impl<'src> ConstantPoolBuilder<'src> {
+impl<'src> LiteralPool<'src> {
     pub fn new() -> Self {
         Self {
             ints: HashMap::default(),
@@ -40,17 +40,17 @@ impl<'src> ConstantPoolBuilder<'src> {
         insert_or_get_in(&mut self.jump_offsets, &mut self.pool, v)
     }
 
-    pub fn finish(self) -> Vec<Constant> {
+    pub fn finish(self) -> Vec<Literal> {
         self.pool
     }
 }
 
-fn insert_or_get_in<T: Clone + Eq + Hash + ToConstant>(
+fn insert_or_get_in<T: Clone + Eq + Hash + Into<Literal>>(
     m: &mut HashMap<T, u16>,
-    p: &mut Vec<Constant>,
+    p: &mut Vec<Literal>,
     v: T,
 ) -> Option<u16> {
-    // too many constants
+    // too many literals
     if p.len() >= u16::MAX as usize {
         return None;
     }
@@ -60,7 +60,7 @@ fn insert_or_get_in<T: Clone + Eq + Hash + ToConstant>(
         E::Occupied(e) => *e.get(),
         E::Vacant(e) => {
             let idx = *e.insert(p.len() as u16);
-            p.push(v.to_constant());
+            p.push(v.into());
             idx
         }
     };
@@ -68,7 +68,7 @@ fn insert_or_get_in<T: Clone + Eq + Hash + ToConstant>(
 }
 
 #[derive(Debug)]
-pub enum Constant {
+pub enum Literal {
     Int(i64),
     Num(f64n),
     Str(String),
@@ -160,30 +160,26 @@ impl FromStr for f64n {
     }
 }
 
-trait ToConstant {
-    fn to_constant(self) -> Constant;
-}
-
-impl ToConstant for i64 {
-    fn to_constant(self) -> Constant {
-        Constant::Int(self)
+impl From<i64> for Literal {
+    fn from(value: i64) -> Self {
+        Literal::Int(value)
     }
 }
 
-impl ToConstant for f64n {
-    fn to_constant(self) -> Constant {
-        Constant::Num(self)
+impl From<f64n> for Literal {
+    fn from(value: f64n) -> Literal {
+        Literal::Num(value)
     }
 }
 
-impl ToConstant for Str<'_> {
-    fn to_constant(self) -> Constant {
-        Constant::Str(self.to_string())
+impl From<Str<'_>> for Literal {
+    fn from(value: Str<'_>) -> Literal {
+        Literal::Str(value.to_string())
     }
 }
 
-impl ToConstant for isize {
-    fn to_constant(self) -> Constant {
-        Constant::Jmp(self)
+impl From<isize> for Literal {
+    fn from(value: isize) -> Literal {
+        Literal::Jmp(value)
     }
 }

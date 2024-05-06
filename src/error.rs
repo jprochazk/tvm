@@ -568,10 +568,10 @@ impl<'src> ErrorCtx<'src> {
     }
 
     #[inline]
-    pub fn too_many_constants(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("compiler ran out of constant slots", span, self.src())
-            .append("note: the maximum number of registers is 65535")
-            .append("help: reduce register usage by splitting code into multiple functions")
+    pub fn too_many_literals(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("compiler ran out of literal pool slots", span, self.src())
+            .append("note: the maximum number of literal pool slots is 65535")
+            .append("help: reduce literal pool usage by splitting code into multiple functions")
             .into()
     }
 

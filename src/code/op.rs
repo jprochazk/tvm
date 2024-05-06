@@ -9,41 +9,151 @@ You can regenerate it by running `cargo gen`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Op {
+    /// No-op.
     Nop,
+
+    /// `dst = src`
     Mov { src: Reg, dst: Reg },
-    Load_Const { src: Cst, dst: Reg },
+
+    /// `dst = literal_pool[src]`
+    Load_Literal { dst: Reg, src: Lit },
+
+    /// `dst = UNIT`
     Load_Unit { dst: Reg },
-    Load_Fn { id: Fnid, dst: Reg },
-    Load_Smi { val: Smi, dst: Reg },
+
+    /// `dst = function_table[id]`
+    Load_Fn { dst: Reg, id: Fnid },
+
+    /// `dst = sign_extend<i64>(val)`
+    Load_I16 { dst: Reg, val: i16 },
+
+    /// `dst = val`
     Load_Bool { val: bool, dst: Reg },
+
+    /// Increment program counter by `offset`.
     Jump { offset: Rel },
-    Jump_Const { offset: Cst },
+
+    /// Increment program counter by offset stored in literal pool at `offset`.
+    Jump_Long { offset: Lit },
+
+    /// If `cond` is `false`, increment program counter by `offset`.
     JumpIfFalse { cond: Reg, offset: Rel },
-    JumpIfFalse_Const { cond: Reg, offset: Cst },
+
+    /// If `cond` is `false`, increment program counter by offset
+    /// stored in literal pool at `offset`.
+    JumpIfFalse_Long { cond: Reg, offset: Lit },
+
+    /// `dst = lhs + rhs`
+    ///
+    /// All operands are `i64`.
     Add_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs + rhs`
+    ///
+    /// All operands are `f64`.
     Add_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs - rhs`
+    ///
+    /// All operands are `i64`.
     Sub_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs - rhs`
+    ///
+    /// All operands are `f64`.
     Sub_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs * rhs`
+    ///
+    /// All operands are `i64`.
     Mul_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs * rhs`
+    ///
+    /// All operands are `f64`.
     Mul_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs / rhs`
+    ///
+    /// All operands are `i64`.
+    ///
+    /// Fails if `rhs` is zero.
     Div_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs / rhs`
+    ///
+    /// All operands are `f64`.
+    ///
+    /// Division by zero is defined by IEEE-754.
     Div_F64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs % rhs`
+    ///
+    /// All operands are `i64`.
+    ///
+    /// Fails if `rhs` is zero.
     Rem_I64 { lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = lhs % rhs`
+    ///
+    /// All operands are `f64`.
+    ///
+    /// Division by zero is defined by IEEE-754.
     Rem_F64 { lhs: Reg, rhs: Reg, dst: Reg },
-    Call_Id { callee: Fnid, ret: Reg },
+
+    /// ```text,ignore
+    /// fn = function_table[callee]
+    /// ret = call(fn, ret)
+    /// ```
+    Call_Id { ret: Reg, callee: Fnid },
+
+    /// ```text,ignore
+    /// fn = call(callee)
+    /// ```
+    ///
+    /// `callee` is used as `dst`.
     Call_Reg { callee: Reg },
+
+    /// Return from call.
     Ret,
-    Ret_V { src: Reg },
+
+    /// Yield from the interpreter.
     Stop = 255,
 }
+
+/// The following constant asserts that `size_of::<Op> == 4`.
+///
+/// If the "assertion" fails, then ensure that the total size
+/// of the operands of any variant in `Op` do not add up to more
+/// than 3 bytes. Additionally, the largest field must always be
+/// _last_ in its variant.
+///
+/// For example:
+///
+/// ```rust,ignore
+/// enum Op {
+///   Call_Id { callee: Fnid, ret: Reg }
+/// }
+/// ```
+///
+/// `size_of::<Fnid> == 2`, so this should instead be:
+///
+/// ```rust,ignore
+/// enum Op {
+///   Call_Id { ret: Reg, callee: Fnid }
+/// }
+/// ```
+const _: () = {
+    let _ = core::mem::transmute::<Op, u32>;
+};
 
 impl Op {
     pub fn is_jump(self) -> bool {
         match self {
             Op::Jump { offset } => true,
             Op::JumpIfFalse { cond, offset } => true,
-            Op::Jump_Const { offset } => false,
-            Op::JumpIfFalse_Const { cond, offset } => false,
+            Op::Jump_Long { offset } => false,
+            Op::JumpIfFalse_Long { cond, offset } => false,
             _ => false,
         }
     }
@@ -64,8 +174,8 @@ pub mod asm {
     }
 
     #[inline]
-    pub fn load_cst(src: Cst, dst: Reg) -> Op {
-        Op::Load_Const { src, dst }
+    pub fn load_cst(src: Lit, dst: Reg) -> Op {
+        Op::Load_Literal { src, dst }
     }
 
     #[inline]
@@ -79,8 +189,8 @@ pub mod asm {
     }
 
     #[inline]
-    pub fn load_smi(val: Smi, dst: Reg) -> Op {
-        Op::Load_Smi { val, dst }
+    pub fn load_i16(val: i16, dst: Reg) -> Op {
+        Op::Load_I16 { val, dst }
     }
 
     #[inline]
@@ -92,7 +202,7 @@ pub mod asm {
     pub fn jmp(offset: Offset) -> Op {
         match offset {
             Offset::Rel(offset) => Op::Jump { offset },
-            Offset::Cst(offset) => Op::Jump_Const { offset },
+            Offset::Cst(offset) => Op::Jump_Long { offset },
         }
     }
 
@@ -100,7 +210,7 @@ pub mod asm {
     pub fn jmpf(cond: Reg, offset: Offset) -> Op {
         match offset {
             Offset::Rel(offset) => Op::JumpIfFalse { cond, offset },
-            Offset::Cst(offset) => Op::JumpIfFalse_Const { cond, offset },
+            Offset::Cst(offset) => Op::JumpIfFalse_Long { cond, offset },
         }
     }
 
@@ -166,11 +276,6 @@ pub mod asm {
     }
 
     #[inline]
-    pub fn retv(src: Reg) -> Op {
-        Op::Ret_V { src }
-    }
-
-    #[inline]
     pub fn stop() -> Op {
         Op::Stop {}
     }
@@ -207,15 +312,15 @@ impl std::fmt::Display for Reg {
 #[must_use = "unused Cst"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct Cst(pub u16);
+pub struct Lit(pub u16);
 
-impl Cst {
+impl Lit {
     #[inline]
     pub fn try_new<T>(v: T) -> Option<Self>
     where
         u16: TryFrom<T>,
     {
-        <u16>::try_from(v).map(Cst).ok()
+        <u16>::try_from(v).map(Lit).ok()
     }
     #[inline]
     pub fn get(self) -> u16 {
@@ -227,7 +332,7 @@ impl Cst {
     }
 }
 
-impl std::fmt::Display for Cst {
+impl std::fmt::Display for Lit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{0}]", self.0)
     }
@@ -289,34 +394,6 @@ impl std::fmt::Display for Fnid {
     }
 }
 
-#[must_use = "unused Smi"]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Smi(pub i8);
-
-impl Smi {
-    #[inline]
-    pub fn try_new<T>(v: T) -> Option<Self>
-    where
-        i8: TryFrom<T>,
-    {
-        <i8>::try_from(v).map(Smi).ok()
-    }
-    #[inline]
-    pub fn get(self) -> i8 {
-        self.0
-    }
-    #[inline]
-    pub fn to_index(self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl std::fmt::Display for Smi {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{0}", self.0)
-    }
-}
-
 #[must_use = "unused Rel"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rel(pub i16);
@@ -353,7 +430,7 @@ impl std::fmt::Display for Rel {
 #[derive(Clone, Copy)]
 pub enum Offset {
     Rel(Rel),
-    Cst(Cst),
+    Cst(Lit),
 }
 
 impl Offset {
@@ -367,15 +444,15 @@ impl std::fmt::Display for Op {
         match self {
             Op::Nop => write!(f, "nop "),
             Op::Mov { src, dst } => write!(f, "mov {src}, {dst}"),
-            Op::Load_Const { src, dst } => write!(f, "cst {src}, {dst}"),
+            Op::Load_Literal { src, dst } => write!(f, "lit {src}, {dst}"),
             Op::Load_Unit { dst } => write!(f, "unit {dst}"),
             Op::Load_Fn { id, dst } => write!(f, "fn {id}, {dst}"),
-            Op::Load_Smi { val, dst } => write!(f, "smi {val}, {dst}"),
+            Op::Load_I16 { val, dst } => write!(f, "smi {val}, {dst}"),
             Op::Load_Bool { val, dst } => write!(f, "bool {val}, {dst}"),
             Op::Jump { offset } => write!(f, "jmp {offset}"),
-            Op::Jump_Const { offset } => write!(f, "jmp {offset}"),
+            Op::Jump_Long { offset } => write!(f, "jmp {offset}"),
             Op::JumpIfFalse { cond, offset } => write!(f, "jmpf {cond}, {offset}"),
-            Op::JumpIfFalse_Const { cond, offset } => write!(f, "jmpf {cond}, {offset}"),
+            Op::JumpIfFalse_Long { cond, offset } => write!(f, "jmpf {cond}, {offset}"),
             Op::Add_I64 { lhs, rhs, dst } => {
                 write!(f, "add <i64> {lhs}, {rhs}, {dst}")
             }
@@ -413,7 +490,6 @@ impl std::fmt::Display for Op {
                 write!(f, "call {callee}")
             }
             Op::Ret {} => write!(f, "ret "),
-            Op::Ret_V { src } => write!(f, "retv {src}"),
             Op::Stop => write!(f, "stop "),
         }
     }

@@ -3,11 +3,12 @@ source: src/code/tests.rs
 expression: "emit!(r#\"\n        loop {\n            let v = 0;\n        }\n    \"#)"
 ---
 function "main" {
-  registers: 1 (0 params)
-  constants: []
-  bytecode: (4 ops) [
-    smi 0, r0  // let v = 0;
+  registers: 2 (0 params)
+  literals: []
+  bytecode: (5 ops) [
+    smi 0, r1  // let v = 0;
     jmp -1     // }
+    unit r0    // 
     ret        // 
     stop       //   
   ]

@@ -3,31 +3,32 @@ source: src/code/tests.rs
 expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v + 1\n        }\n\n        fn g() -> int {\n            2\n        }\n    \"#)"
 ---
 function "main" {
-  registers: 0 (0 params)
-  constants: []
-  bytecode: (2 ops) [
-    ret    // 
-    stop   //   
+  registers: 1 (0 params)
+  literals: []
+  bytecode: (3 ops) [
+    unit r0  // 
+    ret      // 
+    stop     //   
   ]
 }
 
 function "f" #0 {
   registers: 3 (1 params)
-  constants: []
+  literals: []
   bytecode: (4 ops) [
     smi 1, r2             // v + 1
     add <i64> r1, r2, r0  // 
-    retv r0               // 
+    ret                   // 
     stop                  //   
   ]
 }
 
 function "g" #1 {
   registers: 1 (0 params)
-  constants: []
+  literals: []
   bytecode: (3 ops) [
     smi 2, r0  // 2
-    retv r0    // 
+    ret        // 
     stop       //   
   ]
 }

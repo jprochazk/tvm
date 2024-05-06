@@ -6,7 +6,7 @@ use crate::ast::{BinaryOp, Ident};
 use crate::error::{Error, ErrorCtx, Location, Result};
 use crate::hir::Hir;
 use crate::lex::Span;
-use crate::value::{f64n, Constant, ConstantPoolBuilder};
+use crate::value::{f64n, Literal, LiteralPool};
 use crate::{hir, HashMap, Str};
 
 pub mod op;
@@ -109,41 +109,31 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         };
 
         self.scope(|f| -> Result<()> {
-            use asm::*;
-            match body.tail.is_some() {
-                true => {
-                    let ret_r = f.alloc_reg(Span::empty())?;
-
-                    for param in &self.hir.sig.params {
-                        let reg = f.alloc_reg(param.name.span)?;
-                        f.declare_local(param.name, reg);
-                    }
-
-                    let ret_r = block_expr(f, body, Some(ret_r))?.unwrap_or(ret_r);
-                    f.asm.emit(Span::empty(), retv(ret_r));
+            f.with_reg(Span::empty(), None, |f, ret_r| {
+                for param in &self.hir.sig.params {
+                    let reg = f.alloc_reg(param.name.span)?;
+                    f.declare_local(param.name, reg);
                 }
-                false => {
-                    for param in &self.hir.sig.params {
-                        let reg = f.alloc_reg(param.name.span)?;
-                        f.declare_local(param.name, reg);
-                    }
 
-                    block_expr(f, body, None)?;
-                    f.asm.emit(Span::empty(), ret());
-                }
-            }
+                let out = block_expr(f, body, Some(ret_r))?;
+                maybe_move(f, out, ret_r, Span::empty())?;
 
-            Ok(())
+                use asm::*;
+                f.asm.emit(Span::empty(), ret());
+                f.asm.emit(Span::empty(), stop());
+
+                Ok(())
+            })
         })?;
 
-        let (bytecode, spans, constants) = self.asm.finish();
+        let (bytecode, spans, literals) = self.asm.finish();
         let registers = self.regalloc.total;
         Ok(Function {
             name: self.hir.name.to_string(),
             params: self.hir.sig.params.len() as u8,
             bytecode,
             spans,
-            constants,
+            literals,
             registers,
         })
     }
@@ -216,36 +206,36 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         self.regalloc.free(reg);
     }
 
-    fn alloc_const_int(&mut self, span: Span, v: i64) -> Result<Cst> {
+    fn lit_i64(&mut self, span: Span, v: i64) -> Result<Lit> {
         self.asm
-            .constants
+            .literal_pool
             .insert_int(v)
-            .map(Cst)
-            .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
+            .map(Lit)
+            .ok_or_else(|| self.compiler.ecx.too_many_literals(span))
     }
 
-    fn alloc_const_num(&mut self, span: Span, v: f64n) -> Result<Cst> {
+    fn lit_f64(&mut self, span: Span, v: f64n) -> Result<Lit> {
         self.asm
-            .constants
+            .literal_pool
             .insert_num(v)
-            .map(Cst)
-            .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
+            .map(Lit)
+            .ok_or_else(|| self.compiler.ecx.too_many_literals(span))
     }
 
-    fn alloc_const_str(&mut self, span: Span, v: Str<'src>) -> Result<Cst> {
+    fn lit_str(&mut self, span: Span, v: Str<'src>) -> Result<Lit> {
         self.asm
-            .constants
+            .literal_pool
             .insert_str(v)
-            .map(Cst)
-            .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
+            .map(Lit)
+            .ok_or_else(|| self.compiler.ecx.too_many_literals(span))
     }
 
-    fn alloc_const_jump_offset(&mut self, span: Span, v: isize) -> Result<Cst> {
+    fn lit_jump_offset(&mut self, span: Span, v: isize) -> Result<Lit> {
         self.asm
-            .constants
+            .literal_pool
             .insert_jump_offset(v)
-            .map(Cst)
-            .ok_or_else(|| self.compiler.ecx.too_many_constants(span))
+            .map(Lit)
+            .ok_or_else(|| self.compiler.ecx.too_many_literals(span))
     }
 
     fn scope<T>(&mut self, inner: impl FnOnce(&mut Self) -> T) -> T {
@@ -262,15 +252,15 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         reg: Option<Reg>,
         inner: impl FnOnce(&mut Self, Reg) -> Result<T>,
     ) -> Result<T> {
-        let (free, reg) = match reg {
-            Some(reg) => (false, reg),
-            None => (true, self.alloc_reg(span)?),
-        };
-        let result = inner(self, reg);
-        if free {
-            self.free_reg(reg);
+        match reg {
+            Some(reg) => inner(self, reg),
+            None => {
+                let reg = self.alloc_reg(span)?;
+                let result = inner(self, reg);
+                self.free_reg(reg);
+                result
+            }
         }
-        result
     }
 
     #[inline]
@@ -295,7 +285,7 @@ fn let_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Let<'src>) 
         Some(reg) => reg,
         None => f.alloc_reg(hir.name.span)?,
     };
-    assign_to(f, &hir.init, dst)?;
+    output_expr(f, &hir.init, dst)?;
     f.declare_local(hir.name, dst);
     Ok(())
 }
@@ -343,10 +333,10 @@ fn expr<'src, 'a>(
 ) -> Result<Option<Reg>> {
     let span = hir.span;
     match &hir.kind {
-        hir::ExprKind::Return(_hir) => todo!(),
-        hir::ExprKind::Break(_hir) => break_expr(f, span).map(|_| None),
-        hir::ExprKind::Continue(_hir) => continue_expr(f, span).map(|_| None),
-        hir::ExprKind::Block(_hir) => break_expr(f, span).map(|_| None),
+        hir::ExprKind::Return(hir) => return_expr(f, span, hir).map(|_| None),
+        hir::ExprKind::Break(_) => break_expr(f, span).map(|_| None),
+        hir::ExprKind::Continue(_) => continue_expr(f, span).map(|_| None),
+        hir::ExprKind::Block(hir) => block_expr(f, hir, dst),
         hir::ExprKind::If(_hir) => todo!(),
         hir::ExprKind::Binary(hir) => binary_expr(f, span, hir, dst),
         hir::ExprKind::Unary(_hir) => todo!(),
@@ -359,6 +349,14 @@ fn expr<'src, 'a>(
         hir::ExprKind::AssignIndex(_hir) => todo!(),
         hir::ExprKind::Call(hir) => call_expr(f, span, hir, dst),
     }
+}
+
+fn return_expr<'src, 'a>(
+    f: &mut FunctionState<'src, 'a>,
+    span: Span,
+    hir: &'a hir::Return<'src>,
+) -> Result<()> {
+    todo!()
 }
 
 fn break_expr(f: &mut FunctionState, span: Span) -> Result<()> {
@@ -439,22 +437,22 @@ fn primitive_expr<'src, 'a>(
     let Some(dst) = dst else { return Ok(None) };
 
     match hir {
-        hir::Primitive::Int(v) => match Smi::try_new(*v) {
-            Some(v) => f.asm.emit(span, load_smi(v, dst)),
-            None => {
-                let idx = f.alloc_const_int(span, *v)?;
+        hir::Primitive::Int(v) => match i16::try_from(*v) {
+            Ok(v) => f.asm.emit(span, load_i16(v, dst)),
+            Err(_) => {
+                let idx = f.lit_i64(span, *v)?;
                 f.asm.emit(span, load_cst(idx, dst));
             }
         },
         hir::Primitive::Num(v) => {
-            let idx = f.alloc_const_num(span, *v)?;
+            let idx = f.lit_f64(span, *v)?;
             f.asm.emit(span, load_cst(idx, dst));
         }
         hir::Primitive::Bool(v) => {
             f.asm.emit(span, load_bool(*v, dst));
         }
         hir::Primitive::Str(v) => {
-            let idx = f.alloc_const_str(span, v.clone())?;
+            let idx = f.lit_str(span, v.clone())?;
             f.asm.emit(span, load_cst(idx, dst));
         }
     }
@@ -529,7 +527,7 @@ fn call_expr_direct<'src, 'a>(
         }
 
         for (arg, reg) in hir.args.iter().zip(args.iter()) {
-            assign_to(f, &arg.value, *reg)?;
+            output_expr(f, &arg.value, *reg)?;
         }
 
         use asm::*;
@@ -567,9 +565,9 @@ fn call_expr_value<'src, 'a>(
             args.push(f.alloc_reg(arg.value.span)?);
         }
 
-        assign_to(f, &hir.callee, fn_)?;
+        output_expr(f, &hir.callee, fn_)?;
         for (arg, reg) in hir.args.iter().zip(args.iter()) {
-            assign_to(f, &arg.value, *reg)?;
+            output_expr(f, &arg.value, *reg)?;
         }
 
         use asm::*;
@@ -587,6 +585,9 @@ fn call_expr_value<'src, 'a>(
     })
 }
 
+/// emit a block expression
+///
+/// this emits `mov` as needed, no need to use `assign_to`
 fn block_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::Block<'src>,
@@ -600,32 +601,7 @@ fn block_expr<'src, 'a>(
         }
 
         match (&hir.tail, dst) {
-            (Some(tail), Some(dst)) => {
-                if let Some(out) = expr(f, tail, Some(dst))? {
-                    // if `dst` refers to variable in an outer scope
-                    // then we don't need to emit a `mov`, and can instead
-                    // just return the register directly
-                    //
-                    // if `dst` refers to a variable in an inner scope,
-                    // we must emit a `mov`, because the variable will
-                    // no longer be live after the end of this block
-
-                    if out != dst && f.current_scope().values().any(|v| *v == out) {
-                        // `dst` is in current scope
-                        f.asm.emit(tail.span, mov(out, dst));
-                        Ok(None)
-                    } else {
-                        // `dst` is in outer scope
-                        Ok(Some(out))
-                    }
-                } else {
-                    Ok(None)
-                }
-            }
-            (Some(tail), None) => {
-                expr(f, tail, None)?;
-                Ok(None)
-            }
+            (Some(tail), dst) => expr(f, tail, dst),
             (None, Some(dst)) => {
                 f.asm.emit(Span::empty(), load_unit(dst));
                 Ok(None)
@@ -635,22 +611,41 @@ fn block_expr<'src, 'a>(
     })
 }
 
-fn assign_to<'src, 'a>(
+/// if `src` is Some and not `dst`, then this emits a `mov src, dst`
+///
+/// this exists to support moving out of variables
+fn maybe_move<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
-    value: &'a hir::Expr<'src>,
+    src: Option<Reg>,
     dst: Reg,
+    span: Span,
 ) -> Result<()> {
     use asm::*;
 
-    if let Some(out) = expr(f, value, Some(dst))? {
+    if let Some(src) = src {
         // `expr` was written to `out`
-        if out != dst {
+        if src != dst {
             // `out` and `dst` are different registers
-            f.asm.emit(value.span, mov(out, dst));
+            f.asm.emit(span, mov(src, dst));
         }
     }
 
     Ok(())
+}
+
+/// emit `value` and ensure the result is placed in `dst`
+///
+/// if the emit of `value` yields a register other than `dst`,
+/// then this also emits a `mov value, dst`
+///
+/// this exists to support moving out of variables
+fn output_expr<'src, 'a>(
+    f: &mut FunctionState<'src, 'a>,
+    value: &'a hir::Expr<'src>,
+    dst: Reg,
+) -> Result<()> {
+    let out = expr(f, value, Some(dst))?;
+    maybe_move(f, out, dst, value.span)
 }
 
 struct Loop {
@@ -662,7 +657,7 @@ struct Loop {
 struct Assembler<'src> {
     bytecode: Vec<Op>,
     spans: Vec<Span>,
-    constants: ConstantPoolBuilder<'src>,
+    literal_pool: LiteralPool<'src>,
 }
 
 impl<'src> Assembler<'src> {
@@ -689,11 +684,8 @@ impl<'src> Assembler<'src> {
         self.bytecode[referrer] = patched;
     }
 
-    fn finish(mut self) -> (Vec<Op>, Vec<Span>, Vec<Constant>) {
-        if !self.bytecode.ends_with(&[Op::Stop]) {
-            self.emit(Span::empty(), asm::stop());
-        }
-        (self.bytecode, self.spans, self.constants.finish())
+    fn finish(self) -> (Vec<Op>, Vec<Span>, Vec<Literal>) {
+        (self.bytecode, self.spans, self.literal_pool.finish())
     }
 }
 
@@ -711,6 +703,8 @@ impl BackwardJumpLabel {
         })
     }
 
+    /// calculates distance to this label and emits a `jmp` into `f`
+    /// using the distance as the offset
     fn emit_jmp(&self, f: &mut FunctionState, span: Span) -> Result<()> {
         let from = f.asm.bytecode.len() as isize;
         let to = self.pos;
@@ -719,6 +713,8 @@ impl BackwardJumpLabel {
         Ok(())
     }
 
+    /// calculates distance to this label and emits a `jmpf` into `f`
+    /// using the distance as the offset
     fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) -> Result<()> {
         let from = f.asm.bytecode.len() as isize;
         let to = self.pos;
@@ -753,12 +749,16 @@ impl ForwardJumpLabel {
         Ok(())
     }
 
+    /// emits a `jmp` which will be patched with the real offset
+    /// when this label is bound
     fn emit_jmp(&self, f: &mut FunctionState, span: Span) {
         let referrer = f.asm.bytecode.len();
         self.referrers.borrow_mut().push(referrer);
         f.asm.emit(span, asm::jmp(Offset::placeholder()));
     }
 
+    /// emits a `jmpf` which will be patched with the real offset
+    /// when this label is bound
     fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) {
         let referrer = f.asm.bytecode.len();
         self.referrers.borrow_mut().push(referrer);
@@ -772,7 +772,7 @@ impl Offset {
         let offset = if let Ok(offset) = i16::try_from(offset) {
             Offset::Rel(Rel(offset))
         } else {
-            Offset::Cst(f.alloc_const_jump_offset(Span::empty(), offset)?)
+            Offset::Cst(f.lit_jump_offset(Span::empty(), offset)?)
         };
         Ok(offset)
     }
@@ -923,7 +923,7 @@ pub struct Function {
     params: u8,
     bytecode: Vec<Op>,
     spans: Vec<Span>,
-    constants: Vec<Constant>,
+    literals: Vec<Literal>,
     registers: u8,
 }
 
@@ -997,12 +997,12 @@ impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
         }
         writeln!(f, " {{")?;
         writeln!(f, "  registers: {} ({} params)", fn_.registers, fn_.params)?;
-        write!(f, "  constants: ")?;
-        if fn_.constants.is_empty() {
+        write!(f, "  literals: ")?;
+        if fn_.literals.is_empty() {
             writeln!(f, "[]")?;
         } else {
             writeln!(f, "[")?;
-            for c in &fn_.constants {
+            for c in &fn_.literals {
                 writeln!(f, "    {c:?}")?;
             }
             writeln!(f, "  ]")?;

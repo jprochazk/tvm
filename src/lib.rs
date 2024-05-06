@@ -16,6 +16,7 @@ pub mod rc;
 pub mod syn;
 pub mod ty;
 pub mod value;
+pub mod vm;
 
 mod util;
 

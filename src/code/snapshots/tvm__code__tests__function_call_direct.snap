@@ -3,11 +3,12 @@ source: src/code/tests.rs
 expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v\n        }\n\n        f(10);\n    \"#)"
 ---
 function "main" {
-  registers: 2 (0 params)
-  constants: []
-  bytecode: (4 ops) [
-    smi 10, r1   // f(10);
-    call f0, r0  // 
+  registers: 3 (0 params)
+  literals: []
+  bytecode: (5 ops) [
+    smi 10, r2   // f(10);
+    call f0, r1  // 
+    unit r0      // 
     ret          // 
     stop         //   
   ]
@@ -15,10 +16,11 @@ function "main" {
 
 function "f" #0 {
   registers: 2 (1 params)
-  constants: []
-  bytecode: (2 ops) [
-    retv r1  // 
-    stop     //   
+  literals: []
+  bytecode: (3 ops) [
+    mov r1, r0  // 
+    ret         // 
+    stop        //   
   ]
 }
 

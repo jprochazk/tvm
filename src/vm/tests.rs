@@ -21,7 +21,7 @@ impl Display for DisplayValue<'_> {
             Value::Unit(_) => write!(f, "_"),
             Value::Bool(v) => write!(f, "{v}"),
             Value::I64(v) => write!(f, "{v}i"),
-            Value::F64(v) => write!(f, "{v}i"),
+            Value::F64(v) => write!(f, "{v}f"),
         }
     }
 }

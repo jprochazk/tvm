@@ -150,12 +150,21 @@ test! {
 test! {
     if_,
     r#"
+        if true {0}
+
         if a {0}
         else if b {1}
         else if c {2}
         else {0}
 
         let v: int = if true {0} else {1};
+    "#
+}
+
+test! {
+    bad_if,
+    r#"
+        let v = if true {0};
     "#
 }
 

@@ -593,6 +593,22 @@ impl<'src> ErrorCtx<'src> {
     pub fn break_outside_loop(&mut self, span: impl Into<Span>) -> Error {
         Error::spanned("cannot use `break` outside of loops", span, self.src()).into()
     }
+
+    #[inline]
+    pub fn missing_if_tail(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned(
+            "`if` used as an expression must have an `else`",
+            span,
+            self.src(),
+        )
+        .into()
+    }
+
+    #[inline]
+    pub fn emit_missing_if_tail(&mut self, span: impl Into<Span>) {
+        let e = self.missing_if_tail(span);
+        self.push(e);
+    }
 }
 
 pub struct BadReturnType<'a, 'src> {

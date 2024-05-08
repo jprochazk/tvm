@@ -1,0 +1,41 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        let v = if true {0} else {1};\n    \"#)"
+---
+Hir {
+    top_level: Block {
+        body: [
+            Let {
+                name: Ident("v"),
+                init: If {
+                    branches: [
+                        Branch {
+                            cond: Bool(
+                                true,
+                            ),
+                            body: Block {
+                                body: [],
+                                tail: Some(
+                                    Int(
+                                        0,
+                                    ),
+                                ),
+                            },
+                        },
+                    ],
+                    tail: Some(
+                        Block {
+                            body: [],
+                            tail: Some(
+                                Int(
+                                    1,
+                                ),
+                            ),
+                        },
+                    ),
+                },
+            },
+        ],
+        tail: None,
+    },
+}

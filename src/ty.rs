@@ -408,7 +408,7 @@ impl<'src> TyCtx<'src> {
             E::Break => self.infer_break(expr.span),
             E::Continue => self.infer_continue(expr.span),
             E::Block(_) => todo!("infer:Block"),
-            E::If(_) => todo!("infer:If"),
+            E::If(v) => self.infer_if(expr.span, v),
             E::Binary(v) => self.infer_binary(expr.span, v),
             E::Unary(_) => todo!("infer:Unary"),
             E::Primitive(v) => self.infer_primitive(expr.span, v),
@@ -437,6 +437,50 @@ impl<'src> TyCtx<'src> {
             span,
             ty: Ty::Unit,
             kind: ExprKind::Continue(Continue),
+        }
+    }
+
+    fn infer_if(&mut self, span: Span, v: &ast::expr::If<'src>) -> Expr<'src> {
+        // TODO: branch/tail body type does not need to be the same
+        // when if is in stmt position (therefore result is unused)
+
+        let mut branches = Vec::with_capacity(v.branches.len());
+        let mut block_ty = None;
+        for branch in &v.branches {
+            let cond = self.check_expr(&branch.cond, Bool.ty());
+            let body = self.infer_block(&branch.body);
+
+            let block_ty = *block_ty.get_or_insert_with(|| body.ty());
+            if !self.type_eq(block_ty, body.ty()) {
+                let span = body
+                    .tail
+                    .as_ref()
+                    .map(|v| v.span)
+                    .or_else(|| body.body.last().map(|v| v.span))
+                    .unwrap_or(span);
+                let p = ty_p!(self);
+                self.ecx.emit_type_mismatch(span, p(block_ty), p(body.ty()));
+                continue;
+            }
+
+            branches.push(Branch { cond, body });
+        }
+
+        let block_ty = block_ty.unwrap_or(Ty::Unit);
+        let tail = v.tail.as_ref().map(|tail| {
+            let tail = self.infer_block(tail);
+            if !self.type_eq(block_ty, tail.ty()) {
+                let p = ty_p!(self);
+                self.ecx
+                    .emit_type_mismatch(tail.span, p(block_ty), p(tail.ty()));
+            }
+            tail
+        });
+
+        Expr {
+            span,
+            ty: block_ty,
+            kind: ExprKind::If(Box::new(If { branches, tail })),
         }
     }
 

@@ -114,3 +114,10 @@ test! {
         fa != fb;
     "#
 }
+
+test! {
+    if_,
+    r#"
+        let v = if true {0} else {1};
+    "#
+}

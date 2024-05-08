@@ -20,7 +20,7 @@ where
 
 impl<Iter: Iterator, Sep> Join<Iter, Sep> {
     fn next(&self) -> Option<Iter::Item> {
-        match self.peek.borrow_mut().take() {
+        match self.peek.take() {
             Some(item) => item,
             None => self.iter.borrow_mut().next(),
         }
@@ -29,8 +29,7 @@ impl<Iter: Iterator, Sep> Join<Iter, Sep> {
     fn has_next(&self) -> bool {
         let mut iter = self.iter.borrow_mut();
         let mut peek = self.peek.borrow_mut();
-        peek.get_or_insert_with(|| iter.next());
-        peek.is_some()
+        peek.get_or_insert_with(|| iter.next()).is_some()
     }
 }
 
@@ -65,5 +64,16 @@ where
             peek: RefCell::new(None),
             sep,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn join_iter() {
+        let v = ["a", "b"];
+        assert_eq!(format!("{}", v.iter().join(',')), "a,b");
     }
 }

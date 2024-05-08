@@ -5,22 +5,20 @@ expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v\n        }
 function "main" {
   registers: 3 (0 params)
   literals: []
-  bytecode: (5 ops) [
+  bytecode: (4 ops) [
     smi 10, r2   // f(10);
     call f0, r1  // 
     unit r0      // 
-    ret          // 
-    stop         //   
+    ret          //   
   ]
 }
 
 function "f" #0 {
   registers: 2 (1 params)
   literals: []
-  bytecode: (3 ops) [
+  bytecode: (2 ops) [
     mov r1, r0  // 
-    ret         // 
-    stop        //   
+    ret         //   
   ]
 }
 

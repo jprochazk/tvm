@@ -1,0 +1,41 @@
+---
+source: src/vm/tests.rs
+expression: "run!(r#\"\n        fn add(a: int, b: int) -> int { a + b }\n\n        add(2, 3)\n    \"#)"
+---
+## Module
+
+function "main" {
+  registers: 3 (0 params)
+  literals: []
+  bytecode: (4 ops) [
+    smi 2, r1    // add(2, 3)
+    smi 3, r2    // 
+    call f0, r0  // 
+    ret          //   
+  ]
+}
+
+function "add" #0 {
+  registers: 4 (2 params)
+  literals: []
+  bytecode: (2 ops) [
+    add <i64> r1, r2, r0  // fn add(a: int, b: int) -> int { a + b }
+    ret                   //   
+  ]
+}
+
+
+## Output
+
+I64(5)
+
+## Events
+
+smi 2, r1                [_, _, _] -> [_, 2i, _]
+smi 3, r2                [_, 2i, _] -> [_, 2i, 3i]
+call f0, r0              [_, 2i, 3i]
+<frame "add" base=0, ret=3>
+add <i64> r1, r2, r0     [_, 2i, 3i, _] -> [5i, 2i, 3i, _]
+ret                      [5i, 2i, 3i, _]
+ret                      [5i, 2i, 3i]
+

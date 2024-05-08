@@ -51,7 +51,7 @@ impl<'src> ErrorCtx<'src> {
 
 #[derive(Clone)]
 pub struct Error {
-    kind: ErrorKind,
+    kind: Box<ErrorKind>,
 }
 
 #[derive(Clone)]
@@ -87,7 +87,7 @@ impl From<SimpleError> for Error {
     #[inline]
     fn from(value: SimpleError) -> Self {
         Self {
-            kind: ErrorKind::Simple(value.0),
+            kind: Box::new(ErrorKind::Simple(value.0)),
         }
     }
 }
@@ -131,8 +131,12 @@ impl From<SpannedError> for Error {
     fn from(value: SpannedError) -> Self {
         Self {
             kind: match value.0 {
-                SpannedErrorInner::Single(src, message) => ErrorKind::Single(src, message),
-                SpannedErrorInner::Multi(src, messages) => ErrorKind::Multi(src, messages),
+                SpannedErrorInner::Single(src, message) => {
+                    Box::new(ErrorKind::Single(src, message))
+                }
+                SpannedErrorInner::Multi(src, messages) => {
+                    Box::new(ErrorKind::Multi(src, messages))
+                }
             },
         }
     }
@@ -224,7 +228,7 @@ impl Debug for ErrorKind {
 
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.kind {
+        match &*self.kind {
             ErrorKind::Simple(message) => report_simple(f, message),
             ErrorKind::Single(src, message) => report_single(f, src, message),
             ErrorKind::Multi(src, messages) => report_multi(f, src, messages),

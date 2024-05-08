@@ -5,11 +5,11 @@ expression: "emit!(r#\"\n        let v = 0;\n        let v = 1.0;\n        let v
 function "main" {
   registers: 2 (0 params)
   literals: [
-    Num(1.0)
+    F64(1.0)
     Str("test")
     Str("\nyo\n")
   ]
-  bytecode: (9 ops) [
+  bytecode: (8 ops) [
     smi 0, r1       // let v = 0;
     lit [0], r1     // let v = 1.0;
     bool true, r1   // let v = true;
@@ -17,8 +17,7 @@ function "main" {
     lit [1], r1     // let v = "test";
     lit [2], r1     // let v = "\nyo\n";
     unit r0         // 
-    ret             // 
-    stop            //   
+    ret             //   
   ]
 }
 

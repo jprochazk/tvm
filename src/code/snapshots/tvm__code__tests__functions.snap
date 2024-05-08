@@ -5,31 +5,28 @@ expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v + 1\n     
 function "main" {
   registers: 1 (0 params)
   literals: []
-  bytecode: (3 ops) [
+  bytecode: (2 ops) [
     unit r0  // 
-    ret      // 
-    stop     //   
+    ret      //   
   ]
 }
 
 function "f" #0 {
   registers: 3 (1 params)
   literals: []
-  bytecode: (4 ops) [
+  bytecode: (3 ops) [
     smi 1, r2             // v + 1
     add <i64> r1, r2, r0  // 
-    ret                   // 
-    stop                  //   
+    ret                   //   
   ]
 }
 
 function "g" #1 {
   registers: 1 (0 params)
   literals: []
-  bytecode: (3 ops) [
+  bytecode: (2 ops) [
     smi 2, r0  // 2
-    ret        // 
-    stop       //   
+    ret        //   
   ]
 }
 

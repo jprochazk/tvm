@@ -1,8 +1,10 @@
+use std::fmt::Display;
+
 use crate::error::Error;
 use crate::util::JoinIter as _;
 
-fn report(e: Vec<Error>) -> String {
-    e.into_iter().join("\n").to_string()
+fn report(e: Vec<Error>) -> impl Display {
+    e.into_iter().join("\n")
 }
 
 fn _emit(input: &str) -> String {
@@ -15,8 +17,8 @@ fn _emit(input: &str) -> String {
         Err(e) => panic!("{}", report(e)),
     };
     match crate::code::compile(hir) {
-        Ok(m) => m.display(input).to_string(),
-        Err(e) => report(e),
+        Ok(m) => super::print::DisplayModule(&m, Some(input)).to_string(),
+        Err(e) => report(e).to_string(),
     }
 }
 

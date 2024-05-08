@@ -5,14 +5,13 @@ expression: "emit!(r#\"\n        loop {\n            let v = 0;\n            con
 function "main" {
   registers: 2 (0 params)
   literals: []
-  bytecode: (7 ops) [
+  bytecode: (6 ops) [
     smi 0, r1  // let v = 0;
     jmp -1     // continue;
     smi 1, r1  // let v = 1;
     jmp -3     // }
     unit r0    // 
-    ret        // 
-    stop       //   
+    ret        //   
   ]
 }
 

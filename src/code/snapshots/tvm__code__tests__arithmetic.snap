@@ -5,10 +5,10 @@ expression: "emit!(r#\"\n        let a = 1;\n        let b = 2;\n        let r =
 function "main" {
   registers: 6 (0 params)
   literals: [
-    Num(1.2)
-    Num(2.3)
+    F64(1.2)
+    F64(2.3)
   ]
-  bytecode: (27 ops) [
+  bytecode: (26 ops) [
     smi 1, r1             // let a = 1;
     smi 2, r2             // let b = 2;
     add <i64> r1, r2, r3  // let r = a + b; // Some(dst)
@@ -34,8 +34,7 @@ function "main" {
     rem <f64> r1, r2, r3  // let r = a % b; // Some(dst)
     rem <f64> r1, r2, r4  // a % b;         // None
     unit r0               // 
-    ret                   // 
-    stop                  //   
+    ret                   //   
   ]
 }
 

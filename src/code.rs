@@ -1,23 +1,24 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
+use std::sync::Arc;
 
 use crate::ast::{BinaryOp, Ident};
 use crate::error::{Error, ErrorCtx, Location, Result};
 use crate::hir::Hir;
 use crate::lex::Span;
 use crate::value::{f64n, Literal, LiteralPool};
-use crate::{hir, HashMap, Str};
+use crate::{hir, vm, HashMap, Str};
 
 pub mod op;
 use op::*;
 
-pub fn compile(hir: Hir<'_>) -> Result<Module, Vec<Error>> {
+pub fn compile(hir: Hir<'_>) -> Result<CodeUnit, Vec<Error>> {
     Compiler {
         ecx: ErrorCtx::new(hir.src),
         module_state: ModuleState {
             vars: HashMap::default(),
-            functions: FunctionTableBuilder::new(),
+            fn_table: FnTableBuilder::new(),
         },
     }
     .compile(hir)
@@ -29,32 +30,32 @@ struct Compiler<'src> {
 }
 
 impl<'src> Compiler<'src> {
-    fn compile(mut self, hir: Hir<'src>) -> Result<Module, Vec<Error>> {
+    fn compile(mut self, hir: Hir<'src>) -> Result<CodeUnit, Vec<Error>> {
         // 1. reserve a slot in the function table for each function
         for (hir_id, fn_) in hir.fns.iter() {
-            self.module_state.functions.reserve(fn_.name, hir_id);
+            self.module_state.fn_table.reserve(fn_.name, hir_id);
         }
 
         // 2. compile top-level code
         let top_level = generate_main_fn(hir.top_level);
         match function(&mut self, &top_level) {
-            Ok(fn_) => self.module_state.functions.main = fn_,
+            Ok(fn_) => self.module_state.fn_table.set_main(fn_),
             Err(e) => self.ecx.push(e),
         }
 
         // 3. compile all functions, place them into their respective slots
         for (hir_id, fn_) in hir.fns.iter() {
             match function(&mut self, fn_) {
-                Ok(fn_) => self.module_state.functions.relocate(hir_id, fn_),
+                Ok(fn_) => self.module_state.fn_table.relocate(hir_id, fn_),
                 Err(e) => self.ecx.push(e),
             }
         }
 
-        let function_table = self.module_state.functions.finish();
+        let function_table = self.module_state.fn_table.finish();
 
         self.ecx.finish()?;
 
-        Ok(Module {
+        Ok(CodeUnit {
             functions: function_table,
         })
     }
@@ -62,7 +63,7 @@ impl<'src> Compiler<'src> {
 
 struct ModuleState<'src> {
     vars: HashMap<Ident<'src>, Mvar>,
-    functions: FunctionTableBuilder,
+    fn_table: FnTableBuilder,
 }
 
 struct FunctionState<'src, 'a> {
@@ -120,7 +121,6 @@ impl<'src, 'a> FunctionState<'src, 'a> {
 
                 use asm::*;
                 f.asm.emit(Span::empty(), ret());
-                f.asm.emit(Span::empty(), stop());
 
                 Ok(())
             })
@@ -176,7 +176,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
     }
 
     fn resolve_function(&self, name: &str) -> Option<Fnid> {
-        self.compiler.module_state.functions.get_id(name)
+        self.compiler.module_state.fn_table.get_id(name)
     }
 
     fn current_scope(&self) -> &HashMap<Ident<'_>, Reg> {
@@ -614,12 +614,7 @@ fn block_expr<'src, 'a>(
 /// if `src` is Some and not `dst`, then this emits a `mov src, dst`
 ///
 /// this exists to support moving out of variables
-fn maybe_move<'src, 'a>(
-    f: &mut FunctionState<'src, 'a>,
-    src: Option<Reg>,
-    dst: Reg,
-    span: Span,
-) -> Result<()> {
+fn maybe_move(f: &mut FunctionState, src: Option<Reg>, dst: Reg, span: Span) -> Result<()> {
     use asm::*;
 
     if let Some(src) = src {
@@ -844,211 +839,96 @@ impl Symbol {
     }
 }
 
-pub struct Module {
-    functions: FunctionTable,
+pub struct CodeUnit {
+    functions: FnTable,
 }
 
-impl Module {
-    fn functions(&self) -> impl Iterator<Item = (op::Fnid, &FnTableEntry)> {
-        self.functions
-            .entries
-            .iter()
-            .enumerate()
-            .map(|(i, fn_)| (op::Fnid(i as u16), fn_))
+impl CodeUnit {
+    pub fn link(&self) -> vm::Module {
+        vm::Module {
+            main: self.functions.main.clone(),
+            functions: self.functions.script.clone(),
+        }
     }
 }
 
-struct FunctionTable {
+pub struct FnTable {
     name_to_id: BTreeMap<String, Fnid>,
     reloc_table: BTreeMap<hir::FnId, Fnid>,
-    main: Function,
-    entries: Vec<FnTableEntry>,
+    main: Arc<Function>,
+    script: Vec<Arc<Function>>,
 }
 
-struct FunctionTableBuilder {
+struct FnTableBuilder {
     next_id: u16,
-    name_to_id: BTreeMap<String, Fnid>,
-    reloc_table: BTreeMap<hir::FnId, Fnid>,
-    main: Function,
-    fns: Vec<FnTableEntry>,
+    table: FnTable,
+    empty_fn: Arc<Function>,
 }
 
-impl FunctionTableBuilder {
+impl FnTableBuilder {
     fn new() -> Self {
+        let empty_fn: Arc<Function> = Default::default();
         Self {
             next_id: 0,
-            name_to_id: BTreeMap::new(),
-            reloc_table: BTreeMap::new(),
-            main: Function::default(),
-            fns: Vec::new(),
+            table: FnTable {
+                name_to_id: BTreeMap::new(),
+                reloc_table: BTreeMap::new(),
+                main: empty_fn.clone(),
+                script: Vec::new(),
+            },
+            empty_fn,
         }
     }
 
     fn get_id(&self, name: &str) -> Option<Fnid> {
-        self.name_to_id.get(name).copied()
+        self.table.name_to_id.get(name).copied()
+    }
+
+    fn set_main(&mut self, main: Function) {
+        self.table.main = Arc::new(main);
     }
 
     fn reserve(&mut self, name: Ident<'_>, hir_id: hir::FnId) {
         let table_id = Fnid(self.next_id);
         self.next_id += 1;
 
-        self.name_to_id.insert(name.to_string(), table_id);
-        self.reloc_table.insert(hir_id, table_id);
-        self.fns.push(FnTableEntry::Script(Box::default()));
+        self.table.name_to_id.insert(name.to_string(), table_id);
+        self.table.reloc_table.insert(hir_id, table_id);
+        self.table.script.push(Arc::clone(&self.empty_fn));
     }
 
     fn relocate(&mut self, hir_id: hir::FnId, fn_: Function) {
-        self.fns[self.reloc_table[&hir_id].to_index()] = FnTableEntry::Script(Box::new(fn_));
+        let index = self.table.reloc_table[&hir_id].to_index();
+        self.table.script[index] = Arc::new(fn_);
     }
 
-    fn finish(self) -> FunctionTable {
-        FunctionTable {
-            name_to_id: self.name_to_id,
-            reloc_table: self.reloc_table,
-            main: self.main,
-            entries: self.fns,
-        }
+    fn finish(self) -> FnTable {
+        self.table
     }
-}
-
-pub enum FnTableEntry {
-    Script(Box<Function>),
-    Host(Box<ExternFunction>),
 }
 
 #[derive(Default)]
 pub struct Function {
-    // captures: Vec<Capture>,
-    name: String,
-    params: u8,
-    bytecode: Vec<Op>,
-    spans: Vec<Span>,
-    literals: Vec<Literal>,
-    registers: u8,
+    pub name: String,
+    pub params: u8,
+    pub bytecode: Vec<Op>,
+    pub spans: Vec<Span>,
+    pub literals: Vec<Literal>,
+    pub registers: u8,
 }
 
-pub struct ExternFunction {
-    // TODO: type info
-    name: String,
-}
-
-/* enum Capture {
-    NonLocal(Reg),
-    Parent(Cap),
-} */
-
-impl Display for Module {
+impl Debug for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&DisplayModule(self, None), f)
+        f.debug_struct("Function")
+            .field("name", &self.name)
+            .field("params", &self.params)
+            .field("registers", &self.registers)
+            .finish_non_exhaustive()
     }
 }
 
-impl Module {
-    pub fn display<'a, 'src>(&'a self, src: &'src str) -> DisplayModule<'a, 'src> {
-        DisplayModule(self, Some(src))
-    }
-}
-
-pub struct DisplayModule<'a, 'src>(&'a Module, Option<&'src str>);
-impl<'a, 'src> Display for DisplayModule<'a, 'src> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let DisplayModule(m, src) = self;
-
-        writeln!(
-            f,
-            "{}",
-            DisplayScriptFunction(None, &m.functions.main, *src)
-        )?;
-        for (id, fn_) in m.functions() {
-            match fn_ {
-                FnTableEntry::Script(fn_) => {
-                    writeln!(f, "{}", DisplayScriptFunction(Some(id), fn_, *src))?
-                }
-                FnTableEntry::Host(fn_) => writeln!(f, "{}", DisplayExternFunction(Some(id), fn_))?,
-            }
-        }
-        Ok(())
-    }
-}
-
-struct DisplayExternFunction<'a>(Option<op::Fnid>, &'a ExternFunction);
-impl<'a> Display for DisplayExternFunction<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self(id, fn_) = self;
-
-        write!(f, "function {:?}", fn_.name)?;
-        if let Some(id) = id {
-            write!(f, " #{id}")?;
-        }
-        writeln!(f, " {{")?;
-        writeln!(f, "  extern")?;
-        writeln!(f, "}}")
-    }
-}
-
-struct DisplayScriptFunction<'a, 'src>(Option<op::Fnid>, &'a Function, Option<&'src str>);
-impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Self(id, fn_, src) = self;
-
-        write!(f, "function {:?}", fn_.name)?;
-        if let Some(id) = id {
-            write!(f, " #{}", id.0)?;
-        }
-        writeln!(f, " {{")?;
-        writeln!(f, "  registers: {} ({} params)", fn_.registers, fn_.params)?;
-        write!(f, "  literals: ")?;
-        if fn_.literals.is_empty() {
-            writeln!(f, "[]")?;
-        } else {
-            writeln!(f, "[")?;
-            for c in &fn_.literals {
-                writeln!(f, "    {c:?}")?;
-            }
-            writeln!(f, "  ]")?;
-        }
-        writeln!(f, "  bytecode: ({} ops) [", fn_.bytecode.len())?;
-
-        let mut max_len = 0;
-        let mut instructions = Vec::with_capacity(fn_.bytecode.len());
-        for op in fn_.bytecode.iter() {
-            let s = op.to_string();
-            max_len = std::cmp::max(max_len, s.len());
-            instructions.push(s);
-        }
-
-        let mut prev_line_span = Span::empty();
-        let mut instructions = instructions.into_iter().zip(fn_.spans.iter()).peekable();
-        while let Some((instruction, span)) = instructions.next() {
-            f.write_str("    ")?;
-            'next: {
-                if let Some(src) = src {
-                    write!(f, "{instruction:max_len$}  // ")?;
-
-                    if span.is_empty() {
-                        break 'next;
-                    }
-
-                    let loc = Location::from_source_span(src, span);
-                    if prev_line_span == loc.line_span() {
-                        break 'next;
-                    }
-                    prev_line_span = loc.line_span();
-
-                    f.write_str(src[loc.line_span()].trim())?;
-                } else {
-                    write!(f, "{instruction}")?;
-                }
-            }
-            if instructions.peek().is_some() {
-                f.write_str("\n")?;
-            }
-        }
-        writeln!(f, "  ")?;
-        writeln!(f, "  ]")?;
-        writeln!(f, "}}")
-    }
-}
+#[cfg(test)]
+pub(crate) mod print;
 
 #[cfg(test)]
 mod tests;

@@ -69,8 +69,8 @@ fn insert_or_get_in<T: Clone + Eq + Hash + Into<Literal>>(
 
 #[derive(Debug)]
 pub enum Literal {
-    Int(i64),
-    Num(f64n),
+    I64(i64),
+    F64(f64n),
     Str(String),
     Jmp(isize),
 }
@@ -109,6 +109,13 @@ impl Debug for f64n {
 impl Display for f64n {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.get(), f)
+    }
+}
+
+impl From<f64n> for f64 {
+    #[inline]
+    fn from(value: f64n) -> Self {
+        value.get()
     }
 }
 
@@ -162,13 +169,13 @@ impl FromStr for f64n {
 
 impl From<i64> for Literal {
     fn from(value: i64) -> Self {
-        Literal::Int(value)
+        Literal::I64(value)
     }
 }
 
 impl From<f64n> for Literal {
     fn from(value: f64n) -> Literal {
-        Literal::Num(value)
+        Literal::F64(value)
     }
 }
 

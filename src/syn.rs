@@ -336,7 +336,7 @@ fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
         t![break] => expr_break(p).map(Expr::into_stmt),
         t![continue] => expr_continue(p).map(Expr::into_stmt),
         t![return] => expr_return(p).map(Expr::into_stmt),
-        t![if] => expr_if(p, true).map(Expr::into_stmt),
+        t![if] => expr_if(p).map(Expr::into_stmt),
         t!["{"] => block(p).map(|b| b.into_stmt()),
         _ => expr_assign(p).map(Expr::into_stmt),
     }
@@ -428,7 +428,7 @@ fn expr_return<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
   Ok(Expr::make_yield( span, value))
 } */
 
-fn expr_if<'src>(p: &mut Parser<'src>, is_stmt: bool) -> Result<Expr<'src>> {
+fn expr_if<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let if_token = p.span();
 
     assert!(p.eat(t![if]));
@@ -442,13 +442,7 @@ fn expr_if<'src>(p: &mut Parser<'src>, is_stmt: bool) -> Result<Expr<'src>> {
         }
     }
 
-    let span = p.finish(if_token);
-    if !is_stmt && tail.is_none() {
-        // TODO(syn): check that `if` has tail when used in expr context
-        p.ecx.emit_missing_if_tail(span);
-    }
-
-    Ok(expr::If::new(span, if_token, branches, tail, is_stmt))
+    Ok(expr::If::new(p.finish(if_token), if_token, branches, tail))
 }
 
 fn branch<'src>(p: &mut Parser<'src>) -> Result<Branch<'src>> {
@@ -746,7 +740,7 @@ fn expr_primary<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
         t![float] => expr_float(p),
         t![bool] => expr_bool(p),
         t![str] => expr_str(p),
-        t![if] => expr_if(p, false),
+        t![if] => expr_if(p),
         t![do] => expr_do(p),
         t!["["] => expr_array(p),
         t!["("] => expr_group(p),

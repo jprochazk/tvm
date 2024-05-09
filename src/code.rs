@@ -116,8 +116,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
                     f.declare_local(param.name, reg);
                 }
 
-                let out = block_expr(f, body, Some(ret_r))?;
-                maybe_move(f, out, ret_r, Span::empty())?;
+                block_expr(f, body, Some(ret_r))?;
 
                 use asm::*;
                 f.asm.emit(Span::empty(), ret());
@@ -332,8 +331,8 @@ fn expr<'src, 'a>(
         hir::ExprKind::Return(hir) => return_expr(f, span, hir).map(|_| None),
         hir::ExprKind::Break(_) => break_expr(f, span).map(|_| None),
         hir::ExprKind::Continue(_) => continue_expr(f, span).map(|_| None),
-        hir::ExprKind::Block(hir) => block_expr(f, hir, dst),
-        hir::ExprKind::If(hir) => if_expr(f, hir, dst),
+        hir::ExprKind::Block(hir) => block_expr(f, hir, dst).map(|_| None),
+        hir::ExprKind::If(hir) => if_expr(f, hir, dst).map(|_| None),
         hir::ExprKind::Binary(hir) => binary_expr(f, span, hir, dst),
         hir::ExprKind::Unary(_hir) => todo!(),
         hir::ExprKind::Primitive(hir) => primitive_expr(f, span, hir, dst),
@@ -407,12 +406,12 @@ fn binary_expr<'src, 'a>(
             O::Div => emit_binop!(div),
             O::Rem => emit_binop!(rem),
             // O::Pow => emit_binop!(Pow),
-            // O::Eq => emit_binop!(Eq),
-            // O::Ne => emit_binop!(Ne),
-            // O::Gt => emit_binop!(Gt),
-            // O::Lt => emit_binop!(Lt),
-            // O::Ge => emit_binop!(Ge),
-            // O::Le => emit_binop!(Le),
+            O::Eq => emit_binop!(ceq),
+            O::Ne => emit_binop!(cne),
+            O::Gt => emit_binop!(cgt),
+            O::Lt => emit_binop!(clt),
+            O::Ge => emit_binop!(cge),
+            O::Le => emit_binop!(cle),
             _ => {}
         }
 
@@ -486,17 +485,15 @@ fn call_expr<'src, 'a>(
 ) -> Result<Option<Reg>> {
     if let hir::ExprKind::UseVar(var) = &hir.callee.kind {
         if let SymbolKind::Fn(fnid) = f.resolve_symbol(var.name).kind {
-            // can do direct function call for code like this:
             //   fn f() {}
-            //   f(); // directly references a function
+            //   f(); // calling function directly
             return call_expr_direct(f, span, hir, fnid, dst);
         }
     }
 
-    // boring value call:
     //   fn f() {}
-    //   let indirection = f;
-    //   indirection();
+    //   let g = f;
+    //   g(); // calling function in variable
     call_expr_value(f, span, hir, dst)
 }
 
@@ -588,21 +585,26 @@ fn block_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::Block<'src>,
     dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+) -> Result<()> {
     f.scope(|f| {
         for v in &hir.body {
             stmt(f, v)?;
         }
 
         match (&hir.tail, dst) {
-            (Some(tail), dst) => expr(f, tail, dst),
-            (None, Some(dst)) => {
-                use asm::*;
-                f.asm.emit(Span::empty(), load_unit(dst));
-                Ok(None)
+            (Some(tail), Some(dst)) => {
+                assign_to(f, tail, dst)?;
             }
-            (None, None) => Ok(None),
+            (None, Some(dst)) => {
+                f.asm.emit(Span::empty(), asm::load_unit(dst));
+            }
+            (Some(tail), None) => {
+                expr(f, tail, None)?;
+            }
+            (None, None) => {}
         }
+
+        Ok(())
     })
 }
 
@@ -610,7 +612,7 @@ fn if_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::If<'src>,
     dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+) -> Result<()> {
     f.with_reg(hir.if_token, dst, |f, dst| {
         let exit = ForwardJumpLabel::new();
 
@@ -629,15 +631,13 @@ fn if_expr<'src, 'a>(
             next.bind(f)?;
         }
 
-        let out = if let Some(tail) = &hir.tail {
+        if let Some(tail) = &hir.tail {
             block_expr(f, tail, Some(dst))?
-        } else {
-            None
-        };
+        }
 
         exit.bind(f)?;
 
-        Ok(out)
+        Ok(())
     })
 }
 

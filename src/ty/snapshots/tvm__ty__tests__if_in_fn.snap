@@ -1,0 +1,10 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        fn test() -> int {\n            if true { 0 } else { 1 }\n        }\n    \"#)"
+---
+Hir {
+    top_level: Block {
+        body: [],
+        tail: None,
+    },
+}

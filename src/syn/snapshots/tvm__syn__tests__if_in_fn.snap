@@ -1,0 +1,57 @@
+---
+source: src/syn/tests.rs
+expression: "parse!(r#\"\n        fn test() -> int {\n            if true { 0 } else { 1 }\n        }\n    \"#)"
+---
+Ast {
+    decls: [
+        Fn {
+            name: Ident("test"),
+            params: [],
+            ret: Some(
+                Named(
+                    Named {
+                        name: Ident("int"),
+                    },
+                ),
+            ),
+            body: Block(
+                Block {
+                    body: [],
+                    tail: Some(
+                        If {
+                            branches: [
+                                Branch(
+                                    Bool(
+                                        true,
+                                    ),
+                                    Block {
+                                        body: [],
+                                        tail: Some(
+                                            Int(
+                                                0,
+                                            ),
+                                        ),
+                                    },
+                                ),
+                            ],
+                            tail: Some(
+                                Block {
+                                    body: [],
+                                    tail: Some(
+                                        Int(
+                                            1,
+                                        ),
+                                    ),
+                                },
+                            ),
+                        },
+                    ),
+                },
+            ),
+        },
+    ],
+    top_level: Block {
+        body: [],
+        tail: None,
+    },
+}

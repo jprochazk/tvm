@@ -162,13 +162,6 @@ test! {
 }
 
 test! {
-    bad_if,
-    r#"
-        let v = if true {0};
-    "#
-}
-
-test! {
     control_expressions,
     r#"
         return value;
@@ -234,5 +227,14 @@ test! {
     r#"
         "\{";
         "\}";
+    "#
+}
+
+test! {
+    if_in_fn,
+    r#"
+        fn test() -> int {
+            if true { 0 } else { 1 }
+        }
     "#
 }

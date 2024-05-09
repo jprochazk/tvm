@@ -237,12 +237,12 @@ impl Display for Error {
 }
 
 fn report_simple(out: &mut impl Write, message: &str) -> fmt::Result {
-    write!(out, "error: {message}")
+    write!(out, "{message}")
 }
 
 fn report_single(out: &mut impl Write, src: &str, message: &Message) -> fmt::Result {
     match message {
-        Message::Text(text) => writeln!(out, "error: {text}"),
+        Message::Text(text) => writeln!(out, "{text}"),
         Message::Spanned(text, span) => {
             let loc = Location::from_source_span(src, span);
             let ln = loc.line_num;
@@ -255,7 +255,7 @@ fn report_single(out: &mut impl Write, src: &str, message: &Message) -> fmt::Res
             };
             let line = &src[loc.line_start..loc.line_end];
 
-            writeln!(out, "error: {text}")?;
+            writeln!(out, "{text}")?;
             writeln!(out, "{ln} |  {line}")?;
             writeln!(out, "{:lw$} |  {:pos$}{:^<len$}", "", "", "^")
         }
@@ -273,7 +273,7 @@ fn report_multi(out: &mut impl Write, src: &str, messages: &[Message]) -> fmt::R
 impl<'src> ErrorCtx<'src> {
     #[inline]
     pub fn unexpected_token(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("unexpected token", span, self.src()).into()
+        Error::spanned("error: unexpected token", span, self.src()).into()
     }
 
     #[inline]
@@ -284,7 +284,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn expected_token(&mut self, kind: &str, span: impl Into<Span>) -> Error {
-        Error::spanned(format!("expected {kind:?}"), span, self.src()).into()
+        Error::spanned(format!("error: expected {kind:?}"), span, self.src()).into()
     }
 
     #[inline]
@@ -295,7 +295,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn no_nested_functions(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("functions may not be nested", span, self.src()).into()
+        Error::spanned("error: functions may not be nested", span, self.src()).into()
     }
 
     #[inline]
@@ -306,7 +306,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn invalid_assign_target(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("invalid assignment target", span, self.src()).into()
+        Error::spanned("error: invalid assignment target", span, self.src()).into()
     }
 
     #[inline]
@@ -317,7 +317,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn invalid_int(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("invalid integer literal", span, self.src()).into()
+        Error::spanned("error: invalid integer literal", span, self.src()).into()
     }
 
     #[inline]
@@ -328,7 +328,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn invalid_float(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("invalid float literal", span, self.src()).into()
+        Error::spanned("error: invalid float literal", span, self.src()).into()
     }
 
     #[inline]
@@ -339,7 +339,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn invalid_arg_key(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("invalid argument key", span, self.src()).into()
+        Error::spanned("error: invalid argument key", span, self.src()).into()
     }
 
     #[inline]
@@ -352,7 +352,7 @@ impl<'src> ErrorCtx<'src> {
     pub fn param_mismatch(&mut self, span: impl Into<Span>, expected: usize, got: usize) -> Error {
         let plural = if expected > 1 { "s" } else { "" };
         Error::spanned(
-            format!("expected {expected} param{plural}, got {got}"),
+            format!("error: expected {expected} param{plural}, got {got}"),
             span,
             self.src(),
         )
@@ -373,7 +373,7 @@ impl<'src> ErrorCtx<'src> {
         rhs: impl Display,
     ) -> Error {
         Error::spanned(
-            format!("type mismatch between \"{lhs}\" and \"{rhs}\""),
+            format!("error: type mismatch between \"{lhs}\" and \"{rhs}\""),
             span,
             self.src(),
         )
@@ -393,7 +393,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn undefined_var(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("undefined variable", span, self.src()).into()
+        Error::spanned("error: undefined variable", span, self.src()).into()
     }
 
     #[inline]
@@ -404,7 +404,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn unknown_type(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("type must be known at this point", span, self.src()).into()
+        Error::spanned("error: type must be known at this point", span, self.src()).into()
     }
 
     #[inline]
@@ -415,7 +415,12 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn extern_fn_body(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("an extern function may not have a body", span, self.src()).into()
+        Error::spanned(
+            "error: an extern function may not have a body",
+            span,
+            self.src(),
+        )
+        .into()
     }
 
     #[inline]
@@ -426,7 +431,12 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn extern_type_fields(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("an extern type may not have fields", span, self.src()).into()
+        Error::spanned(
+            "error: an extern type may not have fields",
+            span,
+            self.src(),
+        )
+        .into()
     }
 
     #[inline]
@@ -438,7 +448,7 @@ impl<'src> ErrorCtx<'src> {
     #[inline]
     pub fn undefined_decl(&mut self, span: impl Into<Span>, name: &str) -> Error {
         Error::spanned(
-            format!("{name:?} is not declared in this scope"),
+            format!("error: {name:?} is not declared in this scope"),
             span,
             self.src(),
         )
@@ -461,11 +471,14 @@ impl<'src> ErrorCtx<'src> {
         existing_span: impl Into<Span>,
     ) -> Error {
         Error::spanned(
-            format!("{kind} {name:?} shadows existing {existing}"),
+            format!("error: {kind} {name:?} shadows existing {existing}"),
             span,
             self.src(),
         )
-        .append_spanned(format!("existing {existing} declared here"), existing_span)
+        .append_spanned(
+            format!("note: existing {existing} declared here"),
+            existing_span,
+        )
         .into()
     }
 
@@ -497,7 +510,7 @@ impl<'src> ErrorCtx<'src> {
     #[inline]
     pub fn not_callable(&mut self, span: impl Into<Span>, ty: impl Display) -> Error {
         Error::spanned(
-            format!("this expression of type \"{ty}\" is not callable"),
+            format!("error: this expression of type \"{ty}\" is not callable"),
             span,
             self.src(),
         )
@@ -513,7 +526,9 @@ impl<'src> ErrorCtx<'src> {
     #[inline]
     pub fn extern_cons_not_callable(&mut self, span: impl Into<Span>, name: &str) -> Error {
         Error::spanned(
-            format!("{name:?} may not be constructed directly, because it is an external type"),
+            format!(
+                "error: {name:?} may not be constructed directly, because it is an external type"
+            ),
             span,
             self.src(),
         )
@@ -528,7 +543,12 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn shadowed_def(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("a type with this name already exists", span, self.src()).into()
+        Error::spanned(
+            "error: a type with this name already exists",
+            span,
+            self.src(),
+        )
+        .into()
     }
 
     #[inline]
@@ -545,7 +565,7 @@ impl<'src> ErrorCtx<'src> {
         op: impl Display,
     ) -> Error {
         Error::spanned(
-            format!("the type \"{ty}\" does not support the \"{op}\" operation"),
+            format!("error: the type \"{ty}\" does not support the \"{op}\" operation"),
             span,
             self.src(),
         )
@@ -565,7 +585,7 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn too_many_registers(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("compiler ran out of registers", span, self.src())
+        Error::spanned("error: compiler ran out of registers", span, self.src())
             .append("note: the maximum number of registers is 255")
             .append("help: reduce register usage by splitting code into multiple functions")
             .into()
@@ -573,31 +593,45 @@ impl<'src> ErrorCtx<'src> {
 
     #[inline]
     pub fn too_many_literals(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("compiler ran out of literal pool slots", span, self.src())
-            .append("note: the maximum number of literal pool slots is 65535")
-            .append("help: reduce literal pool usage by splitting code into multiple functions")
-            .into()
+        Error::spanned(
+            "error: compiler ran out of literal pool slots",
+            span,
+            self.src(),
+        )
+        .append("note: the maximum number of literal pool slots is 65535")
+        .append("help: reduce literal pool usage by splitting code into multiple functions")
+        .into()
     }
 
     #[inline]
     pub fn invalid_escape_sequence(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("invalid escape sequence", span, self.src()).into()
+        Error::spanned("error: invalid escape sequence", span, self.src()).into()
     }
 
     #[inline]
     pub fn continue_outside_loop(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("cannot use `continue` outside of loops", span, self.src()).into()
+        Error::spanned(
+            "error: cannot use `continue` outside of loops",
+            span,
+            self.src(),
+        )
+        .into()
     }
 
     #[inline]
     pub fn break_outside_loop(&mut self, span: impl Into<Span>) -> Error {
-        Error::spanned("cannot use `break` outside of loops", span, self.src()).into()
+        Error::spanned(
+            "error: cannot use `break` outside of loops",
+            span,
+            self.src(),
+        )
+        .into()
     }
 
     #[inline]
     pub fn missing_if_tail(&mut self, span: impl Into<Span>) -> Error {
         Error::spanned(
-            "`if` used as an expression must have an `else`",
+            "error: `if` used as an expression must have an `else`",
             span,
             self.src(),
         )
@@ -639,15 +673,19 @@ impl<'a, 'src> BadReturnType<'a, 'src> {
     }
 
     pub fn finish(&mut self) -> Error {
-        let mut err = Error::spanned("mismatched return type", self.name_span, self.ecx.src());
+        let mut err = Error::spanned(
+            "error: mismatched return type",
+            self.name_span,
+            self.ecx.src(),
+        );
 
-        let msg = format!("the return type is \"{}\"", self.fn_ret);
+        let msg = format!("note: the expected return type is \"{}\"", self.fn_ret);
         match self.fn_ret_span {
             Some(span) => err = err.append_spanned(msg, span),
             None => err = err.append(msg),
         }
 
-        let msg = format!("the return type is \"{}\"", self.ret_val);
+        let msg = format!("note: the actual return type is \"{}\"", self.ret_val);
         match self.ret_val_span {
             Some(span) => err = err.append_spanned(msg, span),
             None => err = err.append(msg),

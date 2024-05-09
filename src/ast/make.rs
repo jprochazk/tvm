@@ -117,7 +117,6 @@ impl<'src> expr::If<'src> {
         if_token: Span,
         branches: Vec<Branch<'src>>,
         tail: Option<Block<'src>>,
-        is_stmt: bool,
     ) -> Expr<'src> {
         Expr {
             span: span.into(),
@@ -126,7 +125,6 @@ impl<'src> expr::If<'src> {
                 if_token,
                 branches,
                 tail,
-                is_stmt,
             })),
         }
     }

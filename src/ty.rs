@@ -349,7 +349,10 @@ impl<'src> TyCtx<'src> {
         for stmt in &block.body {
             body.push(self.infer_stmt(stmt));
         }
-        let tail = block.tail.as_ref().map(|tail| self.infer_expr(tail));
+        let tail = block
+            .tail
+            .as_ref()
+            .map(|tail| self.infer_expr(tail, NoDiscard));
         self.leave_scope();
 
         Block {
@@ -363,14 +366,14 @@ impl<'src> TyCtx<'src> {
         match &stmt.kind {
             ast::stmt::StmtKind::Let(v) => self.infer_let(stmt.span, v),
             ast::stmt::StmtKind::Loop(v) => self.infer_loop(stmt.span, v),
-            ast::stmt::StmtKind::Expr(v) => self.infer_expr(v).into_stmt(),
+            ast::stmt::StmtKind::Expr(v) => self.infer_expr(v, Discard).into_stmt(),
         }
     }
 
     fn infer_let(&mut self, span: Span, v: &ast::stmt::Let<'src>) -> Stmt<'src> {
         let init = match v.ty.as_ref().map(|ty| self.resolve_ast_ty(ty)) {
-            Some(ty) => self.check_expr(&v.init, ty),
-            None => self.infer_expr(&v.init),
+            Some(ty) => self.check_expr(&v.init, ty, NoDiscard),
+            None => self.infer_expr(&v.init, NoDiscard),
         };
         match self.check_symbol(&v.name, SymbolKind::Var) {
             Ok(_) => self.declare_symbol(v.name, init.ty, SymbolKind::Var),
@@ -391,8 +394,8 @@ impl<'src> TyCtx<'src> {
         }
     }
 
-    fn check_expr(&mut self, expr: &ast::Expr<'src>, ty: Ty) -> Expr<'src> {
-        let mut expr = self.infer_expr(expr);
+    fn check_expr(&mut self, expr: &ast::Expr<'src>, ty: Ty, intent: Intent) -> Expr<'src> {
+        let mut expr = self.infer_expr(expr, intent);
         if !self.type_eq(expr.ty, ty) {
             let p = ty_p!(self);
             self.ecx.emit_type_mismatch(expr.span, p(expr.ty), p(ty));
@@ -401,14 +404,14 @@ impl<'src> TyCtx<'src> {
         expr
     }
 
-    fn infer_expr(&mut self, expr: &ast::Expr<'src>) -> Expr<'src> {
+    fn infer_expr(&mut self, expr: &ast::Expr<'src>, intent: Intent) -> Expr<'src> {
         use ast::expr::ExprKind as E;
         match &expr.kind {
             E::Return(_) => todo!("infer:Return"),
             E::Break => self.infer_break(expr.span),
             E::Continue => self.infer_continue(expr.span),
             E::Block(_) => todo!("infer:Block"),
-            E::If(v) => self.infer_if(expr.span, v),
+            E::If(v) => self.infer_if(expr.span, v, intent),
             E::Binary(v) => self.infer_binary(expr.span, v),
             E::Unary(_) => todo!("infer:Unary"),
             E::Primitive(v) => self.infer_primitive(expr.span, v),
@@ -440,17 +443,22 @@ impl<'src> TyCtx<'src> {
         }
     }
 
-    fn infer_if(&mut self, span: Span, v: &ast::expr::If<'src>) -> Expr<'src> {
+    fn infer_if(&mut self, span: Span, v: &ast::expr::If<'src>, intent: Intent) -> Expr<'src> {
         // TODO: branch/tail body type does not need to be the same
         // when if is in stmt position (therefore result is unused)
+
+        if intent == NoDiscard && v.tail.is_none() {
+            // TODO(syn): check that `if` has tail when used in expr context
+            self.ecx.emit_missing_if_tail(span);
+        }
 
         let mut branches = Vec::with_capacity(v.branches.len());
         let mut block_ty = None;
         for branch in &v.branches {
-            let cond = self.check_expr(&branch.cond, Bool.ty());
+            let cond = self.check_expr(&branch.cond, Bool.ty(), NoDiscard);
             let body = self.infer_block(&branch.body);
 
-            if !v.is_stmt {
+            if intent == NoDiscard {
                 let block_ty = *block_ty.get_or_insert_with(|| body.ty());
                 if !self.type_eq(block_ty, body.ty()) {
                     let span = body
@@ -471,7 +479,7 @@ impl<'src> TyCtx<'src> {
         let block_ty = block_ty.unwrap_or(Ty::Unit);
         let tail = v.tail.as_ref().map(|tail| {
             let tail = self.infer_block(tail);
-            if !v.is_stmt && !self.type_eq(block_ty, tail.ty()) {
+            if intent == NoDiscard && !self.type_eq(block_ty, tail.ty()) {
                 let p = ty_p!(self);
                 self.ecx
                     .emit_type_mismatch(tail.span, p(block_ty), p(tail.ty()));
@@ -508,12 +516,6 @@ impl<'src> TyCtx<'src> {
                 return Ty::Error;
             }
 
-            if !tcx.type_supports_binop(rhs.ty, op) {
-                let p = ty_p!(tcx);
-                tcx.ecx.emit_unsupported_op(span, p(rhs.ty), op);
-                return Ty::Error;
-            }
-
             if !tcx.type_eq(lhs.ty, rhs.ty) {
                 let p = ty_p!(tcx);
                 tcx.ecx.emit_type_mismatch(span, p(lhs.ty), p(rhs.ty));
@@ -528,9 +530,9 @@ impl<'src> TyCtx<'src> {
             }
         }
 
-        let lhs = self.infer_expr(&v.lhs);
+        let lhs = self.infer_expr(&v.lhs, NoDiscard);
         let op = v.op;
-        let rhs = self.infer_expr(&v.rhs);
+        let rhs = self.infer_expr(&v.rhs, NoDiscard);
         let ty = get_binop_ret_ty(self, span, &lhs, &rhs, op);
 
         Expr {
@@ -572,13 +574,13 @@ impl<'src> TyCtx<'src> {
     }
 
     fn infer_call_expr(&mut self, span: Span, v: &ast::expr::Call<'src>) -> Expr<'src> {
-        let callee = self.infer_expr(&v.callee);
+        let callee = self.infer_expr(&v.callee, NoDiscard);
         let args = v
             .args
             .iter()
             .map(|arg| Arg {
                 key: arg.key,
-                value: self.infer_expr(&arg.value),
+                value: self.infer_expr(&arg.value, NoDiscard),
             })
             .collect::<Vec<_>>();
         let ty = self.check_call(callee.span, callee.ty, &args);
@@ -760,6 +762,13 @@ fn register_primitive_types(tcx: &mut TyCtx<'_>) {
         );
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Intent {
+    NoDiscard,
+    Discard,
+}
+use Intent::*;
 
 #[derive(Clone, Copy)]
 pub struct TyPrinter<'a, 'src> {

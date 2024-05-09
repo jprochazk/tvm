@@ -1,5 +1,6 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt::{Display, Write};
+use std::panic::catch_unwind;
 
 use super::*;
 use crate::code::print::DisplayModule;
@@ -12,6 +13,7 @@ fn report(e: Vec<Error>) -> String {
 
 thread_local! {
     static EVENTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static COLLECT_EVENTS: Cell<bool> = const { Cell::new(true) };
 }
 
 struct DisplayValue<'a>(&'a Value);
@@ -43,8 +45,11 @@ impl Display for StackFrame<'_> {
 }
 
 fn debug_hook(event: DebugEvent) {
-    const ALIGN: usize = 24;
+    if !COLLECT_EVENTS.get() {
+        return;
+    }
 
+    const ALIGN: usize = 24;
     EVENTS.with_borrow_mut(|events| match event {
         DebugEvent::Dispatch { op, stack_frame } => {
             let op = op.to_string();
@@ -56,6 +61,16 @@ fn debug_hook(event: DebugEvent) {
         }
         DebugEvent::Call { call_frame } => events.push(format!("{}", call_frame)),
     })
+}
+
+fn get_panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    match payload.downcast::<&'static str>() {
+        Ok(s) => String::from(*s),
+        Err(payload) => match payload.downcast::<String>() {
+            Ok(s) => *s,
+            Err(_) => "<failed to get panic message>".into(),
+        },
+    }
 }
 
 fn _run(input: &str) -> String {
@@ -81,18 +96,23 @@ fn _run(input: &str) -> String {
     .unwrap();
 
     write!(&mut out, "## Output\n\n").unwrap();
-    match code.link().debug(debug_hook) {
-        Ok(value) => {
+    match catch_unwind(|| code.link().debug(debug_hook)) {
+        Ok(Ok(value)) => {
             writeln!(&mut out, "{value:?}\n").unwrap();
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             writeln!(&mut out, "{}\n", report(vec![e])).unwrap();
+        }
+        Err(payload) => {
+            writeln!(&mut out, "PANIC: {}\n", get_panic_message(payload)).unwrap();
         }
     };
 
-    EVENTS.with_borrow(|events| {
-        writeln!(&mut out, "## Events\n\n{}", events.iter().join("\n")).unwrap();
-    });
+    if COLLECT_EVENTS.get() {
+        EVENTS.with_borrow(|events| {
+            writeln!(&mut out, "## Events\n\n{}", events.iter().join("\n")).unwrap();
+        });
+    }
 
     out
 }
@@ -108,6 +128,14 @@ macro_rules! test {
         #[test]
         fn $name() {
             insta::assert_snapshot!(run!($input))
+        }
+    };
+    ($name:ident, silent, $input:literal) => {
+        #[test]
+        fn $name() {
+            COLLECT_EVENTS.set(false);
+            insta::assert_snapshot!(run!($input));
+            COLLECT_EVENTS.set(true);
         }
     };
 }
@@ -177,5 +205,18 @@ test! {
         fn add(a: int, b: int) -> int { id(a) + id(b) }
 
         add(id(2), id(3))
+    "#
+}
+
+test! {
+    fibonacci,
+    silent,
+    r#"
+        fn fib(n: int) -> int {
+            if n < 2 { n }
+            else { fib(n - 1) + fib(n - 2) }
+        }
+
+        fib(3) + fib(7)
     "#
 }

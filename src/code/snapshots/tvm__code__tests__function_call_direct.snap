@@ -17,7 +17,7 @@ function "f" #0 {
   registers: 2 (1 params)
   literals: []
   bytecode: (2 ops) [
-    mov r1, r0  // 
+    mov r1, r0  // v
     ret         //   
   ]
 }

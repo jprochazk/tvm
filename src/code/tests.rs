@@ -115,6 +115,21 @@ test! {
 }
 
 test! {
+    comparison,
+    r#"
+        let a = 1;
+        let b = 2;
+
+        a == b;
+        a != b;
+        a < b;
+        a > b;
+        a <= b;
+        a >= b;
+    "#
+}
+
+test! {
     functions,
     r#"
         fn f(v: int) -> int {
@@ -211,5 +226,16 @@ test! {
         } else {
             2
         };
+    "#
+}
+
+test! {
+    fibonacci,
+    r#"
+        fn fib(n: int) -> int {
+            if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+        }
+
+        fib(15)
     "#
 }

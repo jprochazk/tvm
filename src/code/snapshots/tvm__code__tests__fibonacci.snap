@@ -1,0 +1,36 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        fn fib(n: int) -> int {\n            if n < 2 { n } else { fib(n - 1) + fib(n - 2) }\n        }\n\n        fib(15)\n    \"#)"
+---
+function "main" {
+  registers: 2 (0 params)
+  literals: []
+  bytecode: (3 ops) [
+    smi 15, r1   // fib(15)
+    call f0, r0  // 
+    ret          //   
+  ]
+}
+
+function "fib" #0 {
+  registers: 5 (1 params)
+  literals: []
+  bytecode: (14 ops) [
+    smi 2, r2             // if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+    clt <i64> r1, r2, r0  // 
+    jmpf r0, +3           // 
+    mov r1, r0            // 
+    jmp +9                // 
+    smi 1, r4             // 
+    sub <i64> r1, r4, r3  // 
+    call f0, r2           // 
+    mov r2, r0            // 
+    smi 2, r4             // 
+    sub <i64> r1, r4, r3  // 
+    call f0, r2           // 
+    add <i64> r0, r2, r0  // 
+    ret                   //   
+  ]
+}
+
+

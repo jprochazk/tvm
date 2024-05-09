@@ -1,8 +1,0 @@
----
-source: src/syn/tests.rs
-expression: "parse!(r#\"\n        let v = if true {0};\n    \"#)"
----
-error: `if` used as an expression must have an `else`
-1 |  let v = if true {0};
-  |          ^^^^^^^^^^^
-

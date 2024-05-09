@@ -18,6 +18,27 @@ pub struct State<'a> {
     debug_hook: DebugHook,
 }
 
+macro_rules! invoke_hook {
+    ($hook:ident, dispatch, $op:ident, $vstack:ident, $current_frame:ident) => {{
+        #[cfg(test)]
+        {
+            $hook(DebugEvent::Dispatch {
+                op: $op,
+                stack_frame: StackFrame::get($vstack, &$current_frame),
+            });
+        };
+    }};
+
+    ($hook:ident, post_dispatch, $vstack:ident, $current_frame:ident) => {{
+        #[cfg(test)]
+        {
+            $hook(DebugEvent::PostDispatch {
+                stack_frame: StackFrame::get($vstack, &$current_frame),
+            });
+        };
+    }};
+}
+
 impl State<'_> {
     fn interpret(&mut self) -> Result<Value> {
         let State {
@@ -36,6 +57,18 @@ impl State<'_> {
             stack_base: 0,
         };
 
+        macro_rules! dispatch {
+            (next) => {
+                *ip += 1;
+                invoke_hook!(debug_hook, post_dispatch, vstack, current_frame);
+                continue;
+            };
+            (current) => {
+                invoke_hook!(debug_hook, post_dispatch, vstack, current_frame);
+                continue;
+            };
+        }
+
         'setup_frame: loop {
             let callee = current_frame.callee.clone();
             let code = &callee.bytecode[..];
@@ -43,124 +76,287 @@ impl State<'_> {
 
             loop {
                 let op = code[*ip as usize];
-
-                #[cfg(test)]
-                {
-                    debug_hook(DebugEvent::Dispatch {
-                        op,
-                        stack_frame: StackFrame::get(vstack, &current_frame),
-                    });
-                }
-
+                invoke_hook!(debug_hook, dispatch, op, vstack, current_frame);
                 match op {
                     Op::Nop => {
                         // no-op
+                        dispatch!(next);
                     }
 
                     Op::Mov { src, dst } => {
                         let value = vstack.get_raw(src);
                         vstack.set(dst, value);
+                        dispatch!(next);
                     }
 
                     Op::Load_Literal { token, dst, src } => {
                         let value = pool.get(src, token);
                         vstack.set(dst, value);
+                        dispatch!(next);
                     }
 
                     Op::Load_Unit { dst } => {
                         vstack.set(dst, Value::Unit(()));
+                        dispatch!(next);
                     }
 
                     Op::Load_Fn { dst, id } => todo!(),
 
                     Op::Load_I16 { dst, val } => {
                         vstack.set(dst, Value::I64(val as i64));
+                        dispatch!(next);
                     }
 
                     Op::Load_Bool { val, dst } => {
                         vstack.set(dst, Value::Bool(val));
+                        dispatch!(next);
                     }
 
                     Op::Jump { offset } => {
                         *ip += offset.sign_extend();
+                        dispatch!(current);
                     }
 
                     Op::Jump_Long { token, offset } => {
                         let offset = pool.get(offset, token);
                         *ip += offset;
+                        dispatch!(current);
                     }
 
-                    Op::JumpIfFalse { cond, offset } => todo!(),
+                    Op::JumpIfFalse { ty, cond, offset } => {
+                        let cond = vstack.get(cond, ty);
+                        if !cond {
+                            *ip += offset.sign_extend();
+                        } else {
+                            *ip += 1;
+                        }
+                        dispatch!(current);
+                    }
+
                     Op::JumpIfFalse_Long {
+                        ty,
                         token,
                         cond,
                         offset,
-                    } => todo!(),
+                    } => {
+                        let cond = vstack.get(cond, ty);
+                        let offset = pool.get(offset, token);
+                        if !cond {
+                            *ip += offset;
+                        } else {
+                            *ip += 1;
+                        }
+                        dispatch!(current);
+                    }
 
                     Op::Add_I64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, +, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, +, =dst);
+                        dispatch!(next);
+                    }
                     Op::Add_F64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, +, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, +, =dst);
+                        dispatch!(next);
+                    }
 
                     Op::Sub_I64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, -, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, -, =dst);
+                        dispatch!(next);
+                    }
                     Op::Sub_F64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, -, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, -, =dst);
+                        dispatch!(next);
+                    }
 
                     Op::Mul_I64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, *, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, *, =dst);
+                        dispatch!(next);
+                    }
                     Op::Mul_F64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, *, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, *, =dst);
+                        dispatch!(next);
+                    }
 
                     Op::Div_I64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, /, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, /, =dst);
+                        dispatch!(next);
+                    }
                     Op::Div_F64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, /, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, /, =dst);
+                        dispatch!(next);
+                    }
 
                     Op::Rem_I64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, %, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, %, =dst);
+                        dispatch!(next);
+                    }
                     Op::Rem_F64 {
                         token,
                         lhs,
                         rhs,
                         dst,
-                    } => binary_op!(vstack, token, lhs, rhs, %, =dst),
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, %, =dst);
+                        dispatch!(next);
+                    }
+
+                    Op::Compare_Eq_I64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, ==, =dst);
+                        dispatch!(next);
+                    }
+                    Op::Compare_Eq_F64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, ==, =dst);
+                        dispatch!(next);
+                    }
+
+                    Op::Compare_Ne_I64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, !=, =dst);
+                        dispatch!(next);
+                    }
+                    Op::Compare_Ne_F64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, !=, =dst);
+                        dispatch!(next);
+                    }
+
+                    Op::Compare_Gt_I64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, >, =dst);
+                        dispatch!(next);
+                    }
+                    Op::Compare_Gt_F64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, >, =dst);
+                        dispatch!(next);
+                    }
+
+                    Op::Compare_Lt_I64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, <, =dst);
+                        dispatch!(next);
+                    }
+                    Op::Compare_Lt_F64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, <, =dst);
+                        dispatch!(next);
+                    }
+
+                    Op::Compare_Ge_I64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, >=, =dst);
+                        dispatch!(next);
+                    }
+                    Op::Compare_Ge_F64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, >=, =dst);
+                        dispatch!(next);
+                    }
+
+                    Op::Compare_Le_I64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, <=, =dst);
+                        dispatch!(next);
+                    }
+                    Op::Compare_Le_F64 {
+                        token,
+                        lhs,
+                        rhs,
+                        dst,
+                    } => {
+                        binary_op!(vstack, token, lhs, rhs, <=, =dst);
+                        dispatch!(next);
+                    }
 
                     Op::Call_Id { ret, callee } => {
                         let callee = functions.get(callee);
@@ -199,15 +395,6 @@ impl State<'_> {
                         None => return Ok(vstack.ret()),
                     },
                 }
-
-                #[cfg(test)]
-                {
-                    debug_hook(DebugEvent::PostDispatch {
-                        stack_frame: StackFrame::get(vstack, &current_frame),
-                    });
-                }
-
-                *ip += 1;
             }
         }
     }
@@ -258,7 +445,13 @@ impl<'a> Literals<'a> {
     fn get<Token: token::Cast<Literal>>(&self, src: Lit, token: Token) -> Token::Output {
         unsafe {
             let value = core::ptr::read(self.pool.get_unchecked(src.to_index()));
-            token.cast(value).unwrap_unchecked()
+            let out = token.cast(value);
+            debug_assert!(
+                out.is_some(),
+                "cast failed: {token:?} {:?}",
+                core::ptr::read(self.pool.get_unchecked(src.to_index()))
+            );
+            out.unwrap_unchecked()
         }
     }
 }
@@ -327,7 +520,9 @@ impl Stack {
     fn get<Token: token::Cast<Value>>(&self, src: Reg, token: Token) -> Token::Output {
         unsafe {
             let value = self.get_raw(src);
-            token.cast(value).unwrap_unchecked()
+            let out = token.cast(value);
+            debug_assert!(out.is_some(), "cast failed: {token:?} {value:?}");
+            out.unwrap_unchecked()
         }
     }
 }
@@ -344,20 +539,24 @@ pub struct Module {
     pub(crate) functions: Vec<Arc<Function>>,
 }
 
+#[cfg(test)]
 enum DebugEvent<'a> {
     Dispatch { op: Op, stack_frame: StackFrame<'a> },
     PostDispatch { stack_frame: StackFrame<'a> },
     Call { call_frame: &'a CallFrame },
 }
 
+#[cfg(test)]
 struct StackFrame<'a>(&'a [Value]);
 
+#[cfg(test)]
 impl<'a> StackFrame<'a> {
     fn get(stack: &'a Stack, call_frame: &CallFrame) -> Self {
         Self(&stack.inner[stack.base..stack.base + call_frame.callee.registers as usize])
     }
 }
 
+#[cfg(test)]
 type DebugHook = fn(DebugEvent<'_>);
 
 impl<'a> State<'a> {
@@ -394,8 +593,8 @@ pub mod token {
     use crate::vm::Value;
 
     #[doc(hidden)]
-    pub(crate) trait Cast<Input>: Sized {
-        type Output;
+    pub(crate) trait Cast<Input>: Copy + Clone + Sized + std::fmt::Debug {
+        type Output: std::fmt::Debug;
 
         fn cast(self, value: Input) -> Option<Self::Output>;
     }

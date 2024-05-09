@@ -135,3 +135,12 @@ test! {
         let v: int = if true {1.0} else {1.0};
     "#
 }
+
+test! {
+    if_in_fn,
+    r#"
+        fn test() -> int {
+            if true { 0 } else { 1 }
+        }
+    "#
+}

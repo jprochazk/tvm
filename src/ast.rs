@@ -146,8 +146,10 @@ pub mod expr {
     pub struct Continue;
 
     pub struct If<'src> {
+        pub if_token: Span,
         pub branches: Vec<Branch<'src>>,
         pub tail: Option<Block<'src>>,
+        pub is_stmt: bool,
     }
 
     pub struct Binary<'src> {

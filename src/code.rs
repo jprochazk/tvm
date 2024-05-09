@@ -1,10 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::ast::{BinaryOp, Ident};
-use crate::error::{Error, ErrorCtx, Location, Result};
+use crate::error::{Error, ErrorCtx, Result};
 use crate::hir::Hir;
 use crate::lex::Span;
 use crate::value::{f64n, Literal, LiteralPool};
@@ -179,10 +179,6 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         self.compiler.module_state.fn_table.get_id(name)
     }
 
-    fn current_scope(&self) -> &HashMap<Ident<'_>, Reg> {
-        self.locals.last().unwrap()
-    }
-
     fn resolve_local_in_current_scope(&self, name: &str) -> Option<Reg> {
         self.locals
             .last()
@@ -285,7 +281,7 @@ fn let_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Let<'src>) 
         Some(reg) => reg,
         None => f.alloc_reg(hir.name.span)?,
     };
-    output_expr(f, &hir.init, dst)?;
+    assign_to(f, &hir.init, dst)?;
     f.declare_local(hir.name, dst);
     Ok(())
 }
@@ -337,7 +333,7 @@ fn expr<'src, 'a>(
         hir::ExprKind::Break(_) => break_expr(f, span).map(|_| None),
         hir::ExprKind::Continue(_) => continue_expr(f, span).map(|_| None),
         hir::ExprKind::Block(hir) => block_expr(f, hir, dst),
-        hir::ExprKind::If(_hir) => todo!(),
+        hir::ExprKind::If(hir) => if_expr(f, hir, dst),
         hir::ExprKind::Binary(hir) => binary_expr(f, span, hir, dst),
         hir::ExprKind::Unary(_hir) => todo!(),
         hir::ExprKind::Primitive(hir) => primitive_expr(f, span, hir, dst),
@@ -527,7 +523,7 @@ fn call_expr_direct<'src, 'a>(
         }
 
         for (arg, reg) in hir.args.iter().zip(args.iter()) {
-            output_expr(f, &arg.value, *reg)?;
+            assign_to(f, &arg.value, *reg)?;
         }
 
         use asm::*;
@@ -565,9 +561,9 @@ fn call_expr_value<'src, 'a>(
             args.push(f.alloc_reg(arg.value.span)?);
         }
 
-        output_expr(f, &hir.callee, fn_)?;
+        assign_to(f, &hir.callee, fn_)?;
         for (arg, reg) in hir.args.iter().zip(args.iter()) {
-            output_expr(f, &arg.value, *reg)?;
+            assign_to(f, &arg.value, *reg)?;
         }
 
         use asm::*;
@@ -593,8 +589,6 @@ fn block_expr<'src, 'a>(
     hir: &'a hir::Block<'src>,
     dst: Option<Reg>,
 ) -> Result<Option<Reg>> {
-    use asm::*;
-
     f.scope(|f| {
         for v in &hir.body {
             stmt(f, v)?;
@@ -603,11 +597,47 @@ fn block_expr<'src, 'a>(
         match (&hir.tail, dst) {
             (Some(tail), dst) => expr(f, tail, dst),
             (None, Some(dst)) => {
+                use asm::*;
                 f.asm.emit(Span::empty(), load_unit(dst));
                 Ok(None)
             }
             (None, None) => Ok(None),
         }
+    })
+}
+
+fn if_expr<'src, 'a>(
+    f: &mut FunctionState<'src, 'a>,
+    hir: &'a hir::If<'src>,
+    dst: Option<Reg>,
+) -> Result<Option<Reg>> {
+    f.with_reg(hir.if_token, dst, |f, dst| {
+        let exit = ForwardJumpLabel::new();
+
+        let mut branches = hir.branches.iter().peekable();
+        while let Some(branch) = branches.next() {
+            let next = SingleJumpLabel::new();
+
+            assign_to(f, &branch.cond, dst)?;
+            next.emit_jmpf(f, branch.cond.span, dst);
+
+            block_expr(f, &branch.body, Some(dst))?;
+            if hir.tail.is_some() || branches.peek().is_some() {
+                exit.emit_jmp(f, branch.cond.span);
+            }
+
+            next.bind(f)?;
+        }
+
+        let out = if let Some(tail) = &hir.tail {
+            block_expr(f, tail, Some(dst))?
+        } else {
+            None
+        };
+
+        exit.bind(f)?;
+
+        Ok(out)
     })
 }
 
@@ -634,7 +664,7 @@ fn maybe_move(f: &mut FunctionState, src: Option<Reg>, dst: Reg, span: Span) -> 
 /// then this also emits a `mov value, dst`
 ///
 /// this exists to support moving out of variables
-fn output_expr<'src, 'a>(
+fn assign_to<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     value: &'a hir::Expr<'src>,
     dst: Reg,
@@ -757,6 +787,45 @@ impl ForwardJumpLabel {
     fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) {
         let referrer = f.asm.bytecode.len();
         self.referrers.borrow_mut().push(referrer);
+        f.asm.emit(span, asm::jmpf(cond, Offset::placeholder()));
+    }
+}
+
+struct SingleJumpLabel {
+    referrer: Cell<Option<usize>>,
+}
+
+impl SingleJumpLabel {
+    fn new() -> Self {
+        Self {
+            referrer: Cell::new(None),
+        }
+    }
+
+    fn bind(self, f: &mut FunctionState) -> Result<()> {
+        let to = f.asm.bytecode.len() as isize;
+        if let Some(referrer) = self.referrer.get() {
+            let from = referrer as isize;
+            let offset = Offset::get(f, from, to)?;
+            f.asm.patch_jump(referrer, offset);
+        }
+
+        Ok(())
+    }
+
+    /// emits a `jmp` which will be patched with the real offset
+    /// when this label is bound
+    fn emit_jmp(&self, f: &mut FunctionState, span: Span) {
+        let referrer = f.asm.bytecode.len();
+        self.referrer.set(Some(referrer));
+        f.asm.emit(span, asm::jmp(Offset::placeholder()));
+    }
+
+    /// emits a `jmpf` which will be patched with the real offset
+    /// when this label is bound
+    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) {
+        let referrer = f.asm.bytecode.len();
+        self.referrer.set(Some(referrer));
         f.asm.emit(span, asm::jmpf(cond, Offset::placeholder()));
     }
 }

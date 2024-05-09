@@ -348,6 +348,7 @@ pub struct Continue;
 
 #[derive(Debug)]
 pub struct If<'src> {
+    pub if_token: Span,
     pub branches: Vec<Branch<'src>>,
     pub tail: Option<Block<'src>>,
 }

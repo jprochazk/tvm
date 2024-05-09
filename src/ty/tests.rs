@@ -118,6 +118,20 @@ test! {
 test! {
     if_,
     r#"
+        if true {
+            0
+        } else {
+            1.0
+        }
+
         let v = if true {0} else {1};
+    "#
+}
+
+test! {
+    bad_if,
+    r#"
+        let v = if true {0} else {1.0};
+        let v: int = if true {1.0} else {1.0};
     "#
 }

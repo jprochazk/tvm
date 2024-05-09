@@ -187,3 +187,29 @@ test! {
         }
     "#
 }
+
+test! {
+    if_expr,
+    r#"
+        if true {
+            0
+        } else if true {
+            1
+        } else {
+            2
+        }
+    "#
+}
+
+test! {
+    if_stmt,
+    r#"
+        if true {
+            0
+        } else if true {
+            1
+        } else {
+            2
+        };
+    "#
+}

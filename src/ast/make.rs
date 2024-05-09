@@ -114,13 +114,20 @@ impl<'src> expr::Return<'src> {
 impl<'src> expr::If<'src> {
     pub fn new(
         span: impl Into<Span>,
+        if_token: Span,
         branches: Vec<Branch<'src>>,
         tail: Option<Block<'src>>,
+        is_stmt: bool,
     ) -> Expr<'src> {
         Expr {
             span: span.into(),
 
-            kind: expr::ExprKind::If(Box::new(expr::If { branches, tail })),
+            kind: expr::ExprKind::If(Box::new(expr::If {
+                if_token,
+                branches,
+                tail,
+                is_stmt,
+            })),
         }
     }
 }

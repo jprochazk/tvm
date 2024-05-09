@@ -1,0 +1,12 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        let v = if true {0} else {1.0};\n        let v: int = if true {1.0} else {1.0};\n    \"#)"
+---
+error: type mismatch between "int" and "num"
+1 |  let v = if true {0} else {1.0};
+  |                           ^^^^^
+
+error: type mismatch between "num" and "int"
+2 |  let v: int = if true {1.0} else {1.0};
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^
+

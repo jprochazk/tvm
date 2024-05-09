@@ -450,17 +450,19 @@ impl<'src> TyCtx<'src> {
             let cond = self.check_expr(&branch.cond, Bool.ty());
             let body = self.infer_block(&branch.body);
 
-            let block_ty = *block_ty.get_or_insert_with(|| body.ty());
-            if !self.type_eq(block_ty, body.ty()) {
-                let span = body
-                    .tail
-                    .as_ref()
-                    .map(|v| v.span)
-                    .or_else(|| body.body.last().map(|v| v.span))
-                    .unwrap_or(span);
-                let p = ty_p!(self);
-                self.ecx.emit_type_mismatch(span, p(block_ty), p(body.ty()));
-                continue;
+            if !v.is_stmt {
+                let block_ty = *block_ty.get_or_insert_with(|| body.ty());
+                if !self.type_eq(block_ty, body.ty()) {
+                    let span = body
+                        .tail
+                        .as_ref()
+                        .map(|v| v.span)
+                        .or_else(|| body.body.last().map(|v| v.span))
+                        .unwrap_or(span);
+                    let p = ty_p!(self);
+                    self.ecx.emit_type_mismatch(span, p(block_ty), p(body.ty()));
+                    continue;
+                }
             }
 
             branches.push(Branch { cond, body });
@@ -469,7 +471,7 @@ impl<'src> TyCtx<'src> {
         let block_ty = block_ty.unwrap_or(Ty::Unit);
         let tail = v.tail.as_ref().map(|tail| {
             let tail = self.infer_block(tail);
-            if !self.type_eq(block_ty, tail.ty()) {
+            if !v.is_stmt && !self.type_eq(block_ty, tail.ty()) {
                 let p = ty_p!(self);
                 self.ecx
                     .emit_type_mismatch(tail.span, p(block_ty), p(tail.ty()));
@@ -480,7 +482,11 @@ impl<'src> TyCtx<'src> {
         Expr {
             span,
             ty: block_ty,
-            kind: ExprKind::If(Box::new(If { branches, tail })),
+            kind: ExprKind::If(Box::new(If {
+                if_token: v.if_token,
+                branches,
+                tail,
+            })),
         }
     }
 

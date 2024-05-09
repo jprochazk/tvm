@@ -16,10 +16,6 @@ pub fn try_parse(s: &str) -> Result<Ast<'_>, Vec<Error>> {
     Parser::new(s).try_parse()
 }
 
-// TODO: top-level "block" exprs are not primary
-//       they should instead be parsed eagerly
-//       and if you enter grouping, you can use
-//       them as a subexpression in binary, unary, etc.
 // TODO: yield may only appear in `gen` fn
 
 struct Parser<'src> {
@@ -340,7 +336,7 @@ fn stmt<'src>(p: &mut Parser<'src>) -> Result<Stmt<'src>> {
         t![break] => expr_break(p).map(Expr::into_stmt),
         t![continue] => expr_continue(p).map(Expr::into_stmt),
         t![return] => expr_return(p).map(Expr::into_stmt),
-        t![if] => expr_if(p, false).map(Expr::into_stmt),
+        t![if] => expr_if(p, true).map(Expr::into_stmt),
         t!["{"] => block(p).map(|b| b.into_stmt()),
         _ => expr_assign(p).map(Expr::into_stmt),
     }
@@ -432,8 +428,8 @@ fn expr_return<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
   Ok(Expr::make_yield( span, value))
 } */
 
-fn expr_if<'src>(p: &mut Parser<'src>, needs_tail: bool) -> Result<Expr<'src>> {
-    let s = p.span();
+fn expr_if<'src>(p: &mut Parser<'src>, is_stmt: bool) -> Result<Expr<'src>> {
+    let if_token = p.span();
 
     assert!(p.eat(t![if]));
     let mut branches = vec![branch(p)?];
@@ -446,13 +442,13 @@ fn expr_if<'src>(p: &mut Parser<'src>, needs_tail: bool) -> Result<Expr<'src>> {
         }
     }
 
-    let span = p.finish(s);
-    if needs_tail && tail.is_none() {
+    let span = p.finish(if_token);
+    if !is_stmt && tail.is_none() {
         // TODO(syn): check that `if` has tail when used in expr context
         p.ecx.emit_missing_if_tail(span);
     }
 
-    Ok(expr::If::new(span, branches, tail))
+    Ok(expr::If::new(span, if_token, branches, tail, is_stmt))
 }
 
 fn branch<'src>(p: &mut Parser<'src>) -> Result<Branch<'src>> {
@@ -750,7 +746,7 @@ fn expr_primary<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
         t![float] => expr_float(p),
         t![bool] => expr_bool(p),
         t![str] => expr_str(p),
-        t![if] => expr_if(p, true),
+        t![if] => expr_if(p, false),
         t![do] => expr_do(p),
         t!["["] => expr_array(p),
         t!["("] => expr_group(p),

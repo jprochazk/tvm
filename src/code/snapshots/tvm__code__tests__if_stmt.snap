@@ -1,0 +1,23 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        if true {\n            0\n        } else if true {\n            1\n        } else {\n            2\n        };\n    \"#)"
+---
+function "main" {
+  registers: 2 (0 params)
+  literals: []
+  bytecode: (11 ops) [
+    bool true, r1  // if true {
+    jmpf r1, +3    // 
+    smi 0, r1      // 0
+    jmp +6         // if true {
+    bool true, r1  // } else if true {
+    jmpf r1, +3    // 
+    smi 1, r1      // 1
+    jmp +2         // } else if true {
+    smi 2, r1      // 2
+    unit r0        // 
+    ret            //   
+  ]
+}
+
+

@@ -192,3 +192,24 @@ test! {
         let v: int = do {};
     "#
 }
+
+test! {
+    var_assign,
+    r#"
+        let v: int = 0;
+        v = 10;
+        v += 10;
+    "#
+}
+
+test! {
+    bad_var_assign,
+    r#"
+        let v: bool = true;
+        v = 0;
+        v += 10;
+
+        let v: bool = true;
+        v += true;
+    "#
+}

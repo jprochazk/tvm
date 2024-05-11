@@ -518,12 +518,10 @@ impl std::fmt::Display for DisplayHir<'_> {
                     writeln!(f, "extern type {name};")?;
                 }
                 Fields::Named(fields) => {
-                    let p = |ty: Ty| crate::ty::TyPrinter::new(&self.0.defs, &self.0.fns).print(ty);
-
                     write!(f, "type {name}(")?;
                     let mut fields = fields.iter().peekable();
                     while let Some((name, field)) = fields.next() {
-                        write!(f, "{name}: {}", p(field.ty))?;
+                        write!(f, "{name}: {}", p!(self.0, field.ty))?;
                         if fields.peek().is_some() {
                             write!(f, ", ")?;
                         }

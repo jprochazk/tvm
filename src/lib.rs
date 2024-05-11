@@ -5,6 +5,9 @@
 )]
 
 #[macro_use]
+mod macros;
+
+#[macro_use]
 pub mod error;
 #[macro_use]
 pub mod lex;

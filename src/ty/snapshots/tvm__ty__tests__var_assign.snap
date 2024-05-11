@@ -1,0 +1,34 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        let v: int = 0;\n        v = 10;\n        v += 10;\n    \"#)"
+---
+Block {
+    body: [
+        Let {
+            name: Ident("v"),
+            init: Int(
+                0,
+            ),
+        },
+        AssignVar {
+            name: Ident("v"),
+            op: None,
+            value: Int(
+                10,
+            ),
+        },
+        AssignVar {
+            name: Ident("v"),
+            op: Some(
+                Op(+),
+            ),
+            value: Int(
+                10,
+            ),
+        },
+    ],
+    tail: None,
+}
+
+
+

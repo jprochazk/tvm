@@ -1,0 +1,17 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        let v: bool = true;\n        v = 0;\n        v += 10;\n\n        let v: bool = true;\n        v += true;\n    \"#)"
+---
+error: type mismatch between "int" and "bool"
+2 |  v = 0;
+  |      ^
+
+error: type mismatch between "int" and "bool"
+3 |  v += 10;
+  |       ^^
+
+error: the type "bool" does not support the "+" operation
+6 |  v += true;
+  |       ^^^^
+
+

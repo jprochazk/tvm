@@ -1,6 +1,3 @@
-#[macro_use]
-mod macros;
-
 use std::collections::BTreeMap;
 
 use crate::ast::{self, Ast, Ident};
@@ -345,12 +342,11 @@ impl<'src> TyCtx<'src> {
                 let ret_ty = block.ty();
 
                 if !self.type_eq(sig.ret, ret_ty) {
-                    let p = ty_p!(self);
                     self.ecx
                         .bad_return_type()
                         .fn_name(name.span)
-                        .fn_ret(p(sig.ret), sig.ret_span)
-                        .ret_val(p(ret_ty), block.tail.as_ref().map(|v| v.span))
+                        .fn_ret(p!(self, sig.ret), sig.ret_span)
+                        .ret_val(p!(self, ret_ty), block.tail.as_ref().map(|v| v.span))
                         .emit();
                 }
 
@@ -413,8 +409,8 @@ impl<'src> TyCtx<'src> {
     fn check_expr(&mut self, expr: &ast::Expr<'src>, ty: Ty, intent: Intent) -> Expr<'src> {
         let mut expr = self.infer_expr(expr, intent);
         if !self.type_eq(expr.ty, ty) {
-            let p = ty_p!(self);
-            self.ecx.emit_type_mismatch(expr.span, p(expr.ty), p(ty));
+            self.ecx
+                .emit_type_mismatch(expr.span, p!(self, expr.ty), p!(self, ty));
             expr.ty = Ty::Error;
         }
         expr
@@ -435,7 +431,7 @@ impl<'src> TyCtx<'src> {
             E::UseVar(v) => self.infer_var_expr(expr.span, v),
             E::UseField(_) => todo!("infer:UseField"),
             E::UseIndex(_) => todo!("infer:UseIndex"),
-            E::AssignVar(_) => todo!("infer:AssignVar"),
+            E::AssignVar(v) => self.infer_var_assign(expr.span, v),
             E::AssignField(_) => todo!("infer:AssignField"),
             E::AssignIndex(_) => todo!("infer:AssignIndex"),
             E::Call(v) => self.infer_call_expr(expr.span, v),
@@ -514,8 +510,8 @@ impl<'src> TyCtx<'src> {
                         .map(|v| v.span)
                         .or_else(|| body.body.last().map(|v| v.span))
                         .unwrap_or(span);
-                    let p = ty_p!(self);
-                    self.ecx.emit_type_mismatch(span, p(block_ty), p(body.ty()));
+                    self.ecx
+                        .emit_type_mismatch(span, p!(self, block_ty), p!(self, body.ty()));
                     continue;
                 }
             }
@@ -527,9 +523,8 @@ impl<'src> TyCtx<'src> {
         let tail = v.tail.as_ref().map(|tail| {
             let tail = self.infer_block(tail);
             if intent == NoDiscard && !self.type_eq(block_ty, tail.ty()) {
-                let p = ty_p!(self);
                 self.ecx
-                    .emit_type_mismatch(tail.span, p(block_ty), p(tail.ty()));
+                    .emit_type_mismatch(tail.span, p!(self, block_ty), p!(self, tail.ty()));
             }
             tail
         });
@@ -558,14 +553,13 @@ impl<'src> TyCtx<'src> {
             }
 
             if !tcx.type_supports_binop(lhs.ty, op) {
-                let p = ty_p!(tcx);
-                tcx.ecx.emit_unsupported_op(span, p(lhs.ty), op);
+                tcx.ecx.emit_unsupported_op(span, p!(tcx, lhs.ty), op);
                 return Ty::Error;
             }
 
             if !tcx.type_eq(lhs.ty, rhs.ty) {
-                let p = ty_p!(tcx);
-                tcx.ecx.emit_type_mismatch(span, p(lhs.ty), p(rhs.ty));
+                tcx.ecx
+                    .emit_type_mismatch(span, p!(tcx, lhs.ty), p!(tcx, rhs.ty));
                 return Ty::Error;
             }
 
@@ -620,6 +614,34 @@ impl<'src> TyCtx<'src> {
         }
     }
 
+    fn infer_var_assign(&mut self, span: Span, v: &ast::expr::AssignVar<'src>) -> Expr<'src> {
+        let ty = match self.resolve_var_ty(v.name.as_str()) {
+            Some(ty) => ty,
+            None => {
+                self.ecx.emit_undefined_var(span);
+                Ty::Error
+            }
+        };
+
+        let value = self.check_expr(&v.value, ty, NoDiscard);
+        if let Some(op) = v.op {
+            if !self.type_supports_binop(value.ty, op) {
+                self.ecx
+                    .emit_unsupported_op(value.span, p!(self, value.ty), op);
+            }
+        }
+
+        Expr {
+            span,
+            ty: Ty::Unit,
+            kind: ExprKind::AssignVar(Box::new(AssignVar {
+                name: v.name,
+                op: v.op,
+                value,
+            })),
+        }
+    }
+
     fn infer_call_expr(&mut self, span: Span, v: &ast::expr::Call<'src>) -> Expr<'src> {
         let callee = self.infer_expr(&v.callee, NoDiscard);
         let args = v
@@ -642,8 +664,7 @@ impl<'src> TyCtx<'src> {
     fn check_call(&mut self, span: Span, callee: Ty, args: &[Arg<'src>]) -> Ty {
         match callee {
             Ty::Unit | Ty::Def(_) => {
-                let p = ty_p!(self);
-                self.ecx.emit_not_callable(span, p(callee));
+                self.ecx.emit_not_callable(span, p!(self, callee));
                 Ty::Error
             }
             Ty::Fn(id) => {
@@ -664,9 +685,11 @@ impl<'src> TyCtx<'src> {
                     let arg_ty = arg.value.ty;
                     let param_ty = params[i].ty;
                     if !self.type_eq(arg_ty, param_ty) {
-                        let p = ty_p!(self);
-                        self.ecx
-                            .emit_type_mismatch(arg.value.span, p(arg_ty), p(param_ty));
+                        self.ecx.emit_type_mismatch(
+                            arg.value.span,
+                            p!(self, arg_ty),
+                            p!(self, param_ty),
+                        );
                     }
                 }
 
@@ -689,6 +712,10 @@ impl<'src> TyCtx<'src> {
 
     fn type_supports_binop(&self, ty: Ty, op: ast::BinaryOp) -> bool {
         use ast::BinaryOp as Op;
+        if ty.is_err() {
+            return true;
+        }
+
         match op {
             Op::Add
             | Op::Sub
@@ -820,15 +847,11 @@ use Intent::*;
 
 #[derive(Clone, Copy)]
 pub struct TyPrinter<'a, 'src> {
-    defs: &'a Defs<'src>,
-    fns: &'a Fns<'src>,
+    pub(crate) defs: &'a Defs<'src>,
+    pub(crate) fns: &'a Fns<'src>,
 }
 
 impl<'a, 'src> TyPrinter<'a, 'src> {
-    pub(crate) fn new(defs: &'a Defs<'src>, fns: &'a Fns<'src>) -> Self {
-        Self { defs, fns }
-    }
-
     pub fn print(self, ty: Ty) -> PrintTy<'a, 'src> {
         PrintTy { printer: self, ty }
     }

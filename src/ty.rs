@@ -4,7 +4,7 @@ mod macros;
 use std::collections::BTreeMap;
 
 use crate::ast::{self, Ast, Ident};
-use crate::error::{Error, ErrorCtx, Result};
+use crate::error::{ErrorCtx, Report, Result};
 use crate::hir::*;
 use crate::lex::Span;
 use crate::HashSet;
@@ -20,7 +20,7 @@ use crate::HashSet;
 // this information is only available against calls where the
 // callee is a function declaration
 
-pub fn check<'src>(ast: &Ast<'src>) -> Result<Hir<'src>, Vec<Error>> {
+pub fn check<'src>(ast: &Ast<'src>) -> Result<Hir<'src>, Report> {
     let mut tcx = TyCtx::new(ast.src);
     register_primitive_types(&mut tcx);
 
@@ -79,7 +79,7 @@ impl<'src> TyCtx<'src> {
         }
     }
 
-    fn finish(mut self, top_level: Block<'src>) -> Result<Hir<'src>, Vec<Error>> {
+    fn finish(mut self, top_level: Block<'src>) -> Result<Hir<'src>, Report> {
         self.ecx.finish()?;
 
         Ok(Hir {

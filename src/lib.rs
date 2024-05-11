@@ -24,3 +24,11 @@ pub type Str<'a> = beef::lean::Cow<'a, str>;
 pub use std::borrow::Cow;
 pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;
+
+pub fn compile(s: &str) -> Result<code::CodeUnit, error::Report> {
+    let ast = syn::try_parse(s)?;
+    let hir = ty::check(&ast)?;
+    code::compile(hir)
+}
+
+pub use vm::Vm;

@@ -8,14 +8,57 @@ use crate::code::Function;
 use crate::error::Result;
 use crate::value::Literal;
 
-pub struct State<'a> {
-    main: Arc<Function>,
-    functions: Functions<'a>,
+pub struct Vm {
     vstack: Stack,
     cstack: Vec<CallFrame>,
     ip: isize,
     #[cfg(test)]
     debug_hook: DebugHook,
+}
+
+impl Vm {
+    pub fn new() -> Self {
+        Self {
+            vstack: Stack::new(512),
+            cstack: Vec::with_capacity(16),
+            ip: 0,
+            #[cfg(test)]
+            debug_hook: |_| {},
+        }
+    }
+
+    pub fn run(&mut self, module: impl AsRef<Module>) -> Result<Value> {
+        State::new(self, module.as_ref()).interpret()
+    }
+
+    #[cfg(test)]
+    fn run_debug(&mut self, module: impl AsRef<Module>, debug_hook: DebugHook) -> Result<Value> {
+        State::new(self, module.as_ref())
+            .with_debug_hook(debug_hook)
+            .interpret()
+    }
+}
+
+pub struct State<'a> {
+    main: Arc<Function>,
+    functions: Functions<'a>,
+    vm: &'a mut Vm,
+}
+
+impl<'a> State<'a> {
+    fn new(vm: &'a mut Vm, module: &'a Module) -> Self {
+        Self {
+            main: module.main.clone(),
+            functions: Functions::new(&module.functions),
+            vm,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_debug_hook(self, debug_hook: DebugHook) -> Self {
+        self.vm.debug_hook = debug_hook;
+        self
+    }
 }
 
 macro_rules! invoke_hook {
@@ -44,11 +87,14 @@ impl State<'_> {
         let State {
             main,
             functions,
-            vstack,
-            cstack,
-            ip,
-            #[cfg(test)]
-            debug_hook,
+            vm:
+                Vm {
+                    vstack,
+                    cstack,
+                    ip,
+                    #[cfg(test)]
+                    debug_hook,
+                },
         } = self;
 
         let mut current_frame = CallFrame {
@@ -539,6 +585,12 @@ pub struct Module {
     pub(crate) functions: Vec<Arc<Function>>,
 }
 
+impl AsRef<Module> for Module {
+    fn as_ref(&self) -> &Module {
+        self
+    }
+}
+
 #[cfg(test)]
 enum DebugEvent<'a> {
     Dispatch { op: Op, stack_frame: StackFrame<'a> },
@@ -558,33 +610,6 @@ impl<'a> StackFrame<'a> {
 
 #[cfg(test)]
 type DebugHook = fn(DebugEvent<'_>);
-
-impl<'a> State<'a> {
-    fn new(module: &'a Module) -> Self {
-        Self {
-            main: module.main.clone(),
-            functions: Functions::new(&module.functions),
-            vstack: Stack::new(512),
-            cstack: Vec::with_capacity(16),
-            ip: 0,
-            #[cfg(test)]
-            debug_hook: |_| {},
-        }
-    }
-}
-
-impl Module {
-    pub fn run(&self) -> Result<Value> {
-        State::new(self).interpret()
-    }
-
-    #[cfg(test)]
-    fn debug(&self, debug_hook: DebugHook) -> Result<Value> {
-        let mut state = State::new(self);
-        state.debug_hook = debug_hook;
-        state.interpret()
-    }
-}
 
 pub mod token {
     #![allow(dead_code)]

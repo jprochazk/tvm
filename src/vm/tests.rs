@@ -4,12 +4,7 @@ use std::panic::catch_unwind;
 
 use super::*;
 use crate::code::print::DisplayModule;
-use crate::error::Error;
 use crate::util::JoinIter as _;
-
-fn report(e: Vec<Error>) -> String {
-    e.into_iter().join("\n").to_string()
-}
 
 thread_local! {
     static EVENTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -76,15 +71,15 @@ fn get_panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 fn _run(input: &str) -> String {
     let ast = match crate::syn::try_parse(input) {
         Ok(ast) => ast,
-        Err(e) => panic!("{}", report(e)),
+        Err(e) => panic!("{e}"),
     };
     let hir = match crate::ty::check(&ast) {
         Ok(hir) => hir,
-        Err(e) => panic!("{}", report(e)),
+        Err(e) => panic!("{e}"),
     };
     let code = match crate::code::compile(hir) {
         Ok(code) => code,
-        Err(e) => panic!("{}", report(e)),
+        Err(e) => panic!("{e}"),
     };
 
     let mut out = String::new();
@@ -96,12 +91,13 @@ fn _run(input: &str) -> String {
     .unwrap();
 
     write!(&mut out, "## Output\n\n").unwrap();
-    match catch_unwind(|| code.link().debug(debug_hook)) {
+    let module = code.link();
+    match catch_unwind(|| Vm::new().run_debug(&module, debug_hook)) {
         Ok(Ok(value)) => {
             writeln!(&mut out, "{value:?}\n").unwrap();
         }
         Ok(Err(e)) => {
-            writeln!(&mut out, "{}\n", report(vec![e])).unwrap();
+            writeln!(&mut out, "{e}\n").unwrap();
         }
         Err(payload) => {
             writeln!(&mut out, "PANIC: {}\n", get_panic_message(payload)).unwrap();

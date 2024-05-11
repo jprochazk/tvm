@@ -1,18 +1,11 @@
-use crate::error::Error;
-use crate::util::JoinIter as _;
-
-fn report(e: Vec<Error>) -> String {
-    e.into_iter().join("\n").to_string()
-}
-
 fn _check(input: &str) -> String {
     let ast = match crate::syn::try_parse(input) {
         Ok(ast) => ast,
-        Err(e) => panic!("{}", report(e)),
+        Err(e) => panic!("{e}"),
     };
     match crate::ty::check(&ast) {
         Ok(hir) => format!("{hir:#?}"),
-        Err(e) => report(e),
+        Err(e) => format!("{e}"),
     }
 }
 

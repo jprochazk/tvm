@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::ast::{BinaryOp, Ident};
-use crate::error::{Error, ErrorCtx, Result};
+use crate::error::{ErrorCtx, Report, Result};
 use crate::hir::Hir;
 use crate::lex::Span;
 use crate::value::{f64n, Literal, LiteralPool};
@@ -13,7 +13,7 @@ use crate::{hir, vm, HashMap, Str};
 pub mod op;
 use op::*;
 
-pub fn compile(hir: Hir<'_>) -> Result<CodeUnit, Vec<Error>> {
+pub fn compile(hir: Hir<'_>) -> Result<CodeUnit, Report> {
     Compiler {
         ecx: ErrorCtx::new(hir.src),
         module_state: ModuleState {
@@ -30,7 +30,7 @@ struct Compiler<'src> {
 }
 
 impl<'src> Compiler<'src> {
-    fn compile(mut self, hir: Hir<'src>) -> Result<CodeUnit, Vec<Error>> {
+    fn compile(mut self, hir: Hir<'src>) -> Result<CodeUnit, Report> {
         // 1. reserve a slot in the function table for each function
         for (hir_id, fn_) in hir.fns.iter() {
             self.module_state.fn_table.reserve(fn_.name, hir_id);

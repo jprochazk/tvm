@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::error::{Error, ErrorCtx, Result};
+use crate::error::{Error, ErrorCtx, Report, Result};
 use crate::lex::{Lexer, Span, Token, TokenKind, EOF};
 use crate::value::f64n;
 use crate::Str;
@@ -7,12 +7,12 @@ use crate::Str;
 /// Performs a resilient parse, in which the returned `Ast`
 /// may be incomplete if the returned list of errors is
 /// not empty.
-pub fn parse(s: &str) -> (Ast<'_>, Vec<Error>) {
+pub fn parse(s: &str) -> (Ast<'_>, Report) {
     Parser::new(s).parse()
 }
 
 /// Performs a full parse.
-pub fn try_parse(s: &str) -> Result<Ast<'_>, Vec<Error>> {
+pub fn try_parse(s: &str) -> Result<Ast<'_>, Report> {
     Parser::new(s).try_parse()
 }
 
@@ -38,7 +38,7 @@ impl<'src> Parser<'src> {
         }
     }
 
-    pub fn parse(mut self) -> (Ast<'src>, Vec<Error>) {
+    pub fn parse(mut self) -> (Ast<'src>, Report) {
         self.advance();
 
         let top_level = top_level(&mut self);
@@ -53,7 +53,7 @@ impl<'src> Parser<'src> {
         )
     }
 
-    pub fn try_parse(self) -> Result<Ast<'src>, Vec<Error>> {
+    pub fn try_parse(self) -> Result<Ast<'src>, Report> {
         let (ast, errors) = self.parse();
 
         if !errors.is_empty() {

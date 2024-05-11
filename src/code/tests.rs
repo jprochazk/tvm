@@ -1,24 +1,15 @@
-use std::fmt::Display;
-
-use crate::error::Error;
-use crate::util::JoinIter as _;
-
-fn report(e: Vec<Error>) -> impl Display {
-    e.into_iter().join("\n")
-}
-
 fn _emit(input: &str) -> String {
     let ast = match crate::syn::try_parse(input) {
         Ok(ast) => ast,
-        Err(e) => panic!("{}", report(e)),
+        Err(e) => panic!("{e}"),
     };
     let hir = match crate::ty::check(&ast) {
         Ok(hir) => hir,
-        Err(e) => panic!("{}", report(e)),
+        Err(e) => panic!("{e}"),
     };
     match crate::code::compile(hir) {
         Ok(m) => super::print::DisplayModule(&m, Some(input)).to_string(),
-        Err(e) => report(e).to_string(),
+        Err(e) => e.to_string(),
     }
 }
 

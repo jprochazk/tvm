@@ -9,6 +9,38 @@ use crate::Str;
 
 pub type Result<T, E = Error> = ::std::result::Result<T, E>;
 
+#[derive(Default, Debug, Clone)]
+pub struct Report(pub Vec<Error>);
+
+impl Report {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Error> {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for Report {
+    type Item = Error;
+
+    type IntoIter = std::vec::IntoIter<Error>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Display for Report {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for e in self.0.iter() {
+            writeln!(f, "{e}")?;
+        }
+        Ok(())
+    }
+}
+
 pub struct ErrorCtx<'src> {
     src: &'src str,
     src_rc: Option<Arc<str>>,
@@ -28,12 +60,12 @@ impl<'src> ErrorCtx<'src> {
         self.errors.push(e);
     }
 
-    pub fn finish(&mut self) -> Result<(), Vec<Error>> {
+    pub fn finish(&mut self) -> Result<(), Report> {
         let errors = std::mem::take(&mut self.errors);
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors)
+            Err(Report(errors))
         }
     }
 

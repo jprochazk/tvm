@@ -1,9 +1,7 @@
-use crate::util::JoinIter as _;
-
 fn _parse(input: &str) -> String {
     match super::try_parse(input) {
         Ok(ast) => format!("{ast:#?}"),
-        Err(e) => e.into_iter().join("\n").to_string(),
+        Err(e) => format!("{e}"),
     }
 }
 

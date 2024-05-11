@@ -2,13 +2,45 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n        if true {\n            0\n        } else {\n            1.0\n        }\n\n        let v = if true {0} else {1};\n    \"#)"
 ---
-Hir {
-    top_level: Block {
-        body: [
-            If {
+Block {
+    body: [
+        If {
+            if_token: Span {
+                start: 0,
+                end: 2,
+            },
+            branches: [
+                Branch {
+                    cond: Bool(
+                        true,
+                    ),
+                    body: Block {
+                        body: [],
+                        tail: Some(
+                            Int(
+                                0,
+                            ),
+                        ),
+                    },
+                },
+            ],
+            tail: Some(
+                Block {
+                    body: [],
+                    tail: Some(
+                        Num(
+                            1.0,
+                        ),
+                    ),
+                },
+            ),
+        },
+        Let {
+            name: Ident("v"),
+            init: If {
                 if_token: Span {
-                    start: 0,
-                    end: 2,
+                    start: 44,
+                    end: 46,
                 },
                 branches: [
                     Branch {
@@ -29,48 +61,17 @@ Hir {
                     Block {
                         body: [],
                         tail: Some(
-                            Num(
-                                1.0,
+                            Int(
+                                1,
                             ),
                         ),
                     },
                 ),
             },
-            Let {
-                name: Ident("v"),
-                init: If {
-                    if_token: Span {
-                        start: 44,
-                        end: 46,
-                    },
-                    branches: [
-                        Branch {
-                            cond: Bool(
-                                true,
-                            ),
-                            body: Block {
-                                body: [],
-                                tail: Some(
-                                    Int(
-                                        0,
-                                    ),
-                                ),
-                            },
-                        },
-                    ],
-                    tail: Some(
-                        Block {
-                            body: [],
-                            tail: Some(
-                                Int(
-                                    1,
-                                ),
-                            ),
-                        },
-                    ),
-                },
-            },
-        ],
-        tail: None,
-    },
+        },
+    ],
+    tail: None,
 }
+
+
+

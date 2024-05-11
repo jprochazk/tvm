@@ -542,7 +542,7 @@ impl<'src> ErrorCtx<'src> {
     #[inline]
     pub fn not_callable(&mut self, span: impl Into<Span>, ty: impl Display) -> Error {
         Error::spanned(
-            format!("error: this expression of type \"{ty}\" is not callable"),
+            format!("error: type \"{ty}\" is not callable"),
             span,
             self.src(),
         )
@@ -673,6 +673,17 @@ impl<'src> ErrorCtx<'src> {
     #[inline]
     pub fn emit_missing_if_tail(&mut self, span: impl Into<Span>) {
         let e = self.missing_if_tail(span);
+        self.push(e);
+    }
+
+    #[inline]
+    pub fn return_outside_fn(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned("error: `return` used outside of function", span, self.src()).into()
+    }
+
+    #[inline]
+    pub fn emit_return_outside_fn(&mut self, span: impl Into<Span>) {
+        let e = self.return_outside_fn(span);
         self.push(e);
     }
 }

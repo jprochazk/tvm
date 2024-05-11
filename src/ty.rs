@@ -38,7 +38,12 @@ struct TyCtx<'src> {
     ecx: ErrorCtx<'src>,
     defs: Defs<'src>,
     fns: Fns<'src>,
+    current_fn: Option<FnCtx>,
     scopes: Vec<Scope<'src>>,
+}
+
+struct FnCtx {
+    ret_ty: Ty,
 }
 
 type Scope<'src> = BTreeMap<&'src str, Symbol>;
@@ -75,6 +80,7 @@ impl<'src> TyCtx<'src> {
             ecx: ErrorCtx::new(src),
             defs: Defs::new(),
             fns: Fns::new(),
+            current_fn: None,
             scopes: Vec::new(),
         }
     }
@@ -230,6 +236,15 @@ impl<'src> TyCtx<'src> {
         }
     }
 
+    fn enter_fn(&mut self, ret_ty: Ty) {
+        assert!(self.current_fn.is_none());
+        self.current_fn = Some(FnCtx { ret_ty });
+    }
+
+    fn leave_fn(&mut self) {
+        let _ = self.current_fn.take();
+    }
+
     fn enter_scope(&mut self) {
         self.scopes.push(BTreeMap::new());
     }
@@ -310,7 +325,7 @@ impl<'src> TyCtx<'src> {
         match body {
             ast::decl::Body::Extern => FnBody::Extern,
             ast::decl::Body::Block(block) => {
-                // TODO: add fn context so `return` can be type checked
+                self.enter_fn(sig.ret);
                 self.enter_scope();
                 for param in &sig.params {
                     // definitely not shadowing anything else, we just entered a fresh scope
@@ -325,6 +340,7 @@ impl<'src> TyCtx<'src> {
                 }
                 let block = self.infer_block(block);
                 self.leave_scope();
+                self.leave_fn();
 
                 let ret_ty = block.ty();
 
@@ -407,10 +423,10 @@ impl<'src> TyCtx<'src> {
     fn infer_expr(&mut self, expr: &ast::Expr<'src>, intent: Intent) -> Expr<'src> {
         use ast::expr::ExprKind as E;
         match &expr.kind {
-            E::Return(_) => todo!("infer:Return"),
+            E::Return(v) => self.infer_return(expr.span, v),
             E::Break => self.infer_break(expr.span),
             E::Continue => self.infer_continue(expr.span),
-            E::Block(_) => todo!("infer:Block"),
+            E::Block(v) => self.infer_block_expr(expr.span, v),
             E::If(v) => self.infer_if(expr.span, v, intent),
             E::Binary(v) => self.infer_binary(expr.span, v),
             E::Unary(_) => todo!("infer:Unary"),
@@ -427,10 +443,31 @@ impl<'src> TyCtx<'src> {
         }
     }
 
+    fn infer_return(&mut self, span: Span, v: &ast::expr::Return<'src>) -> Expr<'src> {
+        let ret_ty = match self.current_fn.as_ref().map(|ctx| ctx.ret_ty) {
+            Some(ret_ty) => ret_ty,
+            None => {
+                self.ecx.emit_return_outside_fn(span);
+                Ty::Error
+            }
+        };
+
+        let value = v
+            .value
+            .as_ref()
+            .map(|value| self.check_expr(value, ret_ty, NoDiscard));
+
+        Expr {
+            span,
+            ty: Ty::Unreachable,
+            kind: ExprKind::Return(Box::new(Return { value })),
+        }
+    }
+
     fn infer_break(&mut self, span: Span) -> Expr<'src> {
         Expr {
             span,
-            ty: Ty::Unit,
+            ty: Ty::Unreachable,
             kind: ExprKind::Break(Break),
         }
     }
@@ -438,8 +475,18 @@ impl<'src> TyCtx<'src> {
     fn infer_continue(&mut self, span: Span) -> Expr<'src> {
         Expr {
             span,
-            ty: Ty::Unit,
+            ty: Ty::Unreachable,
             kind: ExprKind::Continue(Continue),
+        }
+    }
+
+    fn infer_block_expr(&mut self, span: Span, v: &ast::Block<'src>) -> Expr<'src> {
+        let block = self.infer_block(v);
+
+        Expr {
+            span,
+            ty: block.ty(),
+            kind: ExprKind::Block(Box::new(block)),
         }
     }
 
@@ -626,6 +673,7 @@ impl<'src> TyCtx<'src> {
                 fn_.sig.ret
             }
             Ty::Error => Ty::Error,
+            Ty::Unreachable => Ty::Unreachable,
         }
     }
 
@@ -634,7 +682,7 @@ impl<'src> TyCtx<'src> {
             (Ty::Unit, Ty::Unit) => true,
             (Ty::Def(a), Ty::Def(b)) => a == b,
             (Ty::Fn(a), Ty::Fn(b)) => self.fn_sig_match(&self.fns[a].sig, &self.fns[b].sig),
-            (Ty::Error, _) | (_, Ty::Error) => true,
+            (Ty::Error | Ty::Unreachable, _) | (_, Ty::Error | Ty::Unreachable) => true,
             _ => false,
         }
     }
@@ -747,7 +795,7 @@ impl Ty {
 fn register_primitive_types(tcx: &mut TyCtx<'_>) {
     assert!(
         tcx.defs.is_empty(),
-        "`register_builtin_types` called with some type defs already present"
+        "`register_primitive_types` called with some type defs already present"
     );
 
     for Prim { name, id } in Prim::LIST.iter().copied() {
@@ -777,6 +825,10 @@ pub struct TyPrinter<'a, 'src> {
 }
 
 impl<'a, 'src> TyPrinter<'a, 'src> {
+    pub(crate) fn new(defs: &'a Defs<'src>, fns: &'a Fns<'src>) -> Self {
+        Self { defs, fns }
+    }
+
     pub fn print(self, ty: Ty) -> PrintTy<'a, 'src> {
         PrintTy { printer: self, ty }
     }
@@ -799,7 +851,8 @@ impl<'a, 'src> std::fmt::Display for PrintTy<'a, 'src> {
                 let fn_ = self.printer.fns[id].name.as_str();
                 write!(f, "[fn {fn_}]")
             }
-            Ty::Error => f.write_str("?!"),
+            Ty::Error => f.write_str("{error}"),
+            Ty::Unreachable => f.write_str("!"),
         }
     }
 }

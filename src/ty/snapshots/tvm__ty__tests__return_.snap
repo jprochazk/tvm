@@ -1,0 +1,64 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        fn a() {\n            return\n        }\n\n        fn b() -> int {\n            return 10\n        }\n    \"#)"
+---
+Block {
+    body: [],
+    tail: None,
+}
+
+
+[
+    Fn {
+        name: Ident("a"),
+        kind: Function,
+        sig: FnSig {
+            params: [],
+            ret: Unit,
+            ret_span: None,
+        },
+        body: Block(
+            Block {
+                body: [],
+                tail: Some(
+                    Return {
+                        value: None,
+                    },
+                ),
+            },
+        ),
+    },
+    Fn {
+        name: Ident("b"),
+        kind: Function,
+        sig: FnSig {
+            params: [],
+            ret: Def(
+                DefId(
+                    0,
+                ),
+            ),
+            ret_span: Some(
+                Span {
+                    start: 33,
+                    end: 36,
+                },
+            ),
+        },
+        body: Block(
+            Block {
+                body: [],
+                tail: Some(
+                    Return {
+                        value: Some(
+                            Int(
+                                10,
+                            ),
+                        ),
+                    },
+                ),
+            },
+        ),
+    },
+]
+

@@ -1,0 +1,35 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        fn f() {\n            // `return` is a basic block exit, can assign to anything\n            let v: bool = return;\n        }\n    \"#)"
+---
+Block {
+    body: [],
+    tail: None,
+}
+
+
+[
+    Fn {
+        name: Ident("f"),
+        kind: Function,
+        sig: FnSig {
+            params: [],
+            ret: Unit,
+            ret_span: None,
+        },
+        body: Block(
+            Block {
+                body: [
+                    Let {
+                        name: Ident("v"),
+                        init: Return {
+                            value: None,
+                        },
+                    },
+                ],
+                tail: None,
+            },
+        ),
+    },
+]
+

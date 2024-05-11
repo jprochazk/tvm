@@ -1,10 +1,12 @@
+use super::DisplayHir;
+
 fn _check(input: &str) -> String {
     let ast = match crate::syn::try_parse(input) {
         Ok(ast) => ast,
         Err(e) => panic!("{e}"),
     };
     match crate::ty::check(&ast) {
-        Ok(hir) => format!("{hir:#?}"),
+        Ok(hir) => DisplayHir(&hir).to_string(),
         Err(e) => format!("{e}"),
     }
 }
@@ -41,12 +43,12 @@ test! {
     "#
 }
 
-// test! {
-//     unit_not_callabe,
-//     r#"
-//         (do {})();
-//     "#
-// }
+test! {
+    unit_not_callable,
+    r#"
+        (do {})();
+    "#
+}
 
 test! {
     def_not_callable,
@@ -135,5 +137,58 @@ test! {
         fn test() -> int {
             if true { 0 } else { 1 }
         }
+    "#
+}
+
+test! {
+    return_,
+    r#"
+        fn a() {
+            return
+        }
+
+        fn b() -> int {
+            return 10
+        }
+    "#
+}
+
+test! {
+    bad_return,
+    r#"
+        fn f() {
+            return 10
+        }
+    "#
+}
+
+test! {
+    bad_return_outside_fn,
+    r#"
+        return
+    "#
+}
+
+test! {
+    return_assign,
+    r#"
+        fn f() {
+            // `return` is a basic block exit, can assign to anything
+            let v: bool = return;
+        }
+    "#
+}
+
+test! {
+    block_expr,
+    r#"
+        let v: int = do {0};
+    "#
+}
+
+test! {
+    bad_block_expr,
+    r#"
+        let v: int = do {};
     "#
 }

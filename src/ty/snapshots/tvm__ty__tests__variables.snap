@@ -2,22 +2,23 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n        let v = 0;\n        let v: int = 0;\n    \"#)"
 ---
-Hir {
-    top_level: Block {
-        body: [
-            Let {
-                name: Ident("v"),
-                init: Int(
-                    0,
-                ),
-            },
-            Let {
-                name: Ident("v"),
-                init: Int(
-                    0,
-                ),
-            },
-        ],
-        tail: None,
-    },
+Block {
+    body: [
+        Let {
+            name: Ident("v"),
+            init: Int(
+                0,
+            ),
+        },
+        Let {
+            name: Ident("v"),
+            init: Int(
+                0,
+            ),
+        },
+    ],
+    tail: None,
 }
+
+
+

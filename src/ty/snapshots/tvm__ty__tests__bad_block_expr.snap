@@ -1,0 +1,9 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        let v: int = do {};\n    \"#)"
+---
+error: type mismatch between "()" and "int"
+1 |  let v: int = do {};
+  |               ^^^^^
+
+

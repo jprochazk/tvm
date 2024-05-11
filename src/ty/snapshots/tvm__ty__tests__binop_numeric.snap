@@ -2,214 +2,215 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n        let ia: int = 1;\n        let ib: int = 1;\n\n        let fa: int = 1;\n        let fb: int = 1;\n        \n        ia + ib;\n        ia - ib;\n        ia * ib;\n        ia / ib;\n        ia < ib;\n        ia > ib;\n        ia >= ib;\n        ia <= ib;\n        ia == ib;\n        ia != ib;\n\n        fa + fb;\n        fa - fb;\n        fa * fb;\n        fa / fb;\n        fa < fb;\n        fa > fb;\n        fa <= fb;\n        fa >= fb;\n        fa == fb;\n        fa != fb;\n    \"#)"
 ---
-Hir {
-    top_level: Block {
-        body: [
-            Let {
+Block {
+    body: [
+        Let {
+            name: Ident("ia"),
+            init: Int(
+                1,
+            ),
+        },
+        Let {
+            name: Ident("ib"),
+            init: Int(
+                1,
+            ),
+        },
+        Let {
+            name: Ident("fa"),
+            init: Int(
+                1,
+            ),
+        },
+        Let {
+            name: Ident("fb"),
+            init: Int(
+                1,
+            ),
+        },
+        Binary {
+            lhs: UseVar {
                 name: Ident("ia"),
-                init: Int(
-                    1,
-                ),
             },
-            Let {
+            op: Op(+),
+            rhs: UseVar {
                 name: Ident("ib"),
-                init: Int(
-                    1,
-                ),
             },
-            Let {
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(-),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(*),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(/),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(<),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(>),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(>=),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(<=),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(==),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("ia"),
+            },
+            op: Op(!=),
+            rhs: UseVar {
+                name: Ident("ib"),
+            },
+        },
+        Binary {
+            lhs: UseVar {
                 name: Ident("fa"),
-                init: Int(
-                    1,
-                ),
             },
-            Let {
+            op: Op(+),
+            rhs: UseVar {
                 name: Ident("fb"),
-                init: Int(
-                    1,
-                ),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(+),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(-),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+            op: Op(-),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(*),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(/),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+            op: Op(*),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(<),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(>),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+            op: Op(/),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(>=),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(<=),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+            op: Op(<),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(==),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("ia"),
-                },
-                op: Op(!=),
-                rhs: UseVar {
-                    name: Ident("ib"),
-                },
+            op: Op(>),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(+),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(-),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
+            op: Op(<=),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(*),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(/),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
+            op: Op(>=),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(<),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(>),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
+            op: Op(==),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(<=),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
+        },
+        Binary {
+            lhs: UseVar {
+                name: Ident("fa"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(>=),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
+            op: Op(!=),
+            rhs: UseVar {
+                name: Ident("fb"),
             },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(==),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
-            },
-            Binary {
-                lhs: UseVar {
-                    name: Ident("fa"),
-                },
-                op: Op(!=),
-                rhs: UseVar {
-                    name: Ident("fb"),
-                },
-            },
-        ],
-        tail: None,
-    },
+        },
+    ],
+    tail: None,
 }
+
+
+

@@ -407,7 +407,7 @@ fn expr_return<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
     let s = p.span();
 
     assert!(p.eat(t![return]));
-    let value = if !p.at_any([t!["}"], t![;]]) {
+    let value = if !p.end() && !p.at_any([t!["}"], t![;]]) {
         Some(expr(p)?)
     } else {
         None

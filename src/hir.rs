@@ -26,6 +26,9 @@ pub enum Ty {
 
     /// Type error
     Error,
+
+    /// Unreachable after this point
+    Unreachable,
 }
 
 impl Ty {
@@ -132,6 +135,10 @@ impl<'src> Defs<'src> {
     pub fn define(&mut self, id: DefId, def: TypeDef<'src>) {
         assert_eq!(def.id, id);
         self.array[id.0 as usize] = def;
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &TypeDef<'src>> {
+        self.array.iter()
     }
 }
 
@@ -490,5 +497,47 @@ impl<'src> Debug for Expr<'src> {
             ExprKind::AssignIndex(node) => Debug::fmt(node, f),
             ExprKind::Call(node) => Debug::fmt(node, f),
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct DisplayHir<'a>(pub(crate) &'a Hir<'a>);
+
+#[cfg(test)]
+impl std::fmt::Display for DisplayHir<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{:#?}\n", self.0.top_level)?;
+
+        for TypeDef { name, fields, id } in self.0.defs.iter() {
+            if Ty::Def(*id).is_primitive() {
+                continue;
+            }
+
+            match fields {
+                Fields::Extern => {
+                    writeln!(f, "extern type {name};")?;
+                }
+                Fields::Named(fields) => {
+                    let p = |ty: Ty| crate::ty::TyPrinter::new(&self.0.defs, &self.0.fns).print(ty);
+
+                    write!(f, "type {name}(")?;
+                    let mut fields = fields.iter().peekable();
+                    while let Some((name, field)) = fields.next() {
+                        write!(f, "{name}: {}", p(field.ty))?;
+                        if fields.peek().is_some() {
+                            write!(f, ", ")?;
+                        }
+                    }
+                    writeln!(f, ")")?;
+                }
+            }
+        }
+
+        writeln!(f)?;
+        if !self.0.fns.array.is_empty() {
+            writeln!(f, "{:#?}", self.0.fns.array)?;
+        }
+
+        Ok(())
     }
 }

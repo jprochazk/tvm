@@ -2,9 +2,68 @@
 source: src/ty/tests.rs
 expression: "check!(r#\"\n        fn test() -> int {\n            if true { 0 } else { 1 }\n        }\n    \"#)"
 ---
-Hir {
-    top_level: Block {
-        body: [],
-        tail: None,
-    },
+Block {
+    body: [],
+    tail: None,
 }
+
+
+[
+    Fn {
+        name: Ident("test"),
+        kind: Function,
+        sig: FnSig {
+            params: [],
+            ret: Def(
+                DefId(
+                    0,
+                ),
+            ),
+            ret_span: Some(
+                Span {
+                    start: 13,
+                    end: 16,
+                },
+            ),
+        },
+        body: Block(
+            Block {
+                body: [],
+                tail: Some(
+                    If {
+                        if_token: Span {
+                            start: 23,
+                            end: 25,
+                        },
+                        branches: [
+                            Branch {
+                                cond: Bool(
+                                    true,
+                                ),
+                                body: Block {
+                                    body: [],
+                                    tail: Some(
+                                        Int(
+                                            0,
+                                        ),
+                                    ),
+                                },
+                            },
+                        ],
+                        tail: Some(
+                            Block {
+                                body: [],
+                                tail: Some(
+                                    Int(
+                                        1,
+                                    ),
+                                ),
+                            },
+                        ),
+                    },
+                ),
+            },
+        ),
+    },
+]
+

@@ -1,0 +1,9 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        fn f() {\n            return 10\n        }\n    \"#)"
+---
+error: type mismatch between "int" and "()"
+2 |      return 10
+  |             ^^
+
+

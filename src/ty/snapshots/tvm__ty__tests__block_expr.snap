@@ -1,0 +1,23 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        let v: int = do {0};\n    \"#)"
+---
+Block {
+    body: [
+        Let {
+            name: Ident("v"),
+            init: Block {
+                body: [],
+                tail: Some(
+                    Int(
+                        0,
+                    ),
+                ),
+            },
+        },
+    ],
+    tail: None,
+}
+
+
+

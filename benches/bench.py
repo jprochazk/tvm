@@ -24,15 +24,45 @@ def run(cmd: str) -> str:
     )
 
 
-def parse_divan(output: str) -> str:
-    out = ""
+def parse_divan(output: str) -> list[list[str]]:
+    rows: list[list[str]] = []
     for line in output[output.find("╰─ fib") :].splitlines()[1:]:
         parts = line.split("│")
         if len(parts) != 6:
             continue
-        arg = parts[0].strip().split()[1]
-        mean = parts[3].strip()
-        out += f"fib({arg})\t{mean}\n"
+        N = parts[0].strip().split()[1]
+        time = parts[3].strip()
+        rows.append([N, time])
+    return rows
+
+
+def parse_lua(output: str) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for line in output.splitlines():
+        parts = line.split()
+        N = parts[0]
+        time = " ".join(parts[1:])
+        rows.append([N, time])
+    return rows
+
+
+def render_markdown_table(data: list[list[str]]):
+    out = ""
+    column_widths = [max(len(str(row[i])) for row in data) for i in range(len(data[0]))]
+
+    def line(row: list[str]):
+        nonlocal out
+        out += (
+            "| "
+            + " | ".join(str(row[i]).ljust(column_widths[i]) for i in range(len(row)))
+            + " |\n"
+        )
+
+    header = data[0]
+    line(header)
+    out += "| " + " | ".join("-" * width for width in column_widths) + " |\n"
+    for row in data[1:]:
+        line(row)
     return out
 
 
@@ -52,9 +82,23 @@ results["hebi3 (tvm)"] = {
 
 results[f"lua {get_lua_version()}"] = {
     "src": (script_dir / "fib.lua").read_text().strip(),
-    "timings": run("lua main.lua"),
+    "timings": parse_lua(run("lua main.lua")),
 }
 
 print("# benchmark: recursive fibonacci\n")
 for name, info in results.items():
-    print(f'## {name}\n```\n{info["src"]}\n```\n\n{info["timings"]}')
+    src = info["src"]
+    timings = info["timings"]
+
+    # fmt:off
+    output = "\n".join([
+        f"## {name}",
+        f"```\n{src}\n```",
+        "",
+        render_markdown_table([
+            ["N", "time"],
+            *timings,
+        ]),
+    ])
+
+    print(output)

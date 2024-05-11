@@ -73,32 +73,46 @@ def get_lua_version():
 
 script_dir = Path(os.path.dirname(__file__))
 
-results = {}
 
-results["hebi3 (tvm)"] = {
-    "src": (script_dir / "fib.hebi").read_text().strip(),
-    "timings": parse_divan(run("cargo bench fib")),
-}
+def main():
+    results = {}
 
-results[f"lua {get_lua_version()}"] = {
-    "src": (script_dir / "fib.lua").read_text().strip(),
-    "timings": parse_lua(run("lua main.lua")),
-}
+    results["hebi3 (tvm)"] = {
+        "src": (script_dir / "fib.hebi").read_text().strip(),
+        "timings": parse_divan(run("cargo bench fib")),
+    }
 
-print("## Benchmark: recursive fibonacci\n")
-for name, info in results.items():
-    src = info["src"]
-    timings = info["timings"]
+    results[f"lua {get_lua_version()}"] = {
+        "src": (script_dir / "fib.lua").read_text().strip(),
+        "timings": parse_lua(run("lua main.lua")),
+    }
 
-    # fmt:off
-    output = "\n".join([
-        f"### {name}",
-        f"```\n{src}\n```",
-        "",
-        render_markdown_table([
-            ["N", "time"],
-            *timings,
-        ]),
-    ])
+    print("## Benchmark: recursive fibonacci\n")
+    for name, info in results.items():
+        src = info["src"]
+        timings = info["timings"]
 
-    print(output)
+        # fmt:off
+        output = "\n".join([
+            f"### {name}",
+            f"```\n{src}\n```",
+            "",
+            render_markdown_table([
+                ["N", "time"],
+                *timings,
+            ]),
+        ])
+
+        print(output)
+
+
+if __name__ == "__main__":
+    try:
+        import psutil
+
+        psutil.Process().cpu_affinity([0])
+    except ImportError:
+        print("could not set core affinity")
+        pass
+
+    main()

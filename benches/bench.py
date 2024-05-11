@@ -36,9 +36,9 @@ def parse_divan(output: str) -> str:
     return out
 
 
-def check_lua_version():
+def get_lua_version():
     o = run("lua -v")
-    assert "Lua 5.4" in o, f"please install lua 5.4, detected version: {o.split()[1]}"
+    return o.split()[1]
 
 
 script_dir = Path(os.path.dirname(__file__))
@@ -50,8 +50,7 @@ results["hebi3 (tvm)"] = {
     "timings": parse_divan(run("cargo bench fib")),
 }
 
-check_lua_version()
-results["lua 5.4"] = {
+results[f"lua {get_lua_version()}"] = {
     "src": (script_dir / "fib.lua").read_text().strip(),
     "timings": run("lua main.lua"),
 }

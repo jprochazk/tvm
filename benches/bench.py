@@ -79,7 +79,7 @@ def main():
 
     results["hebi3 (tvm)"] = {
         "src": (script_dir / "fib.hebi").read_text().strip(),
-        "timings": parse_divan(run("cargo bench fib")),
+        "timings": parse_divan(run("cargo bench main")),
     }
 
     results[f"lua {get_lua_version()}"] = {

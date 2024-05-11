@@ -21,5 +21,5 @@ insta = "1.30.0"
 divan = "0.1.14"
 
 [[bench]]
-name = "fib"
+name = "main"
 harness = false

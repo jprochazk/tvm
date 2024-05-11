@@ -85,14 +85,14 @@ results[f"lua {get_lua_version()}"] = {
     "timings": parse_lua(run("lua main.lua")),
 }
 
-print("# benchmark: recursive fibonacci\n")
+print("## Benchmark: recursive fibonacci\n")
 for name, info in results.items():
     src = info["src"]
     timings = info["timings"]
 
     # fmt:off
     output = "\n".join([
-        f"## {name}",
+        f"### {name}",
         f"```\n{src}\n```",
         "",
         render_markdown_table([

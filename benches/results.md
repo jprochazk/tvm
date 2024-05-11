@@ -7,6 +7,9 @@
 | lua 5.4.4             | 377.00 ns | 2.84 us   | 29.83 us | 325.43 us | 3.65 ms   |
 | luajit 2.1.1713773202 | 414.00 ns | 686.00 ns | 5.95 us  | 64.24 us  | 735.07 us |
 
+> [!NOTE]
+> I don't know why `hebi3` is better than native Rust for inputs `N>=10`...
+
 ### Rust (native)
 ```rust
 #[inline(never)]

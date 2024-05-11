@@ -57,4 +57,4 @@ results[f"lua {get_lua_version()}"] = {
 
 print("# benchmark: recursive fibonacci\n")
 for name, info in results.items():
-    print(f'## {name}\n{info["src"]}\n\n{info["timings"]}')
+    print(f'## {name}\n```\n{info["src"]}\n```\n\n{info["timings"]}')

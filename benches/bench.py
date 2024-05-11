@@ -70,13 +70,19 @@ def render_markdown_table(data: list[list[str]]):
 
 
 def get_lua_version():
-    o = run("lua -v")
-    return o.split()[1]
+    try:
+        o = run("lua -v")
+        return o.split()[1]
+    except:
+        return None
 
 
 def get_luajit_version():
-    o = run("luajit -v")
-    return o.split()[1]
+    try:
+        o = run("luajit -v")
+        return o.split()[1]
+    except:
+        return None
 
 
 script_dir = Path(os.path.dirname(__file__))
@@ -99,17 +105,21 @@ def main():
         "lang": "rust",
     }
 
-    results[f"lua {get_lua_version()}"] = {
-        "src": (script_dir / "fib.lua").read_text().strip(),
-        "timings": parse_lua(run("lua main.lua")),
-        "lang": "lua",
-    }
+    lua_v = get_lua_version()
+    if lua_v is not None:
+        results[f"lua {lua_v}"] = {
+            "src": (script_dir / "fib.lua").read_text().strip(),
+            "timings": parse_lua(run("lua main.lua")),
+            "lang": "lua",
+        }
 
-    results[f"luajit {get_luajit_version()}"] = {
-        "src": (script_dir / "fib.lua").read_text().strip(),
-        "timings": parse_lua(run("luajit main.lua")),
-        "lang": "lua",
-    }
+    luajit_v = get_luajit_version()
+    if luajit_v is not None:
+        results[f"luajit {luajit_v}"] = {
+            "src": (script_dir / "fib.lua").read_text().strip(),
+            "timings": parse_lua(run("luajit main.lua")),
+            "lang": "lua",
+        }
 
     print("## Benchmark: recursive fibonacci\n")
     rows = [["entry", "N=5", "N=10", "N=15", "N=20", "N=25"]]

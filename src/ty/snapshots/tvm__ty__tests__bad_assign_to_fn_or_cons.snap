@@ -1,0 +1,13 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        fn function() {}\n        type Constructor;\n\n        function = true;\n        Constructor = true;\n    \"#)"
+---
+error: invalid assignment target
+4 |  function = true;
+  |  ^^^^^^^^
+
+error: invalid assignment target
+5 |  Constructor = true;
+  |  ^^^^^^^^^^^
+
+

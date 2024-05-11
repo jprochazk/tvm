@@ -72,7 +72,7 @@ struct FunctionState<'src, 'a> {
     current_loop: Option<Loop>,
     asm: Assembler<'src>,
     regalloc: RegisterAllocator,
-    locals: Vec<HashMap<Ident<'src>, Reg>>,
+    locals: Vec<HashMap<Ident<'src>, TyReg>>,
 }
 
 fn generate_main_fn(block: hir::Block<'_>) -> hir::Fn<'_> {
@@ -113,7 +113,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
             f.with_reg(Span::empty(), None, |f, ret_r| {
                 for param in &self.hir.sig.params {
                     let reg = f.alloc_reg(param.name.span)?;
-                    f.declare_local(param.name, reg);
+                    f.declare_local(param.name, TyReg::new(param.ty, reg));
                 }
 
                 block_expr(f, body, Some(ret_r))?;
@@ -161,7 +161,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         unreachable!("BUG: unresolved variable: {name}@{}", name.span);
     }
 
-    fn resolve_local(&self, name: &str) -> Option<Reg> {
+    fn resolve_local(&self, name: &str) -> Option<TyReg> {
         for scope in self.locals.iter().rev() {
             if let Some(reg) = scope.get(name).copied() {
                 return Some(reg);
@@ -178,14 +178,14 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         self.compiler.module_state.fn_table.get_id(name)
     }
 
-    fn resolve_local_in_current_scope(&self, name: &str) -> Option<Reg> {
+    fn resolve_local_in_current_scope(&self, name: &str) -> Option<TyReg> {
         self.locals
             .last()
             .and_then(|scope| scope.get(name))
             .copied()
     }
 
-    fn declare_local(&mut self, name: Ident<'src>, reg: Reg) {
+    fn declare_local(&mut self, name: Ident<'src>, reg: TyReg) {
         let scope = self.locals.last_mut().expect("BUG: no open scope");
         let _ = scope.insert(name, reg);
     }
@@ -278,9 +278,9 @@ fn stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Stmt<'src>) -> 
 fn let_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Let<'src>) -> Result<()> {
     let dst = match f.resolve_local_in_current_scope(&hir.name) {
         Some(reg) => reg,
-        None => f.alloc_reg(hir.name.span)?,
+        None => f.alloc_reg(hir.name.span)?.ty(hir.init.ty),
     };
-    assign_to(f, &hir.init, dst)?;
+    assign_to(f, &hir.init, dst.reg)?;
     f.declare_local(hir.name, dst);
     Ok(())
 }
@@ -339,7 +339,7 @@ fn expr<'src, 'a>(
         hir::ExprKind::UseVar(hir) => use_var_expr(f, span, hir, dst),
         hir::ExprKind::UseField(_hir) => todo!(),
         hir::ExprKind::UseIndex(_hir) => todo!(),
-        hir::ExprKind::AssignVar(_hir) => todo!(),
+        hir::ExprKind::AssignVar(hir) => assign_var_expr(f, span, hir).map(|_| None),
         hir::ExprKind::AssignField(_hir) => todo!(),
         hir::ExprKind::AssignIndex(_hir) => todo!(),
         hir::ExprKind::Call(hir) => call_expr(f, span, hir, dst),
@@ -380,45 +380,69 @@ fn binary_expr<'src, 'a>(
     dst: Option<Reg>,
 ) -> Result<Option<Reg>> {
     f.with_reg(span, dst, |f, dst| {
-        let lhs = expr(f, &hir.lhs, Some(dst))?.unwrap_or(dst);
+        let lhs = expr(f, &hir.lhs, Some(dst))?.unwrap_or(dst).ty(hir.lhs.ty);
         let fresh_rhs = f.alloc_reg(span)?;
-        let rhs = expr(f, &hir.rhs, Some(fresh_rhs))?.unwrap_or(fresh_rhs);
+        let rhs = expr(f, &hir.rhs, Some(fresh_rhs))?
+            .unwrap_or(fresh_rhs)
+            .ty(hir.rhs.ty);
 
-        use asm::*;
-
-        macro_rules! emit_binop {
-            ($kind:ident) => {
-                if hir.lhs.ty.is_int() {
-                    f.asm.emit(span, $kind(I64, lhs, rhs, dst));
-                } else if hir.lhs.ty.is_num() {
-                    f.asm.emit(span, $kind(F64, lhs, rhs, dst));
-                } else {
-                    unreachable!("BUG: binary expr consisting of non-numeric types: {hir:#?}");
-                }
-            };
-        }
-
-        use BinaryOp as O;
-        match hir.op {
-            O::Add => emit_binop!(add),
-            O::Sub => emit_binop!(sub),
-            O::Mul => emit_binop!(mul),
-            O::Div => emit_binop!(div),
-            O::Rem => emit_binop!(rem),
-            // O::Pow => emit_binop!(Pow),
-            O::Eq => emit_binop!(ceq),
-            O::Ne => emit_binop!(cne),
-            O::Gt => emit_binop!(cgt),
-            O::Lt => emit_binop!(clt),
-            O::Ge => emit_binop!(cge),
-            O::Le => emit_binop!(cle),
-            _ => {}
-        }
+        emit_binop(f, span, lhs, rhs, hir.op, dst);
 
         f.free_reg(fresh_rhs);
 
         Ok(None)
     })
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TyReg {
+    ty: hir::Ty,
+    reg: Reg,
+}
+
+impl Reg {
+    fn ty(self, ty: hir::Ty) -> TyReg {
+        TyReg::new(ty, self)
+    }
+}
+
+impl TyReg {
+    fn new(ty: hir::Ty, reg: Reg) -> Self {
+        Self { ty, reg }
+    }
+}
+
+fn emit_binop(f: &mut FunctionState, span: Span, lhs: TyReg, rhs: TyReg, op: BinaryOp, dst: Reg) {
+    use asm::*;
+
+    macro_rules! emit_binop {
+        ($kind:ident) => {
+            if lhs.ty.is_int() {
+                f.asm.emit(span, $kind(I64, lhs.reg, rhs.reg, dst));
+            } else if lhs.ty.is_num() {
+                f.asm.emit(span, $kind(F64, lhs.reg, rhs.reg, dst));
+            } else {
+                unreachable!("BUG: binary expr consisting of non-numeric types at {span}");
+            }
+        };
+    }
+
+    use BinaryOp as O;
+    match op {
+        O::Add => emit_binop!(add),
+        O::Sub => emit_binop!(sub),
+        O::Mul => emit_binop!(mul),
+        O::Div => emit_binop!(div),
+        O::Rem => emit_binop!(rem),
+        // O::Pow => emit_binop!(Pow),
+        O::Eq => emit_binop!(ceq),
+        O::Ne => emit_binop!(cne),
+        O::Gt => emit_binop!(cgt),
+        O::Lt => emit_binop!(clt),
+        O::Ge => emit_binop!(cge),
+        O::Le => emit_binop!(cle),
+        _ => {}
+    }
 }
 
 fn primitive_expr<'src, 'a>(
@@ -461,9 +485,9 @@ fn use_var_expr<'src, 'a>(
     hir: &'a hir::UseVar<'src>,
     dst: Option<Reg>,
 ) -> Result<Option<Reg>> {
-    use asm::*;
-
     let symbol = f.resolve_symbol(hir.name);
+
+    use asm::*;
     let ret = match symbol.kind {
         SymbolKind::Fn(id) => {
             let Some(dst) = dst else { return Ok(None) };
@@ -471,10 +495,41 @@ fn use_var_expr<'src, 'a>(
             None
         }
         SymbolKind::Mvar(_v) => todo!("module variables"),
-        SymbolKind::Var(reg) => Some(reg),
+        SymbolKind::Var(v) => Some(v.reg),
     };
 
     Ok(ret)
+}
+
+fn assign_var_expr<'src, 'a>(
+    f: &mut FunctionState<'src, 'a>,
+    span: Span,
+    hir: &'a hir::AssignVar<'src>,
+) -> Result<()> {
+    let symbol = f.resolve_symbol(hir.name);
+
+    let SymbolKind::Var(dst) = symbol.kind else {
+        unreachable!();
+    };
+
+    match hir.op {
+        Some(op) => {
+            let lhs = dst;
+            let fresh_rhs = f.alloc_reg(span)?;
+            let rhs = expr(f, &hir.value, Some(fresh_rhs))?
+                .unwrap_or(fresh_rhs)
+                .ty(hir.value.ty);
+
+            emit_binop(f, hir.name.span.to(hir.value.span), lhs, rhs, op, dst.reg);
+
+            f.free_reg(fresh_rhs);
+        }
+        None => {
+            assign_to(f, &hir.value, dst.reg)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn call_expr<'src, 'a>(
@@ -882,7 +937,7 @@ struct Symbol {
 enum SymbolKind {
     Fn(Fnid),
     Mvar(Mvar),
-    Var(Reg),
+    Var(TyReg),
 }
 
 impl Symbol {
@@ -900,7 +955,7 @@ impl Symbol {
         }
     }
 
-    fn var(span: Span, reg: Reg) -> Self {
+    fn var(span: Span, reg: TyReg) -> Self {
         Self {
             span,
             kind: SymbolKind::Var(reg),

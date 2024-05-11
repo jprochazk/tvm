@@ -216,3 +216,29 @@ test! {
         fib(3) + fib(7)
     "#
 }
+
+test! {
+    assignment,
+    r#"
+        let v: int = 1;
+        v += 1; // 2
+        v /= 2; // 1
+        v *= 2; // 2
+        v -= 1; // 1
+        v %= 1; // 0
+
+        v
+    "#
+}
+
+test! {
+    count_loop,
+    r#"
+        let i = 0;
+        loop {
+            if i >= 10 { break }
+            i += 1;
+        }
+        i
+    "#
+}

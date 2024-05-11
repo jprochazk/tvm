@@ -1,0 +1,9 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        let v: bool = 1 * 2 + 3 * (4 + 5 * 6);\n    \"#)"
+---
+error: type mismatch between "int" and "bool"
+1 |  let v: bool = 1 * 2 + 3 * (4 + 5 * 6);
+  |                ^^^^^^^^^^^^^^^^^^^^^^^
+
+

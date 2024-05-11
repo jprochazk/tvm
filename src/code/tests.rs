@@ -230,3 +230,15 @@ test! {
         fib(15)
     "#
 }
+
+test! {
+    assignment,
+    r#"
+        let v: int = 1;
+        v += 1;
+        v -= 1;
+        v /= 1;
+        v *= 1;
+        v %= 1;
+    "#
+}

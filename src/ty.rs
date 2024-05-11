@@ -52,7 +52,7 @@ struct Symbol {
     kind: SymbolKind,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum SymbolKind {
     Var,
     Fn,
@@ -281,11 +281,12 @@ impl<'src> TyCtx<'src> {
         );
     }
 
-    fn resolve_var_ty(&self, name: &str) -> Option<Ty> {
+    fn resolve_var(&self, name: &str) -> Option<Symbol> {
         for scope in self.scopes.iter().rev() {
-            if let Some(symbol) = scope.get(name).copied() {
-                return Some(symbol.ty);
-            }
+            let Some(symbol) = scope.get(name).copied() else {
+                continue;
+            };
+            return Some(symbol);
         }
 
         None
@@ -599,8 +600,8 @@ impl<'src> TyCtx<'src> {
     }
 
     fn infer_var_expr(&mut self, span: Span, v: &ast::expr::UseVar<'src>) -> Expr<'src> {
-        let ty = match self.resolve_var_ty(v.name.as_str()) {
-            Some(ty) => ty,
+        let ty = match self.resolve_var(v.name.as_str()) {
+            Some(symbol) => symbol.ty,
             None => {
                 self.ecx.emit_undefined_var(span);
                 Ty::Error
@@ -615,8 +616,14 @@ impl<'src> TyCtx<'src> {
     }
 
     fn infer_var_assign(&mut self, span: Span, v: &ast::expr::AssignVar<'src>) -> Expr<'src> {
-        let ty = match self.resolve_var_ty(v.name.as_str()) {
-            Some(ty) => ty,
+        let ty = match self.resolve_var(v.name.as_str()) {
+            Some(symbol) => match symbol.kind {
+                SymbolKind::Var => symbol.ty,
+                _ => {
+                    self.ecx.emit_invalid_assign_target(v.name.span);
+                    Ty::Error
+                }
+            },
             None => {
                 self.ecx.emit_undefined_var(span);
                 Ty::Error

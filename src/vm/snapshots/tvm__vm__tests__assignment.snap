@@ -1,0 +1,47 @@
+---
+source: src/vm/tests.rs
+expression: "run!(r#\"\n        let v: int = 1;\n        v += 1; // 2\n        v /= 2; // 1\n        v *= 2; // 2\n        v -= 1; // 1\n        v %= 1; // 0\n\n        v\n    \"#)"
+---
+## Module
+
+function "main" {
+  registers: 3 (0 params)
+  literals: []
+  bytecode: (13 ops) [
+    smi 1, r1             // let v: int = 1;
+    smi 1, r2             // v += 1; // 2
+    add <i64> r1, r2, r1  // 
+    smi 2, r2             // v /= 2; // 1
+    div <i64> r1, r2, r1  // 
+    smi 2, r2             // v *= 2; // 2
+    mul <i64> r1, r2, r1  // 
+    smi 1, r2             // v -= 1; // 1
+    sub <i64> r1, r2, r1  // 
+    smi 1, r2             // v %= 1; // 0
+    rem <i64> r1, r2, r1  // 
+    mov r1, r0            // v
+    ret                   //   
+  ]
+}
+
+
+## Output
+
+I64(0)
+
+## Events
+
+smi 1, r1                [_, _, _] -> [_, 1i, _]
+smi 1, r2                [_, 1i, _] -> [_, 1i, 1i]
+add <i64> r1, r2, r1     [_, 1i, 1i] -> [_, 2i, 1i]
+smi 2, r2                [_, 2i, 1i] -> [_, 2i, 2i]
+div <i64> r1, r2, r1     [_, 2i, 2i] -> [_, 1i, 2i]
+smi 2, r2                [_, 1i, 2i] -> [_, 1i, 2i]
+mul <i64> r1, r2, r1     [_, 1i, 2i] -> [_, 2i, 2i]
+smi 1, r2                [_, 2i, 2i] -> [_, 2i, 1i]
+sub <i64> r1, r2, r1     [_, 2i, 1i] -> [_, 1i, 1i]
+smi 1, r2                [_, 1i, 1i] -> [_, 1i, 1i]
+rem <i64> r1, r2, r1     [_, 1i, 1i] -> [_, 0i, 1i]
+mov r1, r0               [_, 0i, 1i] -> [0i, 0i, 1i]
+ret                      [0i, 0i, 1i]
+

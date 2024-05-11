@@ -213,3 +213,21 @@ test! {
         v += true;
     "#
 }
+
+test! {
+    bad_assign_to_fn_or_cons,
+    r#"
+        fn function() {}
+        type Constructor;
+
+        function = true;
+        Constructor = true;
+    "#
+}
+
+test! {
+    group_span,
+    r#"
+        let v: bool = 1 * 2 + 3 * (4 + 5 * 6);
+    "#
+}

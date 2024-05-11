@@ -826,9 +826,11 @@ fn expr_array<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
 }
 
 fn expr_group<'src>(p: &mut Parser<'src>) -> Result<Expr<'src>> {
+    let s = p.span();
     assert!(p.eat(t!["("]));
-    let inner = expr(p)?;
+    let mut inner = expr(p)?;
     p.must(t![")"])?;
+    inner.span = p.finish(s);
     Ok(inner)
 }
 

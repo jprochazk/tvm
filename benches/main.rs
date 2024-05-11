@@ -20,3 +20,17 @@ fn fib(bencher: Bencher, n: usize) {
 
     bencher.bench_local(move || black_box(vm.run(&module)));
 }
+
+#[divan::bench(args = [5, 10, 15, 20, 25])]
+fn fib_native(n: i32) -> i32 {
+    #[inline(never)]
+    fn fib(n: i32) -> i32 {
+        if n < 2 {
+            n
+        } else {
+            fib(n - 1) + fib(n - 2)
+        }
+    }
+
+    fib(black_box(n))
+}

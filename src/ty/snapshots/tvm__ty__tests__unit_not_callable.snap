@@ -4,6 +4,6 @@ expression: "check!(r#\"\n        (do {})();\n    \"#)"
 ---
 error: type "()" is not callable
 1 |  (do {})();
-  |   ^^^^^
+  |  ^^^^^^^
 
 

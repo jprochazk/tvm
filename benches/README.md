@@ -6,7 +6,7 @@ Prerequisites:
 - `python`, v3.11+
 - optional: `psutil`, installed via `pip install psutil`
   - used to set core affinity before running benchmarks,
-    which can significantly reduces run-to-run variance in the results.
+    which can significantly reduce run-to-run variance
 
 ```
 python3 bench.py > data.md

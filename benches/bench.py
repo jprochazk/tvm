@@ -13,36 +13,39 @@ import subprocess
 from subprocess import check_output
 from pathlib import Path
 import os
+import sys
 
 
-def run(cmd: str) -> str:
+def run(cmd: str, env: dict[str, str] | None = None) -> str:
+    print(f"$ {cmd}", file=sys.stderr)
     return check_output(
-        cmd.split(),
-        text=True,
-        stderr=subprocess.STDOUT,
-        cwd=script_dir,
+        cmd.split(), text=True, stderr=subprocess.STDOUT, cwd=script_dir, env=env
     )
 
 
-def parse_divan(output: str) -> list[list[str]]:
-    rows: list[list[str]] = []
-    for line in output[output.find("╰─ fib") :].splitlines()[1:]:
+def parse_divan(name: str, output: str) -> list[str]:
+    rows: list[str] = []
+
+    start = output.find(f"├─ {name}")
+    if start == -1:
+        start = output.find(f"╰─ {name}")
+
+    for line in output[start:].splitlines()[1:]:
+        line = line[3:]
         parts = line.split("│")
-        if len(parts) != 6:
-            continue
-        N = parts[0].strip().split()[1]
+        if len(parts) != 6 or len(parts[1].strip()) == 0:
+            break
         time = parts[3].strip()
-        rows.append([N, time])
+        rows.append(time)
     return rows
 
 
-def parse_lua(output: str) -> list[list[str]]:
-    rows: list[list[str]] = []
+def parse_lua(output: str) -> list[str]:
+    rows: list[str] = []
     for line in output.splitlines():
         parts = line.split()
-        N = parts[0]
         time = " ".join(parts[1:])
-        rows.append([N, time])
+        rows.append(time)
     return rows
 
 
@@ -71,39 +74,60 @@ def get_lua_version():
     return o.split()[1]
 
 
+def get_luajit_version():
+    o = run("luajit -v")
+    return o.split()[1]
+
+
 script_dir = Path(os.path.dirname(__file__))
 
 
 def main():
     results = {}
 
+    cargo = run("cargo bench main")
+
+    results["Rust (native)"] = {
+        "src": (script_dir / "fib.rs").read_text().strip(),
+        "timings": parse_divan("native_fib", cargo),
+        "lang": "rust",
+    }
+
     results["hebi3 (tvm)"] = {
         "src": (script_dir / "fib.hebi").read_text().strip(),
-        "timings": parse_divan(run("cargo bench main")),
+        "timings": parse_divan("fib", cargo),
+        "lang": "rust",
     }
 
     results[f"lua {get_lua_version()}"] = {
         "src": (script_dir / "fib.lua").read_text().strip(),
         "timings": parse_lua(run("lua main.lua")),
+        "lang": "lua",
+    }
+
+    results[f"luajit {get_luajit_version()}"] = {
+        "src": (script_dir / "fib.lua").read_text().strip(),
+        "timings": parse_lua(run("luajit main.lua")),
+        "lang": "lua",
     }
 
     print("## Benchmark: recursive fibonacci\n")
+    rows = [["entry", "N=5", "N=10", "N=15", "N=20", "N=25"]]
+    code: list[str] = []
     for name, info in results.items():
         src = info["src"]
         timings = info["timings"]
+        lang = info["lang"]
 
+        rows.append([name, *timings])
         # fmt:off
-        output = "\n".join([
+        code.append("\n".join([
             f"### {name}",
-            f"```\n{src}\n```",
-            "",
-            render_markdown_table([
-                ["N", "time"],
-                *timings,
-            ]),
-        ])
-
-        print(output)
+            f"```{lang}\n{src}\n```",
+            ""
+        ]))
+    print(render_markdown_table(rows))
+    print("\n".join(code))
 
 
 if __name__ == "__main__":

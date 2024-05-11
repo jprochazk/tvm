@@ -1,7 +1,9 @@
-use divan::{black_box, Bencher};
+mod fib;
+
+use divan::{black_box, Bencher, Divan};
 
 fn main() {
-    divan::main();
+    Divan::from_args().threads([1]).main();
 }
 
 #[divan::bench(args = [5, 10, 15, 20, 25])]
@@ -22,15 +24,6 @@ fn fib(bencher: Bencher, n: usize) {
 }
 
 #[divan::bench(args = [5, 10, 15, 20, 25])]
-fn fib_native(n: i32) -> i32 {
-    #[inline(never)]
-    fn fib(n: i32) -> i32 {
-        if n < 2 {
-            n
-        } else {
-            fib(n - 1) + fib(n - 2)
-        }
-    }
-
-    fib(black_box(n))
+fn native_fib(n: i32) -> i32 {
+    fib::fib(black_box(n))
 }

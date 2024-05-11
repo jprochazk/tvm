@@ -20,19 +20,19 @@ do
         return os.clock() * 1000000000
     end
 
-    function benchmark(n, f, ...)
+    function benchmark(n, f, value)
         local decPlaces = 2
         local elapsed_ns = 0
         for i = 1, n do
             local now = clock_ns()
-            f(...)
+            f(value)
             elapsed_ns = elapsed_ns + (clock_ns() - now)
         end
         
         local avg_ns = elapsed_ns / n
         local unit = get_unit(avg_ns)
-        local output = string.format('%s %.2f %s',
-            table.concat(table.pack(...), ', '),
+        local output = string.format('%d %.2f %s',
+            value,
             avg_ns / scale[unit],
             unit
         )
@@ -43,8 +43,8 @@ do
     dofile('fib.lua')
 
     benchmark(1000, fib, 5)
-    benchmark(500, fib, 10)
-    benchmark(250, fib, 15)
-    benchmark(150, fib, 20)
-    benchmark(100, fib, 25)
+    benchmark(1000, fib, 10)
+    benchmark(1000, fib, 15)
+    benchmark(1000, fib, 20)
+    benchmark(1000, fib, 25)
 end

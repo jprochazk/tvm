@@ -1,0 +1,55 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        extern fn add1(v: int) -> int;\n\n        add1(1)\n    \"#)"
+---
+Block {
+    body: [],
+    tail: Some(
+        Call {
+            callee: UseVar {
+                name: Ident("add1"),
+            },
+            args: [
+                Arg {
+                    key: None,
+                    value: Int(
+                        1,
+                    ),
+                },
+            ],
+        },
+    ),
+}
+
+
+[
+    Fn {
+        name: Ident("add1"),
+        kind: Function,
+        sig: FnSig {
+            params: [
+                Param {
+                    name: Ident("v"),
+                    ty: Def(
+                        DefId(
+                            0,
+                        ),
+                    ),
+                },
+            ],
+            ret: Def(
+                DefId(
+                    0,
+                ),
+            ),
+            ret_span: Some(
+                Span {
+                    start: 26,
+                    end: 29,
+                },
+            ),
+        },
+        body: Extern,
+    },
+]
+

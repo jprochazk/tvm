@@ -1,0 +1,29 @@
+---
+source: src/vm/tests.rs
+expression: "run!(r#\"\n        let v = 1.0;\n        -v\n    \"#)"
+---
+## Module
+
+function "main" {
+  registers: 2 (0 params)
+  literals: [
+    F64(1.0)
+  ]
+  bytecode: (3 ops) [
+    lit [0], r1     // let v = 1.0;
+    mns.f64 r1, r0  // -v
+    ret             //   
+  ]
+}
+
+
+## Output
+
+F64(-1.0)
+
+## Events
+
+lit [0], r1              [_, _] -> [_, 1f]
+mns.f64 r1, r0           [_, 1f] -> [-1f, 1f]
+ret                      [-1f, 1f]
+

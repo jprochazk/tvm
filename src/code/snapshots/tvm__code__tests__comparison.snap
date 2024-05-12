@@ -6,16 +6,16 @@ function "main" {
   registers: 5 (0 params)
   literals: []
   bytecode: (10 ops) [
-    smi 1, r1             // let a = 1;
-    smi 2, r2             // let b = 2;
-    ceq <i64> r1, r2, r3  // a == b;
-    cne <i64> r1, r2, r3  // a != b;
-    clt <i64> r1, r2, r3  // a < b;
-    cgt <i64> r1, r2, r3  // a > b;
-    cle <i64> r1, r2, r3  // a <= b;
-    cge <i64> r1, r2, r3  // a >= b;
-    unit r0               // 
-    ret                   //   
+    smi 1, r1           // let a = 1;
+    smi 2, r2           // let b = 2;
+    ceq.i64 r1, r2, r3  // a == b;
+    cne.i64 r1, r2, r3  // a != b;
+    clt.i64 r1, r2, r3  // a < b;
+    cgt.i64 r1, r2, r3  // a > b;
+    cle.i64 r1, r2, r3  // a <= b;
+    cge.i64 r1, r2, r3  // a >= b;
+    unit r0             // 
+    ret                 //   
   ]
 }
 

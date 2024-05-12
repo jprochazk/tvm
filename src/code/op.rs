@@ -1,5 +1,8 @@
 use crate::vm::token;
 
+// TODO: instead of storing token in the instruction,
+//       store it in the operand, e.g. `Reg<i64>`
+
 #[rustfmt::skip]
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,15 +15,18 @@ pub enum Op {
     Mov { src: Reg, dst: Reg },
 
     /// `dst = literal_pool[src]`
-    Load_Literal { token: token::ToValue, dst: Reg, src: Lit },
+    Load_Literal { token: token::Value, dst: Reg, src: Lit },
 
     /// `dst = UNIT`
     Load_Unit { dst: Reg },
 
     /// `dst = function_table[id]`
-    Load_Fn { dst: Reg, id: Fnid },
+    Load_Fn { dst: Reg, id: FnId },
 
-    /// `dst = sign_extend<i64>(val)`
+    /// `dst = function_table[id]`
+    Load_Fn_Host { dst: Reg, id: HostId },
+
+    /// `dst = val as i64`
     Load_I16 { dst: Reg, val: i16 },
 
     /// `dst = val`
@@ -30,138 +36,101 @@ pub enum Op {
     Jump { offset: Rel },
 
     /// Increment program counter by offset stored in literal pool at `offset`.
-    Jump_Long { token: token::ToOffset, offset: Lit },
+    Jump_Long { token: token::Offset, offset: Lit },
 
     /// If `cond` is `false`, increment program counter by `offset`.
-    JumpIfFalse { ty: token::ToBool, cond: Reg, offset: Rel },
+    JumpIfFalse { ty: token::Bool, cond: Reg, offset: Rel },
 
     /// If `cond` is `false`, increment program counter by offset
     /// stored in literal pool at `offset`.
-    JumpIfFalse_Long { ty: token::ToBool, token: token::ToOffset, cond: Reg, offset: Lit },
+    JumpIfFalse_Long { ty: token::Bool, token: token::Offset, cond: Reg, offset: Lit },
 
     /// `dst = lhs + rhs`
-    ///
-    /// All operands are `i64`.
-    Add_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Add_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs + rhs`
-    ///
-    /// All operands are `f64`.
-    Add_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Add_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs - rhs`
-    ///
-    /// All operands are `i64`.
-    Sub_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Sub_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs - rhs`
-    ///
-    /// All operands are `f64`.
-    Sub_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Sub_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs * rhs`
-    ///
-    /// All operands are `i64`.
-    Mul_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Mul_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs * rhs`
-    ///
-    /// All operands are `f64`.
-    Mul_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Mul_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs / rhs`
-    ///
-    /// All operands are `i64`.
-    ///
-    /// Fails if `rhs` is zero.
-    Div_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg }, 
+    Div_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg }, 
 
     /// `dst = lhs / rhs`
-    ///
-    /// All operands are `f64`.
-    ///
-    /// Division by zero is defined by IEEE-754.
-    Div_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Div_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs % rhs`
-    ///
-    /// All operands are `i64`.
-    ///
-    /// Fails if `rhs` is zero.
-    Rem_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Rem_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs % rhs`
-    ///
-    /// All operands are `f64`.
-    ///
-    /// Division by zero is defined by IEEE-754.
-    Rem_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Rem_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs == rhs`
-    ///
-    /// All operands are `i64`, yields `bool`.
-    Compare_Eq_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Eq_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs == rhs`
-    ///
-    /// All operands are `f64`, yields `bool`.
-    Compare_Eq_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Eq_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs != rhs`
-    ///
-    /// All operands are `i64`, yields `bool`.
-    Compare_Ne_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Ne_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs != rhs`
-    ///
-    /// All operands are `f64`, yields `bool`.
-    Compare_Ne_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Ne_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs > rhs`
-    ///
-    /// All operands are `i64`, yields `bool`.
-    Compare_Gt_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Gt_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs > rhs`
-    ///
-    /// All operands are `f64`, yields `bool`.
-    Compare_Gt_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Gt_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs < rhs`
-    ///
-    /// All operands are `i64`, yields `bool`.
-    Compare_Lt_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Lt_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs < rhs`
-    ///
-    /// All operands are `f64`, yields `bool`.
-    Compare_Lt_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Lt_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs >= rhs`
-    ///
-    /// All operands are `i64`, yields `bool`.
-    Compare_Ge_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Ge_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs >= rhs`
-    ///
-    /// All operands are `f64`, yields `bool`.
-    Compare_Ge_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Ge_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs <= rhs`
-    ///
-    /// All operands are `i64`, yields `bool`.
-    Compare_Le_I64 { token: token::ToI64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Le_I64 { token: token::I64, lhs: Reg, rhs: Reg, dst: Reg },
 
     /// `dst = lhs <= rhs`
-    ///
-    /// All operands are `f64`, yields `bool`.
-    Compare_Le_F64 { token: token::ToF64, lhs: Reg, rhs: Reg, dst: Reg },
+    Compare_Le_F64 { token: token::F64, lhs: Reg, rhs: Reg, dst: Reg },
+
+    /// `dst = -rhs`
+    Minus_I64 { token: token::I64, rhs: Reg, dst: Reg },
+
+    /// `dst = -rhs`
+    Minus_F64 { token: token::F64, rhs: Reg, dst: Reg },
+
+    /// `dst = !dst`
+    Not { token: token::Bool, rhs: Reg, dst: Reg },
 
     /// ```text,ignore
-    /// fn = function_table[callee]
+    /// fn = functions.script[callee]
     /// ret = call(fn, ret)
     /// ```
-    Call_Id { ret: Reg, callee: Fnid },
+    Call_Id { ret: Reg, callee: FnId },
+
+    /// ```text,ignore
+    /// fn = functions.host[callee]
+    /// ret = call(fn, ret)
+    /// ```
+    Call_Id_Host { ret: Reg, callee: HostId },
 
     /// ```text,ignore
     /// fn = call(callee)
@@ -173,12 +142,6 @@ pub enum Op {
     /// Return from call.
     Ret,
 }
-
-pub enum Type {
-    I64,
-    F64,
-}
-pub use Type::*;
 
 /// The following constant asserts that `size_of::<Op> == 4`.
 ///
@@ -233,7 +196,7 @@ pub mod asm {
     #[inline]
     pub fn load_cst(src: Lit, dst: Reg) -> Op {
         Op::Load_Literal {
-            token: unsafe { token::to_value() },
+            token: unsafe { token::value() },
             src,
             dst,
         }
@@ -245,8 +208,13 @@ pub mod asm {
     }
 
     #[inline]
-    pub fn load_fn(id: Fnid, dst: Reg) -> Op {
+    pub fn load_fn(id: FnId, dst: Reg) -> Op {
         Op::Load_Fn { id, dst }
+    }
+
+    #[inline]
+    pub fn load_fn_host(id: HostId, dst: Reg) -> Op {
+        Op::Load_Fn_Host { id, dst }
     }
 
     #[inline]
@@ -264,7 +232,7 @@ pub mod asm {
         match offset {
             Offset::Rel(offset) => Op::Jump { offset },
             Offset::Cst(offset) => Op::Jump_Long {
-                token: unsafe { token::to_offset() },
+                token: unsafe { token::offset() },
                 offset,
             },
         }
@@ -274,13 +242,13 @@ pub mod asm {
     pub fn jmpf(cond: Reg, offset: Offset) -> Op {
         match offset {
             Offset::Rel(offset) => Op::JumpIfFalse {
-                ty: unsafe { token::to_bool() },
+                ty: unsafe { token::bool() },
                 cond,
                 offset,
             },
             Offset::Cst(offset) => Op::JumpIfFalse_Long {
-                ty: unsafe { token::to_bool() },
-                token: unsafe { token::to_offset() },
+                ty: unsafe { token::bool() },
+                token: unsafe { token::offset() },
                 cond,
                 offset,
             },
@@ -294,13 +262,13 @@ pub mod asm {
                 paste::paste! {
                     match ty {
                         I64 => Op::[<$instruction_prefix _I64>] {
-                            token: unsafe { token::to_i64() },
+                            token: unsafe { token::i64() },
                             lhs,
                             rhs,
                             dst,
                         },
                         F64 => Op::[<$instruction_prefix _F64>] {
-                            token: unsafe { token::to_f64() },
+                            token: unsafe { token::f64() },
                             lhs,
                             rhs,
                             dst,
@@ -324,9 +292,50 @@ pub mod asm {
     binop!(cge, Compare_Ge);
     binop!(cle, Compare_Le);
 
+    macro_rules! unop {
+        ($name:ident, $instruction_prefix:ident) => {
+            #[inline]
+            pub fn $name(ty: Type, rhs: Reg, dst: Reg) -> Op {
+                paste::paste! {
+                    match ty {
+                        I64 => Op::[<$instruction_prefix _I64>] {
+                            token: unsafe { token::i64() },
+                            rhs,
+                            dst,
+                        },
+                        F64 => Op::[<$instruction_prefix _F64>] {
+                            token: unsafe { token::f64() },
+                            rhs,
+                            dst,
+                        },
+                    }
+                }
+            }
+        };
+    }
+
+    unop!(mns, Minus);
+
     #[inline]
-    pub fn call_id(callee: Fnid, ret: Reg) -> Op {
-        Op::Call_Id { callee, ret }
+    pub fn not(rhs: Reg, dst: Reg) -> Op {
+        Op::Not {
+            token: unsafe { token::bool() },
+            rhs,
+            dst,
+        }
+    }
+
+    pub enum Callee {
+        Script(FnId),
+        Host(HostId),
+    }
+
+    #[inline]
+    pub fn call_id(callee: Callee, ret: Reg) -> Op {
+        match callee {
+            Callee::Script(callee) => Op::Call_Id { callee, ret },
+            Callee::Host(callee) => Op::Call_Id_Host { callee, ret },
+        }
     }
 
     #[inline]
@@ -401,17 +410,17 @@ impl std::fmt::Display for Lit {
     }
 }
 
-#[must_use = "unused Mvar"]
+#[must_use = "unused MVar"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Mvar(pub(crate) u16);
+pub struct MVar(pub(crate) u16);
 
-impl Mvar {
+impl MVar {
     #[inline]
     pub fn try_new<T>(v: T) -> Option<Self>
     where
         u16: TryFrom<T>,
     {
-        <u16>::try_from(v).map(Mvar).ok()
+        <u16>::try_from(v).map(MVar).ok()
     }
 
     #[inline]
@@ -425,23 +434,23 @@ impl Mvar {
     }
 }
 
-impl std::fmt::Display for Mvar {
+impl std::fmt::Display for MVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "m{0}", self.0)
     }
 }
 
-#[must_use = "unused Fnid"]
+#[must_use = "unused FnId"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Fnid(pub(crate) u16);
+pub struct FnId(pub(crate) u16);
 
-impl Fnid {
+impl FnId {
     #[inline]
     pub fn try_new<T>(v: T) -> Option<Self>
     where
         u16: TryFrom<T>,
     {
-        <u16>::try_from(v).map(Fnid).ok()
+        <u16>::try_from(v).map(FnId).ok()
     }
 
     #[inline]
@@ -455,9 +464,39 @@ impl Fnid {
     }
 }
 
-impl std::fmt::Display for Fnid {
+impl std::fmt::Display for FnId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "f{0}", self.0)
+    }
+}
+
+#[must_use = "unused HostId"]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HostId(pub(crate) u16);
+
+impl HostId {
+    #[inline]
+    pub fn try_new<T>(v: T) -> Option<Self>
+    where
+        u16: TryFrom<T>,
+    {
+        <u16>::try_from(v).map(HostId).ok()
+    }
+
+    #[inline]
+    pub fn get(self) -> u16 {
+        self.0
+    }
+
+    #[inline]
+    pub fn to_index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl std::fmt::Display for HostId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "h{0}", self.0)
     }
 }
 
@@ -496,6 +535,14 @@ impl std::fmt::Display for Rel {
     }
 }
 
+pub mod ty {}
+
+pub enum Type {
+    I64,
+    F64,
+}
+pub use Type::*;
+
 #[derive(Clone, Copy)]
 pub enum Offset {
     Rel(Rel),
@@ -518,6 +565,7 @@ impl std::fmt::Display for Op {
             Op::Load_Literal { token: _, src, dst } => write!(f, "lit {src}, {dst}"),
             Op::Load_Unit { dst } => write!(f, "unit {dst}"),
             Op::Load_Fn { id, dst } => write!(f, "fn {id}, {dst}"),
+            Op::Load_Fn_Host { id, dst } => write!(f, "fn {id}, {dst}"),
             Op::Load_I16 { val, dst } => write!(f, "smi {val}, {dst}"),
             Op::Load_Bool { val, dst } => write!(f, "bool {val}, {dst}"),
 
@@ -526,40 +574,46 @@ impl std::fmt::Display for Op {
             Op::JumpIfFalse { ty: _, cond, offset } => write!(f, "jmpf {cond}, {offset}"),
             Op::JumpIfFalse_Long { ty: _, token: _, cond, offset } => write!(f, "jmpf {cond}, {offset}"),
 
-            Op::Add_I64 { token: _, lhs, rhs, dst } => write!(f, "add <i64> {lhs}, {rhs}, {dst}"),
-            Op::Add_F64 { token: _, lhs, rhs, dst } => write!(f, "add <f64> {lhs}, {rhs}, {dst}"),
+            Op::Add_I64 { token: _, lhs, rhs, dst } => write!(f, "add.i64 {lhs}, {rhs}, {dst}"),
+            Op::Add_F64 { token: _, lhs, rhs, dst } => write!(f, "add.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Sub_I64 { token: _, lhs, rhs, dst } => write!(f, "sub <i64> {lhs}, {rhs}, {dst}"),
-            Op::Sub_F64 { token: _, lhs, rhs, dst } => write!(f, "sub <f64> {lhs}, {rhs}, {dst}"),
+            Op::Sub_I64 { token: _, lhs, rhs, dst } => write!(f, "sub.i64 {lhs}, {rhs}, {dst}"),
+            Op::Sub_F64 { token: _, lhs, rhs, dst } => write!(f, "sub.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Mul_I64 { token: _, lhs, rhs, dst } => write!(f, "mul <i64> {lhs}, {rhs}, {dst}"),
-            Op::Mul_F64 { token: _, lhs, rhs, dst } => write!(f, "mul <f64> {lhs}, {rhs}, {dst}"),
+            Op::Mul_I64 { token: _, lhs, rhs, dst } => write!(f, "mul.i64 {lhs}, {rhs}, {dst}"),
+            Op::Mul_F64 { token: _, lhs, rhs, dst } => write!(f, "mul.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Div_I64 { token: _, lhs, rhs, dst } => write!(f, "div <i64> {lhs}, {rhs}, {dst}"),
-            Op::Div_F64 { token: _, lhs, rhs, dst } => write!(f, "div <f64> {lhs}, {rhs}, {dst}"),
+            Op::Div_I64 { token: _, lhs, rhs, dst } => write!(f, "div.i64 {lhs}, {rhs}, {dst}"),
+            Op::Div_F64 { token: _, lhs, rhs, dst } => write!(f, "div.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Rem_I64 { token: _, lhs, rhs, dst } => write!(f, "rem <i64> {lhs}, {rhs}, {dst}"),
-            Op::Rem_F64 { token: _, lhs, rhs, dst } => write!(f, "rem <f64> {lhs}, {rhs}, {dst}"),
+            Op::Rem_I64 { token: _, lhs, rhs, dst } => write!(f, "rem.i64 {lhs}, {rhs}, {dst}"),
+            Op::Rem_F64 { token: _, lhs, rhs, dst } => write!(f, "rem.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Compare_Eq_I64 { token: _, lhs, rhs, dst } => write!(f, "ceq <i64> {lhs}, {rhs}, {dst}"),
-            Op::Compare_Eq_F64 { token: _, lhs, rhs, dst } => write!(f, "ceq <f64> {lhs}, {rhs}, {dst}"),
+            Op::Compare_Eq_I64 { token: _, lhs, rhs, dst } => write!(f, "ceq.i64 {lhs}, {rhs}, {dst}"),
+            Op::Compare_Eq_F64 { token: _, lhs, rhs, dst } => write!(f, "ceq.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Compare_Ne_I64 { token: _, lhs, rhs, dst } => write!(f, "cne <i64> {lhs}, {rhs}, {dst}"),
-            Op::Compare_Ne_F64 { token: _, lhs, rhs, dst } => write!(f, "cne <f64> {lhs}, {rhs}, {dst}"),
+            Op::Compare_Ne_I64 { token: _, lhs, rhs, dst } => write!(f, "cne.i64 {lhs}, {rhs}, {dst}"),
+            Op::Compare_Ne_F64 { token: _, lhs, rhs, dst } => write!(f, "cne.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Compare_Gt_I64 { token: _, lhs, rhs, dst } => write!(f, "cgt <i64> {lhs}, {rhs}, {dst}"),
-            Op::Compare_Gt_F64 { token: _, lhs, rhs, dst } => write!(f, "cgt <f64> {lhs}, {rhs}, {dst}"),
+            Op::Compare_Gt_I64 { token: _, lhs, rhs, dst } => write!(f, "cgt.i64 {lhs}, {rhs}, {dst}"),
+            Op::Compare_Gt_F64 { token: _, lhs, rhs, dst } => write!(f, "cgt.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Compare_Lt_I64 { token: _, lhs, rhs, dst } => write!(f, "clt <i64> {lhs}, {rhs}, {dst}"),
-            Op::Compare_Lt_F64 { token: _, lhs, rhs, dst } => write!(f, "clt <f64> {lhs}, {rhs}, {dst}"),
+            Op::Compare_Lt_I64 { token: _, lhs, rhs, dst } => write!(f, "clt.i64 {lhs}, {rhs}, {dst}"),
+            Op::Compare_Lt_F64 { token: _, lhs, rhs, dst } => write!(f, "clt.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Compare_Ge_I64 { token: _, lhs, rhs, dst } => write!(f, "cge <i64> {lhs}, {rhs}, {dst}"),
-            Op::Compare_Ge_F64 { token: _, lhs, rhs, dst } => write!(f, "cge <f64> {lhs}, {rhs}, {dst}"),
+            Op::Compare_Ge_I64 { token: _, lhs, rhs, dst } => write!(f, "cge.i64 {lhs}, {rhs}, {dst}"),
+            Op::Compare_Ge_F64 { token: _, lhs, rhs, dst } => write!(f, "cge.f64 {lhs}, {rhs}, {dst}"),
 
-            Op::Compare_Le_I64 { token: _, lhs, rhs, dst } => write!(f, "cle <i64> {lhs}, {rhs}, {dst}"),
-            Op::Compare_Le_F64 { token: _, lhs, rhs, dst } => write!(f, "cle <f64> {lhs}, {rhs}, {dst}"),
+            Op::Compare_Le_I64 { token: _, lhs, rhs, dst } => write!(f, "cle.i64 {lhs}, {rhs}, {dst}"),
+            Op::Compare_Le_F64 { token: _, lhs, rhs, dst } => write!(f, "cle.f64 {lhs}, {rhs}, {dst}"),
+
+            Op::Minus_I64 { token: _, rhs, dst } => write!(f, "mns.i64 {rhs}, {dst}"),
+            Op::Minus_F64 { token: _, rhs, dst } => write!(f, "mns.f64 {rhs}, {dst}"),
+
+            Op::Not { token: _, rhs, dst } => write!(f, "not {rhs}, {dst}"),
 
             Op::Call_Id { callee, ret } => write!(f, "call {callee}, {ret}"),
+            Op::Call_Id_Host { callee, ret } => write!(f, "call {callee}, {ret}"),
             Op::Call_Reg { callee } => write!(f, "call {callee}"),
 
             Op::Ret {} => write!(f, "ret"),

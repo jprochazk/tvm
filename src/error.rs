@@ -462,6 +462,22 @@ impl<'src> ErrorCtx<'src> {
     }
 
     #[inline]
+    pub fn any_outside_extern_fn(&mut self, span: impl Into<Span>) -> Error {
+        Error::spanned(
+            "error: `any` used outside of extern function signature",
+            span,
+            self.src(),
+        )
+        .into()
+    }
+
+    #[inline]
+    pub fn emit_any_outside_extern_fn(&mut self, span: impl Into<Span>) {
+        let e = self.any_outside_extern_fn(span);
+        self.push(e);
+    }
+
+    #[inline]
     pub fn extern_type_fields(&mut self, span: impl Into<Span>) -> Error {
         Error::spanned(
             "error: an extern type may not have fields",

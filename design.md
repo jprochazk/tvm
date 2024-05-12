@@ -284,7 +284,7 @@ main();
 ```rust
 // extern function, must be linked later
 // this can either be declared in Rust code or via "extern" interface
-extern fn print(v: any);
+extern fn print(v: dynamic);
 
 type Thing(a: int); // named fields only
 

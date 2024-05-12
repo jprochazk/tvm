@@ -242,3 +242,13 @@ test! {
         v %= 1;
     "#
 }
+
+test! {
+    unary_ops,
+    r#"
+        -1;
+        -1.0;
+        !true;
+        !false;
+    "#
+}

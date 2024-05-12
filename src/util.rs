@@ -67,6 +67,11 @@ where
     }
 }
 
+#[inline(always)]
+pub fn default<T: Default>() -> T {
+    T::default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

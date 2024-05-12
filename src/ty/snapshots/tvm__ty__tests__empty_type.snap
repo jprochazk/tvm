@@ -22,7 +22,7 @@ type T()
             ),
             ret_span: None,
         },
-        body: Extern,
+        body: Intrinsic,
     },
 ]
 

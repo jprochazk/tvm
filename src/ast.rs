@@ -41,6 +41,12 @@ pub mod decl {
         Block(Block<'src>),
     }
 
+    impl Body<'_> {
+        pub fn is_extern(&self) -> bool {
+            matches!(self, Body::Extern)
+        }
+    }
+
     pub struct TypeDef<'src> {
         pub name: Ident<'src>,
         pub fields: Fields<'src>,

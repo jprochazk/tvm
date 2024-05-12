@@ -4,6 +4,7 @@ use crate::ast::{self, Ast, Ident};
 use crate::error::{ErrorCtx, Report, Result};
 use crate::hir::*;
 use crate::lex::Span;
+use crate::util::default;
 use crate::HashSet;
 
 // TODO: don't ignore keyword args
@@ -136,14 +137,15 @@ impl<'src> TyCtx<'src> {
             return;
         }
 
-        let (kind, sig) = match fields {
+        let (kind, sig, body) = match fields {
             Fields::Extern => (
-                FnKind::ExternCons,
+                FnKind::Cons,
                 FnSig {
                     params: vec![],
                     ret: Ty::Def(def_id),
                     ret_span: None,
                 },
+                FnBody::Extern,
             ),
             Fields::Named(fields) => (
                 FnKind::Cons,
@@ -158,6 +160,7 @@ impl<'src> TyCtx<'src> {
                     ret: Ty::Def(def_id),
                     ret_span: None,
                 },
+                FnBody::Intrinsic,
             ),
         };
 
@@ -165,14 +168,14 @@ impl<'src> TyCtx<'src> {
             name,
             kind,
             sig,
-            body: FnBody::Extern, // compiler-defined
+            body,
         });
         self.declare_symbol(name, Ty::Fn(id), SymbolKind::Fn);
     }
 
     fn infer_fns(&mut self, decls: &[ast::Decl<'src>]) {
-        let mut fns = Vec::<(FnId, Ident<'_>, FnSig<'_>, &ast::decl::Body<'_>)>::new();
-        let mut seen = HashSet::<Ident<'src>>::default();
+        let mut fns: Vec<(FnId, Ident, FnSig, &ast::decl::Body)> = default();
+        let mut seen: HashSet<Ident<'src>> = default();
         for decl in decls {
             let ast::decl::DeclKind::Fn(fn_) = &decl.kind else {
                 continue;
@@ -196,13 +199,14 @@ impl<'src> TyCtx<'src> {
             }
             seen.insert(name);
 
+            let is_extern = fn_.body.is_extern();
             let sig = FnSig {
                 params: fn_
                     .params
                     .iter()
                     .map(|param| Param {
                         name: param.name,
-                        ty: self.resolve_ast_ty(&param.ty),
+                        ty: self.resolve_ast_ty_in_fn_sig(&param.ty, is_extern),
                     })
                     .collect(),
                 ret: fn_
@@ -216,12 +220,16 @@ impl<'src> TyCtx<'src> {
             fns.push((FnId(u32::MAX), name, sig, &fn_.body));
         }
 
-        for (id, name, sig, _) in &mut fns {
+        for (id, name, sig, body) in &mut fns {
             *id = self.fns.insert(Fn {
                 name: *name,
                 kind: FnKind::Function,
                 sig: sig.clone(),
-                body: FnBody::Extern,
+                body: if body.is_extern() {
+                    FnBody::Extern
+                } else {
+                    FnBody::Intrinsic
+                },
             });
             self.declare_symbol(*name, Ty::Fn(*id), SymbolKind::Fn);
         }
@@ -298,13 +306,29 @@ impl<'src> TyCtx<'src> {
         (name, ty)
     }
 
-    fn resolve_ast_ty(&mut self, ty: &ast::Ty<'src>) -> Ty {
+    fn resolve_ast_ty_in_fn_sig(&mut self, ty: &ast::Ty<'src>, is_extern: bool) -> Ty {
+        use ast::ty::{Named, TyKind as T};
         match &ty.kind {
-            ast::ty::TyKind::Empty => {
+            T::Named(Named { name }) if name.as_str() == "dynamic" => {
+                if is_extern {
+                    Ty::Dynamic
+                } else {
+                    self.ecx.emit_any_outside_extern_fn(ty.span);
+                    Ty::Error
+                }
+            }
+            _ => self.resolve_ast_ty(ty),
+        }
+    }
+
+    fn resolve_ast_ty(&mut self, ty: &ast::Ty<'src>) -> Ty {
+        use ast::ty::{Named, TyKind as T};
+        match &ty.kind {
+            T::Empty => {
                 self.ecx.emit_unknown_type(ty.span);
                 Ty::Error
             }
-            ast::ty::TyKind::Named(ast::ty::Named { name }) => match self.defs.id(name.as_str()) {
+            T::Named(Named { name }) => match self.defs.id(name.as_str()) {
                 Some(id) => Ty::Def(id),
                 None => {
                     self.ecx.emit_undefined_decl(name.span, name.as_str());
@@ -426,7 +450,7 @@ impl<'src> TyCtx<'src> {
             E::Block(v) => self.infer_block_expr(expr.span, v),
             E::If(v) => self.infer_if(expr.span, v, intent),
             E::Binary(v) => self.infer_binary(expr.span, v),
-            E::Unary(_) => todo!("infer:Unary"),
+            E::Unary(v) => self.infer_unary(expr.span, v),
             E::Primitive(v) => self.infer_primitive(expr.span, v),
             E::Array(_) => todo!("infer:Array"),
             E::UseVar(v) => self.infer_var_expr(expr.span, v),
@@ -584,6 +608,41 @@ impl<'src> TyCtx<'src> {
         }
     }
 
+    fn infer_unary(&mut self, span: Span, v: &ast::expr::Unary<'src>) -> Expr<'src> {
+        fn get_unop_ret_ty<'src>(
+            tcx: &mut TyCtx<'src>,
+            span: Span,
+            rhs: &Expr<'src>,
+            op: ast::UnaryOp,
+        ) -> Ty {
+            if rhs.ty.is_err() {
+                return Ty::Error;
+            }
+
+            if !tcx.type_supports_unop(rhs.ty, op) {
+                tcx.ecx.emit_unsupported_op(span, p!(tcx, rhs.ty), op);
+                return Ty::Error;
+            }
+
+            use ast::UnaryOp as Op;
+            match op {
+                Op::Minus => rhs.ty,
+                Op::Not => rhs.ty,
+                Op::Opt => todo!("opt unop"),
+            }
+        }
+
+        let op = v.op;
+        let rhs = self.infer_expr(&v.rhs, NoDiscard);
+        let ty = get_unop_ret_ty(self, span, &rhs, op);
+
+        Expr {
+            span,
+            ty,
+            kind: ExprKind::Unary(Box::new(Unary { op, rhs })),
+        }
+    }
+
     fn infer_primitive(&mut self, span: Span, v: &ast::expr::Primitive<'src>) -> Expr<'src> {
         let (ty, prim) = match v {
             ast::expr::Primitive::Int(v) => (Int.ty(), Primitive::Int(*v)),
@@ -704,6 +763,7 @@ impl<'src> TyCtx<'src> {
             }
             Ty::Error => Ty::Error,
             Ty::Unreachable => Ty::Unreachable,
+            Ty::Dynamic => unreachable!("BUG: `any` appears as callee"),
         }
     }
 
@@ -712,7 +772,8 @@ impl<'src> TyCtx<'src> {
             (Ty::Unit, Ty::Unit) => true,
             (Ty::Def(a), Ty::Def(b)) => a == b,
             (Ty::Fn(a), Ty::Fn(b)) => self.fn_sig_match(&self.fns[a].sig, &self.fns[b].sig),
-            (Ty::Error | Ty::Unreachable, _) | (_, Ty::Error | Ty::Unreachable) => true,
+            (Ty::Dynamic | Ty::Error | Ty::Unreachable, _)
+            | (_, Ty::Dynamic | Ty::Error | Ty::Unreachable) => true,
             _ => false,
         }
     }
@@ -737,6 +798,19 @@ impl<'src> TyCtx<'src> {
             Op::Eq | Op::Ne => ty.is_primitive(),
             Op::And | Op::Or => ty.is_bool(),
             Op::Opt => todo!("opt binop"),
+        }
+    }
+
+    fn type_supports_unop(&self, ty: Ty, op: ast::UnaryOp) -> bool {
+        use ast::UnaryOp as Op;
+        if ty.is_err() {
+            return true;
+        }
+
+        match op {
+            Op::Minus => ty.is_int() || ty.is_num(),
+            Op::Not => ty.is_bool(),
+            Op::Opt => todo!("opt unop"),
         }
     }
 
@@ -881,6 +955,7 @@ impl<'a, 'src> std::fmt::Display for PrintTy<'a, 'src> {
                 let fn_ = self.printer.fns[id].name.as_str();
                 write!(f, "[fn {fn_}]")
             }
+            Ty::Dynamic => f.write_str("any"),
             Ty::Error => f.write_str("{error}"),
             Ty::Unreachable => f.write_str("!"),
         }

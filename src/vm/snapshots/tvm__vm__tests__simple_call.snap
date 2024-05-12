@@ -19,8 +19,8 @@ function "add" #0 {
   registers: 4 (2 params)
   literals: []
   bytecode: (2 ops) [
-    add <i64> r1, r2, r0  // fn add(a: int, b: int) -> int { a + b }
-    ret                   //   
+    add.i64 r1, r2, r0  // fn add(a: int, b: int) -> int { a + b }
+    ret                 //   
   ]
 }
 
@@ -35,7 +35,7 @@ smi 2, r1                [_, _, _] -> [_, 2i, _]
 smi 3, r2                [_, 2i, _] -> [_, 2i, 3i]
 call f0, r0              [_, 2i, 3i]
 <frame "add" base=0, ret=3>
-add <i64> r1, r2, r0     [_, 2i, 3i, _] -> [5i, 2i, 3i, _]
+add.i64 r1, r2, r0       [_, 2i, 3i, _] -> [5i, 2i, 3i, _]
 ret                      [5i, 2i, 3i, _]
 ret                      [5i, 2i, 3i]
 

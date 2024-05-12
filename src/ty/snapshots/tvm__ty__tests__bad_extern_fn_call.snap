@@ -1,0 +1,9 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        extern fn add1(v: int) -> int;\n\n        add1(true)\n    \"#)"
+---
+error: type mismatch between "bool" and "int"
+3 |  add1(true)
+  |       ^^^^
+
+

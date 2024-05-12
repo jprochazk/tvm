@@ -1,0 +1,24 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        -1;\n        -1.0;\n        !true;\n        !false;\n    \"#)"
+---
+function "main" {
+  registers: 2 (0 params)
+  literals: [
+    F64(1.0)
+  ]
+  bytecode: (10 ops) [
+    smi 1, r1       // -1;
+    mns.i64 r1, r1  // 
+    lit [0], r1     // -1.0;
+    mns.f64 r1, r1  // 
+    bool true, r1   // !true;
+    not r1, r1      // 
+    bool false, r1  // !false;
+    not r1, r1      // 
+    unit r0         // 
+    ret             //   
+  ]
+}
+
+

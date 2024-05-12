@@ -15,9 +15,9 @@ function "f" #0 {
   registers: 3 (1 params)
   literals: []
   bytecode: (3 ops) [
-    smi 1, r2             // v + 1
-    add <i64> r1, r2, r0  // 
-    ret                   //   
+    smi 1, r2           // v + 1
+    add.i64 r1, r2, r0  // 
+    ret                 //   
   ]
 }
 

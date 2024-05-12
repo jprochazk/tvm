@@ -27,6 +27,9 @@ pub enum Ty {
     /// Type error
     Error,
 
+    /// Any type, only available in `extern fn` declarations
+    Dynamic,
+
     /// Unreachable after this point
     Unreachable,
 }
@@ -219,6 +222,11 @@ impl<'src> Fns<'src> {
             .values()
             .map(|id| (*id, self.get_by_id(*id).unwrap()))
     }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.id_map.len()
+    }
 }
 
 #[derive(Debug)]
@@ -230,9 +238,12 @@ pub struct Fn<'src> {
 }
 
 impl<'src> Fn<'src> {
+    pub fn is_extern_fn(&self) -> bool {
+        matches!(self.kind, FnKind::Function) && matches!(self.body, FnBody::Extern)
+    }
+
     pub fn is_extern_cons(&self) -> bool {
-        use FnKind as F;
-        matches!(self.kind, F::ExternCons)
+        matches!(self.kind, FnKind::Cons) && matches!(self.body, FnBody::Extern)
     }
 }
 
@@ -243,12 +254,6 @@ pub enum FnKind {
 
     /// Type constructor
     Cons,
-
-    /// Extern type constructor
-    ///
-    /// Functions of this kind may not be called,
-    /// and exist only to provide better error messages.
-    ExternCons,
 }
 
 #[derive(Debug, Clone)]
@@ -260,7 +265,13 @@ pub struct FnSig<'src> {
 
 #[derive(Debug)]
 pub enum FnBody<'src> {
+    /// Host-defined
     Extern,
+
+    /// Compiler-defined
+    Intrinsic,
+
+    /// Script-defined
     Block(Block<'src>),
 }
 

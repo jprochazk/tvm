@@ -1,0 +1,68 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        extern fn print(v: dynamic);\n\n        print(10);\n        print(10.0);\n        print(true);\n    \"#)"
+---
+Block {
+    body: [
+        Call {
+            callee: UseVar {
+                name: Ident("print"),
+            },
+            args: [
+                Arg {
+                    key: None,
+                    value: Int(
+                        10,
+                    ),
+                },
+            ],
+        },
+        Call {
+            callee: UseVar {
+                name: Ident("print"),
+            },
+            args: [
+                Arg {
+                    key: None,
+                    value: Num(
+                        10.0,
+                    ),
+                },
+            ],
+        },
+        Call {
+            callee: UseVar {
+                name: Ident("print"),
+            },
+            args: [
+                Arg {
+                    key: None,
+                    value: Bool(
+                        true,
+                    ),
+                },
+            ],
+        },
+    ],
+    tail: None,
+}
+
+
+[
+    Fn {
+        name: Ident("print"),
+        kind: Function,
+        sig: FnSig {
+            params: [
+                Param {
+                    name: Ident("v"),
+                    ty: Dynamic,
+                },
+            ],
+            ret: Unit,
+            ret_span: None,
+        },
+        body: Extern,
+    },
+]
+

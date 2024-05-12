@@ -15,7 +15,6 @@ pub mod lex;
 pub mod ast;
 pub mod code;
 pub mod hir;
-pub mod rc;
 pub mod syn;
 pub mod ty;
 pub mod value;
@@ -34,4 +33,6 @@ pub fn compile(s: &str) -> Result<code::CodeUnit, error::Report> {
     code::compile(hir)
 }
 
-pub use vm::Vm;
+pub use code::{ExternFunctionDecl, ExternFunctionSig, Library};
+pub use hir::Ty;
+pub use vm::{f, Scope, Value, Vm};

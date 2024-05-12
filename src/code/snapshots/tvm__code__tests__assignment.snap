@@ -6,19 +6,19 @@ function "main" {
   registers: 3 (0 params)
   literals: []
   bytecode: (13 ops) [
-    smi 1, r1             // let v: int = 1;
-    smi 1, r2             // v += 1;
-    add <i64> r1, r2, r1  // 
-    smi 1, r2             // v -= 1;
-    sub <i64> r1, r2, r1  // 
-    smi 1, r2             // v /= 1;
-    div <i64> r1, r2, r1  // 
-    smi 1, r2             // v *= 1;
-    mul <i64> r1, r2, r1  // 
-    smi 1, r2             // v %= 1;
-    rem <i64> r1, r2, r1  // 
-    unit r0               // 
-    ret                   //   
+    smi 1, r1           // let v: int = 1;
+    smi 1, r2           // v += 1;
+    add.i64 r1, r2, r1  // 
+    smi 1, r2           // v -= 1;
+    sub.i64 r1, r2, r1  // 
+    smi 1, r2           // v /= 1;
+    div.i64 r1, r2, r1  // 
+    smi 1, r2           // v *= 1;
+    mul.i64 r1, r2, r1  // 
+    smi 1, r2           // v %= 1;
+    rem.i64 r1, r2, r1  // 
+    unit r0             // 
+    ret                 //   
   ]
 }
 

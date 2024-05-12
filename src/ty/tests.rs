@@ -231,3 +231,51 @@ test! {
         let v: bool = 1 * 2 + 3 * (4 + 5 * 6);
     "#
 }
+
+test! {
+    unary_ops,
+    r#"
+        -1;
+        -1.0;
+        !true;
+        !false;
+    "#
+}
+
+test! {
+    extern_fn_call,
+    r#"
+        extern fn add1(v: int) -> int;
+
+        add1(1)
+    "#
+}
+
+test! {
+    bad_extern_fn_call,
+    r#"
+        extern fn add1(v: int) -> int;
+
+        add1(true)
+    "#
+}
+
+test! {
+    extern_fn_call_dyn,
+    r#"
+        extern fn print(v: dynamic);
+
+        print(10);
+        print(10.0);
+        print(true);
+    "#
+}
+
+test! {
+    bad_extern_fn_call_dyn,
+    r#"
+        extern fn print(v: dynamic);
+
+        print();
+    "#
+}

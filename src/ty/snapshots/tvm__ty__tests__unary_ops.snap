@@ -1,0 +1,36 @@
+---
+source: src/ty/tests.rs
+expression: "check!(r#\"\n        -1;\n        -1.0;\n        !true;\n        !false;\n    \"#)"
+---
+Block {
+    body: [
+        Unary {
+            op: Op(-),
+            rhs: Int(
+                1,
+            ),
+        },
+        Unary {
+            op: Op(-),
+            rhs: Num(
+                1.0,
+            ),
+        },
+        Unary {
+            op: Op(!),
+            rhs: Bool(
+                true,
+            ),
+        },
+        Unary {
+            op: Op(!),
+            rhs: Bool(
+                false,
+            ),
+        },
+    ],
+    tail: None,
+}
+
+
+

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use super::{CodeUnit, Fnid, Function};
+use super::{CodeUnit, FnId, Function};
 use crate::error::Location;
 use crate::lex::Span;
 
@@ -15,14 +15,14 @@ impl<'a, 'src> Display for DisplayModule<'a, 'src> {
             DisplayScriptFunction(None, &m.functions.main, *src)
         )?;
         for (id, fn_) in m.functions.script.iter().enumerate() {
-            let id = Some(Fnid(id as u16));
+            let id = Some(FnId(id as u16));
             writeln!(f, "{}", DisplayScriptFunction(id, fn_, *src))?;
         }
         Ok(())
     }
 }
 
-struct DisplayScriptFunction<'a, 'src>(Option<Fnid>, &'a Function, Option<&'src str>);
+struct DisplayScriptFunction<'a, 'src>(Option<FnId>, &'a Function, Option<&'src str>);
 impl<'a, 'src> Display for DisplayScriptFunction<'a, 'src> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self(id, fn_, src) = self;

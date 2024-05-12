@@ -4,6 +4,7 @@ use std::panic::catch_unwind;
 
 use super::*;
 use crate::code::print::DisplayModule;
+use crate::code::Library;
 use crate::util::JoinIter as _;
 
 thread_local! {
@@ -91,7 +92,7 @@ fn _run(input: &str) -> String {
     .unwrap();
 
     write!(&mut out, "## Output\n\n").unwrap();
-    let module = code.link();
+    let module = code.link().unwrap();
     match catch_unwind(|| Vm::new().run_debug(&module, debug_hook)) {
         Ok(Ok(value)) => {
             writeln!(&mut out, "{value:?}\n").unwrap();
@@ -240,5 +241,29 @@ test! {
             i += 1;
         }
         i
+    "#
+}
+
+test! {
+    bool_not,
+    r#"
+        let v = true;
+        !v
+    "#
+}
+
+test! {
+    minus_i64,
+    r#"
+        let v = 1;
+        -v
+    "#
+}
+
+test! {
+    minus_f64,
+    r#"
+        let v = 1.0;
+        -v
     "#
 }

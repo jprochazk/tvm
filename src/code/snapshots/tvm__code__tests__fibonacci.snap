@@ -16,20 +16,20 @@ function "fib" #0 {
   registers: 5 (1 params)
   literals: []
   bytecode: (14 ops) [
-    smi 2, r2             // if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
-    clt <i64> r1, r2, r0  // 
-    jmpf r0, +3           // 
-    mov r1, r0            // 
-    jmp +9                // 
-    smi 1, r4             // 
-    sub <i64> r1, r4, r3  // 
-    call f0, r2           // 
-    mov r2, r0            // 
-    smi 2, r4             // 
-    sub <i64> r1, r4, r3  // 
-    call f0, r2           // 
-    add <i64> r0, r2, r0  // 
-    ret                   //   
+    smi 2, r2           // if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+    clt.i64 r1, r2, r0  // 
+    jmpf r0, +3         // 
+    mov r1, r0          // 
+    jmp +9              // 
+    smi 1, r4           // 
+    sub.i64 r1, r4, r3  // 
+    call f0, r2         // 
+    mov r2, r0          // 
+    smi 2, r4           // 
+    sub.i64 r1, r4, r3  // 
+    call f0, r2         // 
+    add.i64 r0, r2, r0  // 
+    ret                 //   
   ]
 }
 

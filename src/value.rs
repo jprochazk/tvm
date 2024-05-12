@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::str::FromStr;
 
+use crate::util::default;
 use crate::{HashMap, Str};
 
 #[derive(Default)]
@@ -16,11 +17,11 @@ pub struct LiteralPool<'src> {
 impl<'src> LiteralPool<'src> {
     pub fn new() -> Self {
         Self {
-            ints: HashMap::default(),
-            nums: HashMap::default(),
-            strings: HashMap::default(),
-            jump_offsets: HashMap::default(),
-            pool: Vec::new(),
+            ints: default(),
+            nums: default(),
+            strings: default(),
+            jump_offsets: default(),
+            pool: default(),
         }
     }
 

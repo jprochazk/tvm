@@ -1,8 +1,7 @@
-
 fn main() {
     use std::time::Instant;
 
-    Instant::
-    //       ^
-    //       autocomplete here
+    Instant
+    //     ^
+    //     type `::n` here
 }

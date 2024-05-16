@@ -36,3 +36,5 @@ pub fn compile(s: &str) -> Result<code::CodeUnit, error::Report> {
 pub use code::{ExternFunctionDecl, ExternFunctionSig, Library};
 pub use hir::Ty;
 pub use vm::{f, Scope, Value, Vm};
+
+mod asdf;

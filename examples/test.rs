@@ -3,5 +3,5 @@ fn main() {
 
     Instant
     //     ^
-    //     type `::n` here
+    //     type `::` here - no suggestions
 }

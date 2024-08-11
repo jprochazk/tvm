@@ -23,20 +23,27 @@ do
     function benchmark(n, f, value)
         local decPlaces = 2
         local elapsed_ns = 0
+        local samples = {}
         for i = 1, n do
             local now = clock_ns()
             f(value)
-            elapsed_ns = elapsed_ns + (clock_ns() - now)
+            local time = (clock_ns() - now)
+            elapsed_ns = elapsed_ns + time
+            samples[#samples+1] = time
         end
         
+        table.sort(samples)
+        local median_ns = samples[#samples / 2]
+        local unit_median = get_unit(median_ns)
         local avg_ns = elapsed_ns / n
-        local unit = get_unit(avg_ns)
-        local output = string.format('%d %.2f %s',
+        local unit_avg = get_unit(avg_ns)
+        local output = string.format('%d mean=%.2f %s, median=%.2f %s',
             value,
-            avg_ns / scale[unit],
-            unit
+            avg_ns / scale[unit_avg],
+            unit_avg,
+            median_ns / scale[unit_median],
+            unit_median
         )
-        output = output 
         print(output)
     end
 

@@ -879,7 +879,7 @@ pub struct Prim {
 }
 
 impl Prim {
-    pub fn ty(self) -> Ty {
+    pub const fn ty(self) -> Ty {
         Ty::Def(self.id)
     }
 }

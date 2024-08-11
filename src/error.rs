@@ -41,6 +41,8 @@ impl Display for Report {
     }
 }
 
+impl std::error::Error for Report {}
+
 pub struct ErrorCtx<'src> {
     src: &'src str,
     src_rc: Option<Arc<str>>,

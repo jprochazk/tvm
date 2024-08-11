@@ -1,0 +1,19 @@
+---
+source: src/code/tests.rs
+expression: "emit!(r#\"\n        let v = if true { 0 } else { 1 };\n        v\n    \"#)"
+---
+function "main" {
+  registers: 2 (0 params)
+  literals: []
+  bytecode: (7 ops) [
+    bool true, r1  // let v = if true { 0 } else { 1 };
+    jmpf r1, +3    // 
+    smi 0, r1      // 
+    jmp +2         // 
+    smi 1, r1      // 
+    mov r1, r0     // v
+    ret            //   
+  ]
+}
+
+

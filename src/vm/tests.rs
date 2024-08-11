@@ -1,43 +1,14 @@
 use std::cell::{Cell, RefCell};
-use std::fmt::{Display, Write};
+use std::fmt::Write;
 use std::panic::catch_unwind;
 
 use super::*;
 use crate::code::print::DisplayModule;
-use crate::code::Library;
 use crate::util::JoinIter as _;
 
 thread_local! {
     static EVENTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static COLLECT_EVENTS: Cell<bool> = const { Cell::new(true) };
-}
-
-struct DisplayValue<'a>(&'a Value);
-impl Display for DisplayValue<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            Value::Unit(_) => write!(f, "_"),
-            Value::Bool(v) => write!(f, "{v}"),
-            Value::I64(v) => write!(f, "{v}i"),
-            Value::F64(v) => write!(f, "{v}f"),
-        }
-    }
-}
-
-impl Display for CallFrame {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "<frame {:?} base={}, ret={}>",
-            self.callee.name, self.stack_base, self.ret_addr
-        )
-    }
-}
-
-impl Display for StackFrame<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.iter().map(DisplayValue).join(", "))
-    }
 }
 
 fn debug_hook(event: DebugEvent) {

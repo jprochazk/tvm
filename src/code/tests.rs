@@ -221,6 +221,14 @@ test! {
 }
 
 test! {
+    if_expr_in_var,
+    r#"
+        let v = if true { 0 } else { 1 };
+        v
+    "#
+}
+
+test! {
     fibonacci,
     r#"
         fn fib(n: int) -> int {

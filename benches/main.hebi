@@ -1,0 +1,39 @@
+extern fn timer_start();
+extern fn timer_end();
+extern fn benchmark_start(value: int);
+extern fn benchmark_end();
+
+fn fib(n: int) -> int {
+    if n < 2 { n }
+    else { fib(n - 1) + fib(n - 2) }
+}
+
+fn benchmark(times: int, value: int) {
+  benchmark_start(value);
+
+  let elapsed_ns = 0.0;
+  let i = 0;
+  loop {
+    if i >= times {
+      break
+    }
+
+    timer_start();
+    let v = fib(value);
+    timer_end();
+
+    i += 1;
+  }
+  
+  benchmark_end();
+}
+
+fn main() {
+  benchmark(1000, 5);
+  benchmark(1000, 10);
+  benchmark(1000, 15);
+  benchmark(1000, 20);
+  benchmark(1000, 25);
+}
+
+main();

@@ -12,7 +12,7 @@ pub struct Vm {
     vstack: Stack,
     cstack: Vec<CallFrame>,
     ip: isize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "__debug"))]
     debug_hook: DebugHook,
 }
 
@@ -22,7 +22,7 @@ impl Vm {
             vstack: Stack::new(512),
             cstack: Vec::with_capacity(16),
             ip: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "__debug"))]
             debug_hook: |_| {},
         }
     }
@@ -31,8 +31,13 @@ impl Vm {
         State::new(self, module.as_ref()).interpret()
     }
 
-    #[cfg(test)]
-    fn run_debug(&mut self, module: impl AsRef<Module>, debug_hook: DebugHook) -> Result<Value> {
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__debug"))]
+    pub fn run_debug(
+        &mut self,
+        module: impl AsRef<Module>,
+        debug_hook: DebugHook,
+    ) -> Result<Value> {
         State::new(self, module.as_ref())
             .with_debug_hook(debug_hook)
             .interpret()
@@ -54,7 +59,7 @@ impl<'a> State<'a> {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "__debug"))]
     fn with_debug_hook(self, debug_hook: DebugHook) -> Self {
         self.vm.debug_hook = debug_hook;
         self
@@ -63,7 +68,7 @@ impl<'a> State<'a> {
 
 macro_rules! invoke_hook {
     ($self:ident, dispatch, $op:ident, $current_frame:ident) => {{
-        #[cfg(test)]
+        #[cfg(any(test, feature = "__debug"))]
         {
             ($self.vm.debug_hook)(DebugEvent::Dispatch {
                 op: $op,
@@ -73,7 +78,7 @@ macro_rules! invoke_hook {
     }};
 
     ($self:ident, post_dispatch, $current_frame:ident) => {{
-        #[cfg(test)]
+        #[cfg(any(test, feature = "__debug"))]
         {
             ($self.vm.debug_hook)(DebugEvent::PostDispatch {
                 stack_frame: StackFrame::get(&$self.vm.vstack, &$current_frame),
@@ -433,7 +438,7 @@ impl State<'_> {
                             stack_base: current_frame.stack_base + ret.to_index(),
                         };
 
-                        #[cfg(test)]
+                        #[cfg(any(test, feature = "__debug"))]
                         {
                             (self.vm.debug_hook)(DebugEvent::Call {
                                 call_frame: &new_frame,
@@ -475,7 +480,10 @@ impl State<'_> {
                             current_frame = prev_frame;
                             continue 'setup_frame;
                         }
-                        None => return Ok(self.vm.vstack.ret()),
+                        None => {
+                            self.vm.ip = 0;
+                            return Ok(self.vm.vstack.ret());
+                        }
                     },
                 }
             }
@@ -490,6 +498,69 @@ pub enum Value {
     Bool(bool),
     I64(i64),
     F64(f64),
+}
+
+impl Value {
+    #[inline]
+    pub fn to_unit(self) -> Option<()> {
+        match self {
+            Self::Unit(()) => Some(()),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// Value must be `Unit`
+    #[allow(clippy::unused_unit)]
+    #[inline]
+    pub unsafe fn to_unit_unchecked(self) -> () {
+        self.to_unit().unwrap_unchecked()
+    }
+
+    #[inline]
+    pub fn to_bool(self) -> Option<bool> {
+        match self {
+            Self::Bool(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// Value must be `Bool`
+    #[inline]
+    pub unsafe fn to_bool_unchecked(self) -> bool {
+        self.to_bool().unwrap_unchecked()
+    }
+
+    #[inline]
+    pub fn to_i64(self) -> Option<i64> {
+        match self {
+            Self::I64(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// Value must be `I64`
+    #[inline]
+    pub unsafe fn to_i64_unchecked(self) -> i64 {
+        self.to_i64().unwrap_unchecked()
+    }
+
+    #[inline]
+    pub fn to_f64(self) -> Option<f64> {
+        match self {
+            Self::F64(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// Value must be `F64`
+    #[inline]
+    pub unsafe fn to_f64_unchecked(self) -> f64 {
+        self.to_f64().unwrap_unchecked()
+    }
 }
 
 impl From<()> for Value {
@@ -622,8 +693,9 @@ impl Stack {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug)]
-struct CallFrame {
+pub struct CallFrame {
     callee: Arc<Function>,
     ret_addr: isize,
     stack_base: usize,
@@ -641,25 +713,28 @@ impl AsRef<Module> for Module {
     }
 }
 
-#[cfg(test)]
-enum DebugEvent<'a> {
+#[doc(hidden)]
+#[cfg(any(test, feature = "__debug"))]
+pub enum DebugEvent<'a> {
     Dispatch { op: Op, stack_frame: StackFrame<'a> },
     PostDispatch { stack_frame: StackFrame<'a> },
     Call { call_frame: &'a CallFrame },
 }
 
-#[cfg(test)]
-struct StackFrame<'a>(&'a [Value]);
+#[doc(hidden)]
+#[cfg(any(test, feature = "__debug"))]
+pub struct StackFrame<'a>(&'a [Value]);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "__debug"))]
 impl<'a> StackFrame<'a> {
     fn get(stack: &'a Stack, call_frame: &CallFrame) -> Self {
         Self(&stack.inner[stack.base..stack.base + call_frame.callee.registers as usize])
     }
 }
 
-#[cfg(test)]
-type DebugHook = fn(DebugEvent<'_>);
+#[doc(hidden)]
+#[cfg(any(test, feature = "__debug"))]
+pub type DebugHook = fn(DebugEvent<'_>);
 
 pub mod token {
     #![allow(dead_code)]
@@ -786,6 +861,40 @@ impl<T: Into<Value>> CallbackResult for Result<T> {
 impl<T: Into<Value>> CallbackResult for T {
     fn into_result(self) -> Result<Value> {
         Ok(self.into())
+    }
+}
+
+#[cfg(any(test, feature = "__debug"))]
+struct DisplayValue<'a>(&'a Value);
+
+#[cfg(any(test, feature = "__debug"))]
+impl std::fmt::Display for DisplayValue<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Value::Unit(_) => write!(f, "_"),
+            Value::Bool(v) => write!(f, "{v}"),
+            Value::I64(v) => write!(f, "{v}i"),
+            Value::F64(v) => write!(f, "{v}f"),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "__debug"))]
+impl std::fmt::Display for CallFrame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<frame {:?} base={}, ret={}>",
+            self.callee.name, self.stack_base, self.ret_addr
+        )
+    }
+}
+
+#[cfg(any(test, feature = "__debug"))]
+impl std::fmt::Display for StackFrame<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::util::JoinIter as _;
+        write!(f, "{}", self.0.iter().map(DisplayValue).join(", "))
     }
 }
 

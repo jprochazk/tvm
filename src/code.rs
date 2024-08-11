@@ -37,7 +37,7 @@ struct Compiler<'src> {
 impl<'src> Compiler<'src> {
     fn compile(mut self, hir: Hir<'src>) -> Result<CodeUnit, Report> {
         // 1. reserve a slot in the function table for each function
-        let mut ids = Vec::<FnId>::with_capacity(hir.fns.len());
+        let mut pending_fns = Vec::<(FnId, &hir::Fn)>::with_capacity(hir.fns.len());
         for (_, fn_) in hir.fns.iter() {
             if fn_.is_extern_fn() {
                 // for host functions, we just reserve them
@@ -51,7 +51,7 @@ impl<'src> Compiler<'src> {
                 )
             } else {
                 // we need to codegen each script function
-                ids.push(self.module_state.fn_table.reserve_script(fn_.name));
+                pending_fns.push((self.module_state.fn_table.reserve_script(fn_.name), fn_));
             }
         }
 
@@ -63,7 +63,7 @@ impl<'src> Compiler<'src> {
         }
 
         // 3. compile all functions, place them into their respective slots
-        for (fn_, id) in hir.fns.iter().map(|(_, fn_)| fn_).zip(ids.iter().copied()) {
+        for (id, fn_) in pending_fns {
             match function(&mut self, fn_) {
                 Ok(fn_) => self.module_state.fn_table.set_script(id, fn_),
                 Err(e) => self.ecx.push(e),
@@ -1059,22 +1059,22 @@ impl CodeUnit {
     }
 
     pub fn link_with(&self, host: &Library) -> Result<vm::Module> {
-        if host.functions.len() != self.functions.host.len() {
-            let mut missing = vec![];
-            let mut extra = vec![];
+        let mut missing = vec![];
+        let mut extra = vec![];
 
-            for name in self.functions.host_map.keys() {
-                if !host.functions.iter().any(|decl| decl.name == name) {
-                    missing.push(name.clone());
-                }
+        for name in self.functions.host_map.keys() {
+            if !host.functions.iter().any(|decl| decl.name == name) {
+                missing.push(name.clone());
             }
+        }
 
-            for decl in host.functions.iter() {
-                if !self.functions.host_map.contains_key(decl.name) {
-                    extra.push(decl.name);
-                }
+        for decl in host.functions.iter() {
+            if !self.functions.host_map.contains_key(decl.name) {
+                extra.push(decl.name);
             }
+        }
 
+        if !missing.is_empty() || !extra.is_empty() {
             return Err(Error::simple(format!(
                 "invalid host functions:\nmissing: {}\nextra: {}",
                 missing.into_iter().join(", "),
@@ -1122,7 +1122,14 @@ struct FnTableBuilder {
 
 impl FnTableBuilder {
     fn new() -> Self {
-        let empty_fn: Arc<Function> = default();
+        let empty_fn: Arc<Function> = Arc::new(Function {
+            name: "<empty>".into(),
+            params: 0,
+            bytecode: default(),
+            spans: default(),
+            literals: default(),
+            registers: 0,
+        });
         Self {
             next_fnid: 0,
             next_host_id: 0,
@@ -1216,8 +1223,9 @@ pub struct ExternFunctionSig {
     pub ret: hir::Ty,
 }
 
-#[cfg(test)]
-pub(crate) mod print;
+#[doc(hidden)]
+#[cfg(any(test, feature = "__debug"))]
+pub mod print;
 
 #[cfg(test)]
 mod tests;

@@ -1085,7 +1085,7 @@ impl CodeUnit {
 
         let empty_host_fn = ExternFunction {
             name: "",
-            callback: |scope| unreachable!(),
+            callback: |_| unreachable!(),
         };
         let mut host_fns = vec![empty_host_fn; self.functions.host.len()];
         for decl in host.functions.iter() {

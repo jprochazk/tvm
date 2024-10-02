@@ -1,3 +1,6 @@
+[workspace]
+members = ["vm"]
+
 [package]
 name = "tvm"
 version = "0.0.0"

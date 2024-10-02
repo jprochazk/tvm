@@ -2,14 +2,16 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::Write as _;
+use core::ptr::addr_of_mut as mut_;
 
 use crate::dyn_array::DynArray;
 use crate::operands::{
     self, u24, ExternFunctionId, FunctionId, LiteralId, Offset, Register, SplitOperands as _,
 };
+use crate::stdout;
 use crate::value::Literal;
 use crate::value::Value;
-use core::ptr::addr_of_mut as mut_;
 
 pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
     let mut current_frame = CallFrame {
@@ -45,6 +47,9 @@ pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
 
         let (mut opcode, mut operands) = operands::decode(code.read());
         loop {
+            #[cfg(debug_assertions)]
+            writeln!(stdout(), "{}", Disasm(opcode, operands)).ok();
+
             let op = ops.add(opcode as usize).read();
             match (op)(operands, ops as *mut _, code, stack, literals, context) {
                 Control::End => return Ok(()),
@@ -123,6 +128,15 @@ struct CallFrame {
     callee: *mut Function,
     stack_base: u32,
     return_addr: u32,
+}
+
+impl core::fmt::Debug for CallFrame {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CallFrame")
+            .field("stack_base", &self.stack_base)
+            .field("return_addr", &self.return_addr)
+            .finish()
+    }
 }
 
 pub type StackSlot = Value;
@@ -270,7 +284,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (_, dst, src): (_, Register, Register) = operands.split();
+        let (dst, src): info::mov = operands.split();
 
         let value = stack.add(src as usize).read();
         stack.add(dst as usize).write(value);
@@ -288,7 +302,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (dst,): (Register,) = operands.split();
+        let (dst,): info::load_unit = operands.split();
 
         stack.add(dst as usize).write(Value::Unit);
 
@@ -305,7 +319,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (dst, src): (Register, LiteralId) = operands.split();
+        let (dst, src): info::load_literal = operands.split();
 
         let literal: Literal = literals.add(src as usize).read();
         stack.add(dst as usize).write(literal.into_value());
@@ -323,7 +337,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (dst, src): (Register, i16) = operands.split();
+        let (dst, src): info::load_i16 = operands.split();
 
         stack.add(dst as usize).write(Value::I64(src as i64));
 
@@ -340,7 +354,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (dst,): (Register,) = operands.split();
+        let (dst,): info::load_true = operands.split();
 
         stack.add(dst as usize).write(Value::Bool(true));
 
@@ -357,7 +371,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (dst,): (Register,) = operands.split();
+        let (dst,): info::load_false = operands.split();
 
         stack.add(dst as usize).write(Value::Bool(false));
 
@@ -374,7 +388,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (offset,): (Offset,) = operands.split();
+        let (offset,): info::jump = operands.split();
 
         let code = code.add(offset as usize);
 
@@ -391,7 +405,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (offset,): (LiteralId,) = operands.split();
+        let (offset,): info::jump_long = operands.split();
         let offset = literals.add(offset as usize).read().unbox_jmp();
 
         let code = code.add(offset);
@@ -409,7 +423,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (condition, offset): (Register, Offset) = operands.split();
+        let (condition, offset): info::jump_if_false = operands.split();
         let condition = stack.add(condition as usize).read();
 
         let code = if !condition.unbox().into_bool_unchecked() {
@@ -431,7 +445,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (condition, offset): (Register, LiteralId) = operands.split();
+        let (condition, offset): info::jump_if_false_long = operands.split();
         let condition = stack.add(condition as usize).read();
         let offset = literals.add(offset as usize).read().unbox_jmp();
 
@@ -456,11 +470,15 @@ macro_rules! arithmetic {
                 literals: *mut Literal,
                 context: *mut LocalContext,
             ) -> Control {
-                let (dst, lhs, rhs): (Register, Register, Register) = operands.split();
+                let (dst, lhs, rhs): info::$name = operands.split();
 
                 let lhs = stack.add(lhs as usize).read().unbox().$into();
                 let rhs = stack.add(rhs as usize).read().unbox().$into();
                 let result = lhs $op rhs;
+
+                #[cfg(debug_assertions)]
+                writeln!(stdout(), concat!("{} ", stringify!($op), " {} = {}"), lhs, rhs, result).ok();
+
                 stack.add(dst as usize).write(Value::from(result));
 
                 dispatch_next(ops, code, stack, literals, context)
@@ -491,11 +509,15 @@ macro_rules! comparison {
                 literals: *mut Literal,
                 context: *mut LocalContext,
             ) -> Control {
-                let (dst, lhs, rhs): (Register, Register, Register) = operands.split();
+                let (dst, lhs, rhs): info::$name = operands.split();
 
                 let lhs = stack.add(lhs as usize).read().unbox().$into();
                 let rhs = stack.add(rhs as usize).read().unbox().$into();
                 let result = lhs $op rhs;
+
+                #[cfg(debug_assertions)]
+                writeln!(stdout(), concat!("{} ", stringify!($op), " {} = {}"), lhs, rhs, result).ok();
+
                 stack.add(dst as usize).write(Value::Bool(result));
 
                 dispatch_next(ops, code, stack, literals, context)
@@ -530,7 +552,7 @@ macro_rules! negate {
                 literals: *mut Literal,
                 context: *mut LocalContext,
             ) -> Control {
-                let (dst, rhs): (Register, Register) = operands.split();
+                let (dst, rhs): info::$name = operands.split();
 
                 let rhs = stack.add(rhs as usize).read().unbox().$into();
                 let result = -rhs;
@@ -554,7 +576,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (dst, rhs): (Register, Register) = operands.split();
+        let (dst, rhs): info::not_bool = operands.split();
 
         let rhs = stack.add(rhs as usize).read().unbox().into_bool_unchecked();
         let result = !rhs;
@@ -582,15 +604,20 @@ unsafe fn prepare_call(
         stack_base: current_frame.stack_base + ret as u32,
         return_addr: current_code_addr + 1,
     };
+    #[cfg(debug_assertions)]
+    writeln!(stdout(), "{new_frame:?}").ok();
 
     let new_code_ptr = (*callee).code.as_mut_ptr();
 
     let remaining_stack_space = outer_context.stack.remaining(new_frame.stack_base as usize);
     let required_stack_space = (*callee).registers as usize;
     let new_stack_ptr = if remaining_stack_space < required_stack_space {
-        outer_context.stack.grow_with_ptr(stack_ptr)
+        outer_context
+            .stack
+            .grow_with_ptr(stack_ptr)
+            .add(new_frame.stack_base as usize)
     } else {
-        stack_ptr
+        stack_ptr.add(ret as usize)
     };
 
     let new_literals_ptr = (*callee).literals.as_mut_ptr();
@@ -631,7 +658,7 @@ wrap_abi! {
         _literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (ret, callee): (Register, FunctionId) = operands.split();
+        let (ret, callee): info::call = operands.split();
 
         let callee: &Function = (*(*context).outer).functions.get_unchecked(callee as usize);
         let callee = callee as *const _ as *mut Function;
@@ -651,7 +678,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (ret, callee): (Register, ExternFunctionId) = operands.split();
+        let (_ret, _callee): info::call_host = operands.split();
 
         // TODO
 
@@ -668,7 +695,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (ret, callee): (Register, Register) = operands.split();
+        let (_ret, _callee): info::call_reg = operands.split();
 
         // TODO
 
@@ -685,7 +712,7 @@ wrap_abi! {
         literals: *mut Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (ret, callee): (Register, Register) = operands.split();
+        let (_ret, _callee): info::call_host_reg = operands.split();
 
         // TODO
 
@@ -721,7 +748,14 @@ wrap_abi! {
 }
 
 macro_rules! ops {
-    ($table:ident: [$Opcode:ident] = [$($index:literal = $op:ident),* $(,)?]) => {
+    (
+        mod $info:ident;
+        mod $asm:ident;
+        struct $Disasm:ident;
+        $table:ident: [$Opcode:ident] = [
+            $($index:literal = $op:ident $(($($operand:ident : $operand_ty:ty),+))?),* $(,)?
+        ]
+    ) => {
         static $table: [Op; 256] = const {
             let mut table: [Op; 256] = [invalid_op; 256];
 
@@ -740,60 +774,118 @@ macro_rules! ops {
         pub enum $Opcode {
             $($op = $index),*
         }
+
+        pub mod $info {
+            #![allow(non_camel_case_types)]
+
+            use $crate::operands::*;
+
+            $(
+                pub type $op = ($($($operand_ty,)*)?);
+            )*
+        }
+
+        pub mod $asm {
+            use super::*;
+
+            $(
+                pub fn $op(
+                    $(
+                        $($operand : $operand_ty),*
+                    )?
+                ) -> Instruction {
+                    $crate::operands::encode(
+                        $Opcode::$op,
+                        ($($($operand,)*)?)
+                    )
+                }
+            )*
+        }
+
+        pub struct $Disasm(pub $Opcode, pub u24);
+
+        impl core::fmt::Display for Disasm {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                let Disasm(opcode, operands) = self;
+
+                match opcode {
+                    $(
+                        $Opcode::$op => {
+                            let ($($($operand,)*)?): $info::$op = operands.split();
+                            write!(f,
+                                concat!(
+                                    stringify!($op),
+                                    $($(
+                                        " ",
+                                        stringify!($operand),
+                                        "={}",
+                                    )*)?
+                                ),
+
+                                $($($operand),*)?
+                            )
+                        }
+                    )*
+                }
+            }
+        }
     }
 }
 
 ops! {
+    mod info;
+    mod asm;
+    struct Disasm;
     OPS: [Opcode] = [
         0x00 = invalid_op,
-        0x01 = mov,
+        0x01 = mov(dst: Register, src: Register),
 
-        0x02 = load_unit,
-        0x03 = load_literal,
-        0x04 = load_i16,
-        0x05 = load_true,
-        0x06 = load_false,
+        0x02 = load_unit(dst: Register),
+        0x03 = load_literal(dst: Register, src: LiteralId),
+        0x04 = load_i16(dst: Register, src: i16),
+        0x05 = load_true(dst: Register),
+        0x06 = load_false(dst: Register),
 
-        0x20 = jump,
-        0x21 = jump_long,
-        0x22 = jump_if_false,
-        0x23 = jump_if_false_long,
+        0x20 = jump(offset: Offset),
+        0x21 = jump_long(offset: LiteralId),
+        0x22 = jump_if_false(condition: Register, offset: Offset),
+        0x23 = jump_if_false_long(condition: Register, offset: LiteralId),
 
-        0x40 = add_i64,
-        0x41 = add_f64,
-        0x42 = sub_i64,
-        0x43 = sub_f64,
-        0x44 = mul_i64,
-        0x45 = mul_f64,
-        0x46 = div_i64,
-        0x47 = div_f64,
-        0x48 = rem_i64,
-        0x49 = rem_f64,
+        0x40 = add_i64(dst: Register, lhs: Register, rhs: Register),
+        0x41 = add_f64(dst: Register, lhs: Register, rhs: Register),
+        0x42 = sub_i64(dst: Register, lhs: Register, rhs: Register),
+        0x43 = sub_f64(dst: Register, lhs: Register, rhs: Register),
+        0x44 = mul_i64(dst: Register, lhs: Register, rhs: Register),
+        0x45 = mul_f64(dst: Register, lhs: Register, rhs: Register),
+        0x46 = div_i64(dst: Register, lhs: Register, rhs: Register),
+        0x47 = div_f64(dst: Register, lhs: Register, rhs: Register),
+        0x48 = rem_i64(dst: Register, lhs: Register, rhs: Register),
+        0x49 = rem_f64(dst: Register, lhs: Register, rhs: Register),
 
-        0x50 = cmp_eq_i64,
-        0x51 = cmp_eq_f64,
-        0x52 = cmp_eq_bool,
+        0x50 = cmp_eq_i64(dst: Register, lhs: Register, rhs: Register),
+        0x51 = cmp_eq_f64(dst: Register, lhs: Register, rhs: Register),
+        0x52 = cmp_eq_bool(dst: Register, lhs: Register, rhs: Register),
         // 0x53 = cmp_eq_str,
-        0x54 = cmp_ne_i64,
-        0x55 = cmp_ne_f64,
-        0x56 = cmp_ne_bool,
+        0x54 = cmp_ne_i64(dst: Register, lhs: Register, rhs: Register),
+        0x55 = cmp_ne_f64(dst: Register, lhs: Register, rhs: Register),
+        0x56 = cmp_ne_bool(dst: Register, lhs: Register, rhs: Register),
         // 0x57 = cmp_ne_str,
-        0x58 = cmp_gt_i64,
-        0x59 = cmp_gt_f64,
-        0x5A = cmp_lt_i64,
-        0x5B = cmp_lt_f64,
-        0x5C = cmp_ge_i64,
-        0x5D = cmp_ge_f64,
-        0x5E = cmp_le_i64,
-        0x5F = cmp_le_f64,
-        0x60 = neg_i64,
-        0x61 = neg_f64,
-        0x62 = not_bool,
+        0x58 = cmp_gt_i64(dst: Register, lhs: Register, rhs: Register),
+        0x59 = cmp_gt_f64(dst: Register, lhs: Register, rhs: Register),
+        0x5A = cmp_lt_i64(dst: Register, lhs: Register, rhs: Register),
+        0x5B = cmp_lt_f64(dst: Register, lhs: Register, rhs: Register),
+        0x5C = cmp_ge_i64(dst: Register, lhs: Register, rhs: Register),
+        0x5D = cmp_ge_f64(dst: Register, lhs: Register, rhs: Register),
+        0x5E = cmp_le_i64(dst: Register, lhs: Register, rhs: Register),
+        0x5F = cmp_le_f64(dst: Register, lhs: Register, rhs: Register),
+        0x60 = neg_i64(dst: Register, rhs: Register),
+        0x61 = neg_f64(dst: Register, rhs: Register),
+        0x62 = not_bool(dst: Register, rhs: Register),
 
-        0x80 = call,
-        0x81 = call_host,
-        0x82 = call_reg,
-        0x83 = call_host_reg,
+        0x80 = call(ret: Register, callee: FunctionId),
+        0x81 = call_host(ret: Register, callee: ExternFunctionId),
+        0x82 = call_reg(ret: Register, callee: Register),
+        0x83 = call_host_reg(ret: Register, callee: Register),
 
         0x90 = ret,
 

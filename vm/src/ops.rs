@@ -10,8 +10,7 @@ use crate::operands::{
     self, u24, ExternFunctionId, FunctionId, LiteralId, Offset, Register, SplitOperands as _,
 };
 use crate::stdout;
-use crate::value::Literal;
-use crate::value::Value;
+use crate::value::{Literal, Value};
 
 pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
     let mut current_frame = CallFrame {
@@ -47,8 +46,7 @@ pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
 
         let (mut opcode, mut operands) = operands::decode(code.read());
         loop {
-            #[cfg(debug_assertions)]
-            writeln!(stdout(), "{}", Disasm(opcode, operands)).ok();
+            // writeln!(stdout(), "{}", Disasm(opcode, operands)).ok();
 
             let op = ops.add(opcode as usize).read();
             match (op)(operands, ops as *mut _, code, stack, literals, context) {
@@ -96,7 +94,13 @@ enum Control {
     Error,
 
     #[cfg(debug_assertions)]
-    Continue(Opcode, u24, *mut Instruction, *mut StackSlot, *mut Literal),
+    Continue(
+        RawOpcode,
+        u24,
+        *mut Instruction,
+        *mut StackSlot,
+        *mut Literal,
+    ),
 }
 
 pub type Instruction = u32;
@@ -148,16 +152,47 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(functions: Vec<Arc<Function>>) -> Context {
-        Self {
-            stack: unsafe { DynArray::new() },
-            frames: Vec::new(),
+    // 16 pages worth of `Value`
+    pub const DEFAULT_INITIAL_STACK_SIZE: usize = 16 * 4096 / core::mem::size_of::<Value>();
+
+    pub fn builder(functions: Vec<Arc<Function>>) -> ContextBuilder {
+        ContextBuilder {
             functions,
+            initial_stack_size: Self::DEFAULT_INITIAL_STACK_SIZE,
         }
+    }
+
+    pub fn new(functions: Vec<Arc<Function>>) -> Context {
+        Self::builder(functions).build()
     }
 
     pub fn ret(&self) -> Value {
         unsafe { self.stack.offset(0).read() }
+    }
+
+    #[doc(hidden)]
+    pub fn stack_size(&self) -> usize {
+        self.stack.len()
+    }
+}
+
+pub struct ContextBuilder {
+    functions: Vec<Arc<Function>>,
+    initial_stack_size: usize,
+}
+
+impl ContextBuilder {
+    pub fn initial_stack_size(mut self, initial_stack_size: usize) -> Self {
+        self.initial_stack_size = initial_stack_size;
+        self
+    }
+
+    pub fn build(self) -> Context {
+        Context {
+            stack: unsafe { DynArray::new(self.initial_stack_size) },
+            frames: Vec::new(),
+            functions: self.functions,
+        }
     }
 }
 
@@ -339,6 +374,8 @@ wrap_abi! {
     ) -> Control {
         let (dst, src): info::load_i16 = operands.split();
 
+        // println!("load_i64 dst={dst} src={src}");
+
         stack.add(dst as usize).write(Value::I64(src as i64));
 
         dispatch_next(ops, code, stack, literals, context)
@@ -406,7 +443,7 @@ wrap_abi! {
         context: *mut LocalContext,
     ) -> Control {
         let (offset,): info::jump_long = operands.split();
-        let offset = literals.add(offset as usize).read().unbox_jmp();
+        let offset = literals.add(offset as usize).read().jump_offset_unchecked();
 
         let code = code.add(offset);
 
@@ -426,7 +463,7 @@ wrap_abi! {
         let (condition, offset): info::jump_if_false = operands.split();
         let condition = stack.add(condition as usize).read();
 
-        let code = if !condition.unbox().into_bool_unchecked() {
+        let code = if !condition.bool_unchecked() {
             code.add(offset as usize)
         } else {
             code.add(1)
@@ -447,9 +484,9 @@ wrap_abi! {
     ) -> Control {
         let (condition, offset): info::jump_if_false_long = operands.split();
         let condition = stack.add(condition as usize).read();
-        let offset = literals.add(offset as usize).read().unbox_jmp();
+        let offset = literals.add(offset as usize).read().jump_offset_unchecked();
 
-        let code = if !condition.unbox().into_bool_unchecked() {
+        let code = if !condition.bool_unchecked() {
             code.add(offset)
         } else {
             code.add(1)
@@ -460,7 +497,7 @@ wrap_abi! {
 }
 
 macro_rules! arithmetic {
-    ($name:ident, $into:ident, $op:tt) => {
+    ($name:ident, $ty:ident, $op:tt) => {
         wrap_abi! {
             unsafe fn $name(
                 operands: u24,
@@ -472,12 +509,11 @@ macro_rules! arithmetic {
             ) -> Control {
                 let (dst, lhs, rhs): info::$name = operands.split();
 
-                let lhs = stack.add(lhs as usize).read().unbox().$into();
-                let rhs = stack.add(rhs as usize).read().unbox().$into();
+                let lhs = stack.add(lhs as usize).read().$ty();
+                let rhs = stack.add(rhs as usize).read().$ty();
                 let result = lhs $op rhs;
 
-                #[cfg(debug_assertions)]
-                writeln!(stdout(), concat!("{} ", stringify!($op), " {} = {}"), lhs, rhs, result).ok();
+                // writeln!(stdout(), concat!("{} ", stringify!($op), " {} = {}"), lhs, rhs, result).ok();
 
                 stack.add(dst as usize).write(Value::from(result));
 
@@ -487,19 +523,19 @@ macro_rules! arithmetic {
     };
 }
 
-arithmetic!(add_i64, into_i64_unchecked, +);
-arithmetic!(add_f64, into_f64_unchecked, +);
-arithmetic!(sub_i64, into_i64_unchecked, -);
-arithmetic!(sub_f64, into_f64_unchecked, -);
-arithmetic!(mul_i64, into_i64_unchecked, *);
-arithmetic!(mul_f64, into_f64_unchecked, *);
-arithmetic!(div_i64, into_i64_unchecked, /);
-arithmetic!(div_f64, into_f64_unchecked, /);
-arithmetic!(rem_i64, into_i64_unchecked, %);
-arithmetic!(rem_f64, into_f64_unchecked, %);
+arithmetic!(add_i64, i64_unchecked, +);
+arithmetic!(add_f64, f64_unchecked, +);
+arithmetic!(sub_i64, i64_unchecked, -);
+arithmetic!(sub_f64, f64_unchecked, -);
+arithmetic!(mul_i64, i64_unchecked, *);
+arithmetic!(mul_f64, f64_unchecked, *);
+arithmetic!(div_i64, i64_unchecked, /);
+arithmetic!(div_f64, f64_unchecked, /);
+arithmetic!(rem_i64, i64_unchecked, %);
+arithmetic!(rem_f64, f64_unchecked, %);
 
 macro_rules! comparison {
-    ($name:ident, $into:ident, $op:tt) => {
+    ($name:ident, $ty:ident, $op:tt) => {
         wrap_abi! {
             unsafe fn $name(
                 operands: u24,
@@ -511,12 +547,11 @@ macro_rules! comparison {
             ) -> Control {
                 let (dst, lhs, rhs): info::$name = operands.split();
 
-                let lhs = stack.add(lhs as usize).read().unbox().$into();
-                let rhs = stack.add(rhs as usize).read().unbox().$into();
+                let lhs = stack.add(lhs as usize).read().$ty();
+                let rhs = stack.add(rhs as usize).read().$ty();
                 let result = lhs $op rhs;
 
-                #[cfg(debug_assertions)]
-                writeln!(stdout(), concat!("{} ", stringify!($op), " {} = {}"), lhs, rhs, result).ok();
+                // writeln!(stdout(), concat!("{} ", stringify!($op), " {} = {}"), lhs, rhs, result).ok();
 
                 stack.add(dst as usize).write(Value::Bool(result));
 
@@ -526,23 +561,23 @@ macro_rules! comparison {
     };
 }
 
-comparison!(cmp_eq_i64, into_i64_unchecked, ==);
-comparison!(cmp_eq_f64, into_f64_unchecked, ==);
-comparison!(cmp_eq_bool, into_bool_unchecked, ==);
-comparison!(cmp_ne_i64, into_i64_unchecked, !=);
-comparison!(cmp_ne_f64, into_f64_unchecked, !=);
-comparison!(cmp_ne_bool, into_bool_unchecked, !=);
-comparison!(cmp_gt_i64, into_i64_unchecked, >);
-comparison!(cmp_gt_f64, into_f64_unchecked, >);
-comparison!(cmp_lt_i64, into_i64_unchecked, <);
-comparison!(cmp_lt_f64, into_f64_unchecked, <);
-comparison!(cmp_ge_i64, into_i64_unchecked, >=);
-comparison!(cmp_ge_f64, into_f64_unchecked, >=);
-comparison!(cmp_le_i64, into_i64_unchecked, <=);
-comparison!(cmp_le_f64, into_f64_unchecked, <=);
+comparison!(cmp_eq_i64, i64_unchecked, ==);
+comparison!(cmp_eq_f64, f64_unchecked, ==);
+comparison!(cmp_eq_bool, bool_unchecked, ==);
+comparison!(cmp_ne_i64, i64_unchecked, !=);
+comparison!(cmp_ne_f64, f64_unchecked, !=);
+comparison!(cmp_ne_bool, bool_unchecked, !=);
+comparison!(cmp_gt_i64, i64_unchecked, >);
+comparison!(cmp_gt_f64, f64_unchecked, >);
+comparison!(cmp_lt_i64, i64_unchecked, <);
+comparison!(cmp_lt_f64, f64_unchecked, <);
+comparison!(cmp_ge_i64, i64_unchecked, >=);
+comparison!(cmp_ge_f64, f64_unchecked, >=);
+comparison!(cmp_le_i64, i64_unchecked, <=);
+comparison!(cmp_le_f64, f64_unchecked, <=);
 
 macro_rules! negate {
-    ($name:ident, $into:ident) => {
+    ($name:ident, $ty:ident) => {
         wrap_abi! {
             unsafe fn $name(
                 operands: u24,
@@ -554,7 +589,7 @@ macro_rules! negate {
             ) -> Control {
                 let (dst, rhs): info::$name = operands.split();
 
-                let rhs = stack.add(rhs as usize).read().unbox().$into();
+                let rhs = stack.add(rhs as usize).read().$ty();
                 let result = -rhs;
                 stack.add(dst as usize).write(Value::from(result));
 
@@ -564,8 +599,8 @@ macro_rules! negate {
     };
 }
 
-negate!(neg_i64, into_i64_unchecked);
-negate!(neg_f64, into_f64_unchecked);
+negate!(neg_i64, i64_unchecked);
+negate!(neg_f64, f64_unchecked);
 
 wrap_abi! {
     unsafe fn not_bool(
@@ -578,7 +613,7 @@ wrap_abi! {
     ) -> Control {
         let (dst, rhs): info::not_bool = operands.split();
 
-        let rhs = stack.add(rhs as usize).read().unbox().into_bool_unchecked();
+        let rhs = stack.add(rhs as usize).read().bool_unchecked();
         let result = !rhs;
         stack.add(dst as usize).write(Value::Bool(result));
 
@@ -604,8 +639,8 @@ unsafe fn prepare_call(
         stack_base: current_frame.stack_base + ret as u32,
         return_addr: current_code_addr + 1,
     };
-    #[cfg(debug_assertions)]
-    writeln!(stdout(), "{new_frame:?}").ok();
+
+    // writeln!(stdout(), "{new_frame:?}").ok();
 
     let new_code_ptr = (*callee).code.as_mut_ptr();
 
@@ -614,8 +649,8 @@ unsafe fn prepare_call(
     let new_stack_ptr = if remaining_stack_space < required_stack_space {
         outer_context
             .stack
-            .grow_with_ptr(stack_ptr)
-            .add(new_frame.stack_base as usize)
+            .grow(required_stack_space - remaining_stack_space);
+        outer_context.stack.offset(new_frame.stack_base as usize)
     } else {
         stack_ptr.add(ret as usize)
     };
@@ -644,7 +679,7 @@ unsafe fn return_from_call(
     let prev_code_ptr = (*prev_frame.callee)
         .code
         .as_mut_ptr()
-        .offset(current_frame.return_addr as isize);
+        .add(current_frame.return_addr as usize);
 
     (prev_code_ptr, prev_stack_ptr, prev_literals_ptr)
 }
@@ -741,6 +776,7 @@ wrap_abi! {
         _ops: *mut (),
         _code: *mut Instruction,
         _stack: *mut StackSlot,
+        _literals: *mut Literal,
         _context: *mut LocalContext,
     ) -> Control {
         Control::End
@@ -752,12 +788,14 @@ macro_rules! ops {
         mod $info:ident;
         mod $asm:ident;
         struct $Disasm:ident;
+        struct $RawOpcode:ident;
+        invalid = $invalid_op:ident;
         $table:ident: [$Opcode:ident] = [
             $($index:literal = $op:ident $(($($operand:ident : $operand_ty:ty),+))?),* $(,)?
         ]
     ) => {
         static $table: [Op; 256] = const {
-            let mut table: [Op; 256] = [invalid_op; 256];
+            let mut table: [Op; 256] = [$invalid_op; 256];
 
             $(
                 table[$index as usize] = unsafe{
@@ -774,6 +812,8 @@ macro_rules! ops {
         pub enum $Opcode {
             $($op = $index),*
         }
+
+        pub type $RawOpcode = u8;
 
         pub mod $info {
             #![allow(non_camel_case_types)]
@@ -836,8 +876,9 @@ ops! {
     mod info;
     mod asm;
     struct Disasm;
+    struct RawOpcode;
+    invalid = invalid_op;
     OPS: [Opcode] = [
-        0x00 = invalid_op,
         0x01 = mov(dst: Register, src: Register),
 
         0x02 = load_unit(dst: Register),

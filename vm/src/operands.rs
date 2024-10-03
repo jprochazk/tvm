@@ -1,4 +1,4 @@
-use super::ops::Opcode;
+use super::ops::{Opcode, RawOpcode};
 
 pub type Register = u8;
 
@@ -165,12 +165,9 @@ impl JoinOperands for (u8, i16) {
 }
 
 // [ _ : 8, a : 24 ]
-pub fn decode(encoded: u32) -> (Opcode, u24) {
+pub fn decode(encoded: u32) -> (RawOpcode, u24) {
     let [op, a, b, c] = encoded.to_le_bytes();
-    (
-        unsafe { core::mem::transmute::<u8, Opcode>(op) },
-        u24::from_le_bytes([a, b, c]),
-    )
+    (op, u24::from_le_bytes([a, b, c]))
 }
 
 // [ op : 8, a : 24 ]
@@ -190,6 +187,6 @@ mod tests {
         let decoded = decode(encoded);
 
         assert_eq!(encoded.to_le_bytes(), [Opcode::mov as u8, 0x01, 0x02, 0x03]);
-        assert_eq!(decoded, (opcode, (0x01, 0x02, 0x03).join()));
+        assert_eq!(decoded, (opcode as u8, (0x01, 0x02, 0x03).join()));
     }
 }

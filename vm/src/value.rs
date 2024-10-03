@@ -1,31 +1,99 @@
-use core::mem::transmute;
-
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 #[repr(u64)]
 pub enum Value {
+    #[default]
     Unit = 0,
     I64(i64) = 1,
     F64(f64) = 2,
     Bool(bool) = 3,
 }
 
-/// `Value` is a tagged union due to the `repr(u64)` attribute,
-/// and has the same layout as this type.
-#[repr(C)]
-struct RawTaggedUnion {
-    tag: u64,
-    value: u64,
-}
-
 impl Value {
     #[inline]
     pub fn tag(self) -> u64 {
-        unsafe { transmute::<Value, RawTaggedUnion>(self).tag }
+        // SAFETY: Because `Self` is marked `repr(u64)`, its layout is a `repr(C)`
+        // `union` between `repr(C)` structs, each of which has the `u64`
+        // discriminant as its first field, so we can read the discriminant
+        // without offsetting the pointer.
+        unsafe {
+            let ptr = &self as *const Self as *const u64;
+            ptr.read()
+        }
     }
 
     #[inline]
-    pub fn unbox(self) -> Opaque {
-        unsafe { Opaque(transmute::<Value, RawTaggedUnion>(self).value) }
+    pub fn unit(self) -> Option<()> {
+        match self {
+            Self::Unit => Some(()),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// - `self` must be `Self::Unit`
+    #[inline]
+    pub unsafe fn unit_unchecked(self) {
+        match self {
+            Value::Unit => (),
+            _ => core::hint::unreachable_unchecked(),
+        }
+    }
+
+    #[inline]
+    pub fn i64(self) -> Option<i64> {
+        match self {
+            Self::I64(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// - `self` must be `Self::I64`
+    #[inline]
+    pub unsafe fn i64_unchecked(self) -> i64 {
+        debug_assert!(matches!(self, Self::I64(_)));
+        match self {
+            Value::I64(v) => v,
+            _ => core::hint::unreachable_unchecked(),
+        }
+    }
+
+    #[inline]
+    pub fn f64(self) -> Option<f64> {
+        match self {
+            Self::F64(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// - `self` must be `Self::F64`
+    #[inline]
+    pub unsafe fn f64_unchecked(self) -> f64 {
+        debug_assert!(matches!(self, Self::F64(_)));
+        match self {
+            Value::F64(v) => v,
+            _ => core::hint::unreachable_unchecked(),
+        }
+    }
+
+    #[inline]
+    pub fn bool(self) -> Option<bool> {
+        match self {
+            Self::Bool(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// - `self` must be `Self::Bool`
+    #[inline]
+    pub unsafe fn bool_unchecked(self) -> bool {
+        debug_assert!(matches!(self, Self::Bool(_)));
+        match self {
+            Value::Bool(v) => v,
+            _ => core::hint::unreachable_unchecked(),
+        }
     }
 }
 
@@ -60,7 +128,7 @@ impl From<bool> for Value {
 #[derive(Debug, Clone, Copy)]
 #[repr(u64)]
 pub enum Literal {
-    Jmp(usize) = 0,
+    JumpOffset(usize) = 0,
     I64(i64) = 1,
     F64(f64) = 2,
 }
@@ -70,9 +138,9 @@ impl Literal {
     /// - `literal` must not be `Literal::Jmp`
     #[inline]
     pub unsafe fn into_value(self) -> Value {
-        debug_assert!(!matches!(self, Literal::Jmp(_)));
+        debug_assert!(!matches!(self, Literal::JumpOffset(_)));
         match self {
-            Literal::Jmp(_) => unsafe { core::hint::unreachable_unchecked() },
+            Literal::JumpOffset(_) => unsafe { core::hint::unreachable_unchecked() },
             Literal::I64(v) => Value::I64(v),
             Literal::F64(v) => Value::F64(v),
         }
@@ -80,30 +148,78 @@ impl Literal {
 
     #[inline]
     pub fn tag(self) -> u64 {
-        unsafe { transmute::<Literal, RawTaggedUnion>(self).tag }
+        // SAFETY: Because `Self` is marked `repr(u64)`, its layout is a `repr(C)`
+        // `union` between `repr(C)` structs, each of which has the `u64`
+        // discriminant as its first field, so we can read the discriminant
+        // without offsetting the pointer.
+        unsafe {
+            let ptr = &self as *const Self as *const u64;
+            ptr.read()
+        }
+    }
+
+    #[inline]
+    pub fn i64(self) -> Option<i64> {
+        match self {
+            Self::I64(v) => Some(v),
+            _ => None,
+        }
     }
 
     /// # Safety
-    /// - `literal` must not be `Literal::Jmp`
+    /// - `self` must be `Literal::I64`
     #[inline]
-    pub unsafe fn unbox(self) -> Opaque {
-        debug_assert!(!matches!(self, Literal::Jmp(_)));
-        Opaque(transmute::<Literal, RawTaggedUnion>(self).value)
+    pub unsafe fn i64_unchecked(self) -> i64 {
+        debug_assert!(!matches!(self, Literal::JumpOffset(_)));
+        match self {
+            Literal::I64(v) => v,
+            _ => core::hint::unreachable_unchecked(),
+        }
+    }
+
+    #[inline]
+    pub fn f64(self) -> Option<f64> {
+        match self {
+            Self::F64(v) => Some(v),
+            _ => None,
+        }
     }
 
     /// # Safety
-    /// - `literal` must be `Literal::Jmp`
+    /// - `self` must be `Literal::F64`
     #[inline]
-    pub unsafe fn unbox_jmp(self) -> usize {
-        debug_assert!(matches!(self, Literal::Jmp(_)));
-        transmute::<Literal, RawTaggedUnion>(self).value as usize
+    pub unsafe fn f64_unchecked(self) -> f64 {
+        debug_assert!(!matches!(self, Literal::JumpOffset(_)));
+        match self {
+            Literal::F64(v) => v,
+            _ => core::hint::unreachable_unchecked(),
+        }
+    }
+
+    #[inline]
+    pub fn jump_offset(self) -> Option<usize> {
+        match self {
+            Self::JumpOffset(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// # Safety
+    /// - `self` must be `Literal::JumpOffset`
+    #[inline]
+    pub unsafe fn jump_offset_unchecked(self) -> usize {
+        debug_assert!(matches!(self, Literal::JumpOffset(_)));
+        match self {
+            Literal::JumpOffset(v) => v,
+            _ => core::hint::unreachable_unchecked(),
+        }
     }
 }
 
 impl Literal {
     #[inline]
     pub fn jmp(offset: usize) -> Self {
-        Self::Jmp(offset)
+        Self::JumpOffset(offset)
     }
 }
 
@@ -118,80 +234,6 @@ impl From<f64> for Literal {
     #[inline]
     fn from(value: f64) -> Self {
         Self::F64(value)
-    }
-}
-
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct Opaque(u64);
-
-impl Opaque {
-    pub const UNIT: Opaque = Opaque(0);
-
-    /// # Safety
-    /// - `self` must be a valid `i64`
-    #[inline]
-    pub unsafe fn into_i64_unchecked(self) -> i64 {
-        transmute::<u64, i64>(self.0)
-    }
-
-    #[inline]
-    pub fn from_i64(v: i64) -> Self {
-        unsafe { Self(transmute::<i64, u64>(v)) }
-    }
-
-    /// # Safety
-    /// - `self` must be a valid `f64`
-    #[inline]
-    pub unsafe fn into_f64_unchecked(self) -> f64 {
-        f64::from_bits(self.0)
-    }
-
-    #[inline]
-    pub fn from_f64(v: f64) -> Self {
-        Self(v.to_bits())
-    }
-
-    /// # Safety
-    /// - `self` must be a valid `bool`
-    #[inline]
-    pub unsafe fn into_bool_unchecked(self) -> bool {
-        #![allow(clippy::transmute_int_to_bool)]
-
-        unsafe { transmute::<u8, bool>(self.0 as u8) }
-    }
-
-    #[inline]
-    pub fn from_bool(v: bool) -> Self {
-        Self(v as u8 as u64)
-    }
-}
-
-impl From<i64> for Opaque {
-    #[inline]
-    fn from(value: i64) -> Self {
-        Self::from_i64(value)
-    }
-}
-
-impl From<f64> for Opaque {
-    #[inline]
-    fn from(value: f64) -> Self {
-        Self::from_f64(value)
-    }
-}
-
-impl From<bool> for Opaque {
-    #[inline]
-    fn from(value: bool) -> Self {
-        Self::from_bool(value)
-    }
-}
-
-impl From<Value> for Opaque {
-    #[inline]
-    fn from(value: Value) -> Self {
-        value.unbox()
     }
 }
 

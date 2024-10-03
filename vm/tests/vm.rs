@@ -1,10 +1,16 @@
 use std::sync::Arc;
 
+use ops::{asm, Function};
+use value::Value;
 use vm::*;
 
-use ops::asm;
-use ops::Function;
-use value::Value;
+fn context(functions: Vec<Arc<Function>>) -> ops::Context {
+    // always test with starting stack size of `1` to
+    // properly exercise the stack growth logic
+    ops::Context::builder(functions)
+        .initial_stack_size(1)
+        .build()
+}
 
 #[test]
 fn add_i64() {
@@ -19,7 +25,7 @@ fn add_i64() {
         2,
     ))];
 
-    let mut context = ops::Context::new(functions);
+    let mut context = context(functions);
     ops::dispatch(&mut context, 0).unwrap();
 
     assert!(
@@ -27,6 +33,7 @@ fn add_i64() {
         "{:?}",
         context.ret()
     );
+    assert_eq!(context.stack_size(), 2);
 }
 
 #[test]
@@ -38,14 +45,14 @@ fn fibonacci() {
     let r4 = 4u8;
     let f1 = 1u16;
 
-    // fib(2) + fib(2)
+    // fib(3) + fib(7)
 
     let functions = vec![
         Arc::new(Function::new(
             vec![
-                asm::load_i16(r1, 2i16),
+                asm::load_i16(r1, 3i16),
                 asm::call(r0, f1),
-                asm::load_i16(r2, 1i16),
+                asm::load_i16(r2, 7i16),
                 asm::call(r1, f1),
                 asm::add_i64(r0, r0, r1),
                 asm::ret(),
@@ -75,13 +82,38 @@ fn fibonacci() {
         )),
     ];
 
-    let mut context = ops::Context::new(functions);
+    let mut context = context(functions);
 
     ops::dispatch(&mut context, 0).unwrap();
 
-    assert!(
-        matches!(context.ret(), Value::I64(2)),
+    assert_eq!(
+        context.ret().i64().unwrap(),
+        iter_fib(3) + iter_fib(7),
         "{:?}",
         context.ret()
     );
+}
+
+fn iter_fib(n: i64) -> i64 {
+    let mut a = 0;
+    let mut b = 1;
+    for _ in 0..n {
+        let c = a + b;
+        a = b;
+        b = c;
+    }
+
+    a
+}
+
+#[test]
+fn invalid_op() {
+    let functions = vec![Arc::new(Function::new(vec![0xABABABAB], vec![], 0))];
+
+    let mut context = context(functions);
+
+    assert!(matches!(
+        ops::dispatch(&mut context, 0),
+        Err(ops::Error::InvalidOp)
+    ));
 }

@@ -2,27 +2,25 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::fmt::Write as _;
 use core::ptr::addr_of_mut as mut_;
+use std::ptr::null;
 
-use crate::dyn_array::DynArray;
+use crate::dyn_array::{DynArray, DynList};
 use crate::operands::{
     self, u24, ExternFunctionId, FunctionId, LiteralId, Offset, Register, SplitOperands as _,
 };
-use crate::stdout;
 use crate::value::{Literal, Value};
 
 pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
     let mut current_frame = CallFrame {
-        callee: &mut Function {
-            code: vec![
+        callee: &mut Function::new(
+            vec![
                 operands::encode(Opcode::call, (0u8, main)),
                 operands::encode(Opcode::end, ()),
-            ]
-            .into(),
-            literals: vec![].into(),
-            registers: 1,
-        },
+            ],
+            vec![],
+            1,
+        ),
         stack_base: 0,
         return_addr: 1,
     };
@@ -36,18 +34,16 @@ pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
 
     #[cfg(debug_assertions)]
     unsafe {
-        let callee = &mut *current_frame.callee;
+        let callee = &*current_frame.callee;
 
         let ops = (&OPS) as *const Op;
-        let mut code = callee.code.as_mut_ptr();
+        let mut code = Function::code_ptr(callee);
         let mut stack = context.stack.offset(0);
-        let mut literals = callee.literals.as_mut_ptr();
+        let mut literals = Function::literals_ptr(callee);
         let context = &mut local_context as *mut _;
 
         let (mut opcode, mut operands) = operands::decode(code.read());
         loop {
-            // writeln!(stdout(), "{}", Disasm(opcode, operands)).ok();
-
             let op = ops.add(opcode as usize).read();
             match (op)(operands, ops as *mut _, code, stack, literals, context) {
                 Control::End => return Ok(()),
@@ -71,12 +67,13 @@ pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
 
     #[cfg(not(debug_assertions))]
     unsafe {
-        let callee = &mut (*current_frame.callee);
+        let callee = &*current_frame.callee;
+
         match dispatch_current(
-            (&OPS) as *const [Op; 256] as *mut (),
-            callee.code.as_mut_ptr(),
+            (&OPS) as *const [Op; 256] as *const (),
+            Function::code_ptr(callee),
             context.stack.offset(0),
-            callee.literals.as_mut_ptr(),
+            Function::literals_ptr(callee),
             &mut local_context,
         ) {
             // Control::Pause => todo!(),
@@ -97,31 +94,60 @@ enum Control {
     Continue(
         RawOpcode,
         u24,
-        *mut Instruction,
+        *const Instruction,
         *mut StackSlot,
-        *mut Literal,
+        *const Literal,
     ),
 }
 
-pub type Instruction = u32;
+#[repr(transparent)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Instruction(pub(crate) u32);
+
+impl core::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (opcode, operands) = operands::decode(*self);
+        core::fmt::Display::fmt(&Disasm(opcode, operands), f)
+    }
+}
 
 pub struct Function {
-    code: Box<[Instruction]>,
-    literals: Box<[Literal]>,
+    code: *const [Instruction],
+    literals: *const [Literal],
     // TODO: store this as pointer tag
     registers: u8,
 }
 
 impl Function {
-    pub fn new(
-        code: impl Into<Box<[Instruction]>>,
-        literals: impl Into<Box<[Literal]>>,
-        registers: u8,
-    ) -> Self {
+    #[inline]
+    pub fn new(code: Vec<Instruction>, literals: Vec<Literal>, registers: u8) -> Self {
         Self {
-            code: code.into(),
-            literals: literals.into(),
+            code: Box::into_raw(code.into_boxed_slice()),
+            literals: Box::into_raw(literals.into_boxed_slice()),
             registers,
+        }
+    }
+
+    #[inline]
+    unsafe fn code_ptr(this: *const Function) -> *const Instruction {
+        (*this).code as *const Instruction
+    }
+
+    #[inline]
+    unsafe fn literals_ptr(this: *const Function) -> *const Literal {
+        (*this).literals as *const Literal
+    }
+}
+
+unsafe impl Send for Function {}
+unsafe impl Sync for Function {}
+
+impl Drop for Function {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe {
+            drop(Box::from_raw(self.code.cast_mut()));
+            drop(Box::from_raw(self.literals.cast_mut()));
         }
     }
 }
@@ -129,9 +155,25 @@ impl Function {
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct CallFrame {
-    callee: *mut Function,
+    callee: *const Function,
     stack_base: u32,
     return_addr: u32,
+}
+
+impl Default for CallFrame {
+    fn default() -> Self {
+        static INVALID_FUNCTION: Function = Function {
+            code: &[asm::invalid_op()],
+            literals: &[],
+            registers: 1,
+        };
+
+        Self {
+            callee: &INVALID_FUNCTION,
+            stack_base: 0,
+            return_addr: 0,
+        }
+    }
 }
 
 impl core::fmt::Debug for CallFrame {
@@ -147,7 +189,7 @@ pub type StackSlot = Value;
 
 pub struct Context {
     stack: DynArray<StackSlot>,
-    frames: Vec<CallFrame>,
+    frames: DynList<CallFrame>,
     functions: Vec<Arc<Function>>,
 }
 
@@ -172,7 +214,7 @@ impl Context {
 
     #[doc(hidden)]
     pub fn stack_size(&self) -> usize {
-        self.stack.len()
+        self.stack.capacity()
     }
 }
 
@@ -182,15 +224,22 @@ pub struct ContextBuilder {
 }
 
 impl ContextBuilder {
+    /// `initial_stack_size` will be rounded to the nearest power of two,
+    /// and it may be no smaller than `2`.
     pub fn initial_stack_size(mut self, initial_stack_size: usize) -> Self {
-        self.initial_stack_size = initial_stack_size;
+        self.initial_stack_size = std::cmp::max(2, initial_stack_size.next_power_of_two());
         self
     }
 
     pub fn build(self) -> Context {
+        let stack = DynArray::new(self.initial_stack_size);
+        // ~8 registers per function call,
+        // and at least 2 for the trampoline + entrypoint.
+        let frames = DynList::new(std::cmp::max(2, self.initial_stack_size / 8));
+
         Context {
-            stack: unsafe { DynArray::new(self.initial_stack_size) },
-            frames: Vec::new(),
+            stack,
+            frames,
             functions: self.functions,
         }
     }
@@ -217,13 +266,18 @@ struct LocalContext {
     error: *mut Option<Error>,
 }
 
+unsafe fn get_function_unchecked(context: *mut LocalContext, index: FunctionId) -> *mut Function {
+    let function: &Function = (*(*context).outer).functions.get_unchecked(index as usize);
+    function as *const Function as *mut Function
+}
+
 #[cfg(not(windows))]
 type Op = unsafe extern "C" fn(
     operands: u24,
-    ops: *mut (),
-    code: *mut Instruction,
+    ops: *const (),
+    code: *const Instruction,
     stack: *mut StackSlot,
-    literals: *mut Literal,
+    literals: *const Literal,
     context: *mut LocalContext,
 ) -> Control;
 
@@ -241,10 +295,10 @@ macro_rules! wrap_abi {
 #[cfg(windows)]
 pub type Op = unsafe extern "sysv64" fn(
     operands: u24,
-    ops: *mut (),
-    code: *mut Instruction,
+    ops: *const (),
+    code: *const Instruction,
     stack: *mut Stack,
-    literals: *mut Literal,
+    literals: *const Literal,
     context: *mut LocalContext,
 ) -> Control;
 
@@ -262,10 +316,10 @@ macro_rules! wrap_abi {
 /// Dispatch the current instruction.
 #[inline(always)]
 unsafe fn dispatch_current(
-    ops: *mut (),
-    code: *mut Instruction,
+    ops: *const (),
+    code: *const Instruction,
     stack: *mut StackSlot,
-    literals: *mut Literal,
+    literals: *const Literal,
     context: *mut LocalContext,
 ) -> Control {
     let (opcode, operands) = operands::decode(code.read());
@@ -286,10 +340,10 @@ unsafe fn dispatch_current(
 /// Increment `code` by one instruction and dispatch.
 #[inline(always)]
 unsafe fn dispatch_next(
-    ops: *mut (),
-    code: *mut Instruction,
+    ops: *const (),
+    code: *const Instruction,
     stack: *mut StackSlot,
-    literals: *mut Literal,
+    literals: *const Literal,
     context: *mut LocalContext,
 ) -> Control {
     let code = code.add(1);
@@ -299,10 +353,10 @@ unsafe fn dispatch_next(
 wrap_abi! {
     unsafe fn invalid_op(
         _operands: u24,
-        _ops: *mut (),
-        _code: *mut Instruction,
+        _ops: *const (),
+        _code: *const Instruction,
         _stack: *mut StackSlot,
-        _literals: *mut Literal,
+        _literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         mut_!(*(*context).error).write(Some(Error::InvalidOp));
@@ -313,10 +367,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn mov(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (dst, src): info::mov = operands.split();
@@ -331,10 +385,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn load_unit(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (dst,): info::load_unit = operands.split();
@@ -348,10 +402,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn load_literal(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (dst, src): info::load_literal = operands.split();
@@ -366,10 +420,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn load_i16(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (dst, src): info::load_i16 = operands.split();
@@ -385,10 +439,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn load_true(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (dst,): info::load_true = operands.split();
@@ -402,10 +456,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn load_false(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (dst,): info::load_false = operands.split();
@@ -419,10 +473,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn jump(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (offset,): info::jump = operands.split();
@@ -436,10 +490,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn jump_long(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (offset,): info::jump_long = operands.split();
@@ -454,10 +508,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn jump_if_false(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (condition, offset): info::jump_if_false = operands.split();
@@ -476,10 +530,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn jump_if_false_long(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (condition, offset): info::jump_if_false_long = operands.split();
@@ -501,10 +555,10 @@ macro_rules! arithmetic {
         wrap_abi! {
             unsafe fn $name(
                 operands: u24,
-                ops: *mut (),
-                code: *mut Instruction,
+                ops: *const (),
+                code: *const Instruction,
                 stack: *mut StackSlot,
-                literals: *mut Literal,
+                literals: *const Literal,
                 context: *mut LocalContext,
             ) -> Control {
                 let (dst, lhs, rhs): info::$name = operands.split();
@@ -512,8 +566,6 @@ macro_rules! arithmetic {
                 let lhs = stack.add(lhs as usize).read().$ty();
                 let rhs = stack.add(rhs as usize).read().$ty();
                 let result = lhs $op rhs;
-
-                // writeln!(stdout(), concat!("{} ", stringify!($op), " {} = {}"), lhs, rhs, result).ok();
 
                 stack.add(dst as usize).write(Value::from(result));
 
@@ -539,10 +591,10 @@ macro_rules! comparison {
         wrap_abi! {
             unsafe fn $name(
                 operands: u24,
-                ops: *mut (),
-                code: *mut Instruction,
+                ops: *const (),
+                code: *const Instruction,
                 stack: *mut StackSlot,
-                literals: *mut Literal,
+                literals: *const Literal,
                 context: *mut LocalContext,
             ) -> Control {
                 let (dst, lhs, rhs): info::$name = operands.split();
@@ -550,8 +602,6 @@ macro_rules! comparison {
                 let lhs = stack.add(lhs as usize).read().$ty();
                 let rhs = stack.add(rhs as usize).read().$ty();
                 let result = lhs $op rhs;
-
-                // writeln!(stdout(), concat!("{} ", stringify!($op), " {} = {}"), lhs, rhs, result).ok();
 
                 stack.add(dst as usize).write(Value::Bool(result));
 
@@ -581,10 +631,10 @@ macro_rules! negate {
         wrap_abi! {
             unsafe fn $name(
                 operands: u24,
-                ops: *mut (),
-                code: *mut Instruction,
+                ops: *const (),
+                code: *const Instruction,
                 stack: *mut StackSlot,
-                literals: *mut Literal,
+                literals: *const Literal,
                 context: *mut LocalContext,
             ) -> Control {
                 let (dst, rhs): info::$name = operands.split();
@@ -605,10 +655,10 @@ negate!(neg_f64, f64_unchecked);
 wrap_abi! {
     unsafe fn not_bool(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (dst, rhs): info::not_bool = operands.split();
@@ -621,18 +671,35 @@ wrap_abi! {
     }
 }
 
+// call procedure:
+// 1. grow stack if needed
+// 2. allocate new call frame
+// 3. jump to start of callee
+//
+// new call frame's stack overlaps with the current frame's stack
+// example: assuming 3 args, with ret at r6:
+//   frame N:   [ 0 1 2 3 4 5 6 7 8 9 ]
+//                            ^ ^
+//                            | args
+//                            ret
+//   frame N+1: [ 6 7 8 9 ... ]
+//                ^ ^
+//                | args
+//                ret
+// `r0` in the new frame will be in the same location as `r6`
+// in the previous frame.
 unsafe fn prepare_call(
-    callee: *mut Function,
+    callee: *const Function,
     ret: Register,
-    code_ptr: *mut Instruction,
+    code_ptr: *const Instruction,
     stack_ptr: *mut StackSlot,
     context_ptr: *mut LocalContext,
-) -> (*mut Instruction, *mut StackSlot, *mut Literal) {
+) -> (*const Instruction, *mut StackSlot, *const Literal) {
     let context = &mut *context_ptr;
     let current_frame = &mut *context.current_frame;
     let outer_context = &mut *context.outer;
 
-    let current_code_addr = code_ptr.offset_from((*current_frame.callee).code.as_ptr()) as u32;
+    let current_code_addr = code_ptr.offset_from(Function::code_ptr(current_frame.callee)) as u32;
 
     let new_frame = CallFrame {
         callee,
@@ -640,10 +707,7 @@ unsafe fn prepare_call(
         return_addr: current_code_addr + 1,
     };
 
-    // writeln!(stdout(), "{new_frame:?}").ok();
-
-    let new_code_ptr = (*callee).code.as_mut_ptr();
-
+    // grow the stack if needed
     let remaining_stack_space = outer_context.stack.remaining(new_frame.stack_base as usize);
     let required_stack_space = (*callee).registers as usize;
     let new_stack_ptr = if remaining_stack_space < required_stack_space {
@@ -655,31 +719,41 @@ unsafe fn prepare_call(
         stack_ptr.add(ret as usize)
     };
 
-    let new_literals_ptr = (*callee).literals.as_mut_ptr();
-
+    // allocate new call frame
     outer_context
         .frames
         .push(core::mem::replace(current_frame, new_frame));
 
+    // jump to start of callee
+    // -> replacing the code ptr is equivalent to a jump
+    let new_code_ptr = Function::code_ptr(callee);
+    let new_literals_ptr = Function::literals_ptr(callee);
+
     (new_code_ptr, new_stack_ptr, new_literals_ptr)
 }
 
+// return procedure:
+// 1. pop call frame
+// 2. restore stack and literal pointers
+// 3. jump to return address
 unsafe fn return_from_call(
     context_ptr: *mut LocalContext,
-) -> (*mut Instruction, *mut StackSlot, *mut Literal) {
+) -> (*const Instruction, *mut StackSlot, *const Literal) {
     let context = &mut *context_ptr;
     let current_frame = &mut *context.current_frame;
     let outer_context = &mut *context.outer;
 
-    let prev_frame = outer_context.frames.pop().unwrap_unchecked();
+    // pop call frame
+    let prev_frame = outer_context.frames.pop_unchecked();
     let current_frame = core::mem::replace(current_frame, prev_frame);
 
-    let prev_literals_ptr = (*prev_frame.callee).literals.as_mut_ptr();
+    // restore stack and literal pointers
     let prev_stack_ptr = outer_context.stack.offset(prev_frame.stack_base as usize);
-    let prev_code_ptr = (*prev_frame.callee)
-        .code
-        .as_mut_ptr()
-        .add(current_frame.return_addr as usize);
+    let prev_literals_ptr = Function::literals_ptr(prev_frame.callee);
+
+    // jump to return address
+    let return_addr = current_frame.return_addr as usize;
+    let prev_code_ptr = Function::code_ptr(prev_frame.callee).add(return_addr);
 
     (prev_code_ptr, prev_stack_ptr, prev_literals_ptr)
 }
@@ -687,16 +761,15 @@ unsafe fn return_from_call(
 wrap_abi! {
     unsafe fn call(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        _literals: *mut Literal,
+        _literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (ret, callee): info::call = operands.split();
 
-        let callee: &Function = (*(*context).outer).functions.get_unchecked(callee as usize);
-        let callee = callee as *const _ as *mut Function;
+        let callee = get_function_unchecked(context, callee);
 
         let (code, stack, literals) = prepare_call(callee, ret, code, stack, context);
 
@@ -705,15 +778,15 @@ wrap_abi! {
 }
 
 wrap_abi! {
-    unsafe fn call_host(
+    unsafe fn call_extern(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (_ret, _callee): info::call_host = operands.split();
+        let (_ret, _callee): info::call_extern = operands.split();
 
         // TODO
 
@@ -724,10 +797,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn call_reg(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (_ret, _callee): info::call_reg = operands.split();
@@ -739,15 +812,15 @@ wrap_abi! {
 }
 
 wrap_abi! {
-    unsafe fn call_host_reg(
+    unsafe fn call_extern_reg(
         operands: u24,
-        ops: *mut (),
-        code: *mut Instruction,
+        ops: *const (),
+        code: *const Instruction,
         stack: *mut StackSlot,
-        literals: *mut Literal,
+        literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (_ret, _callee): info::call_host_reg = operands.split();
+        let (_ret, _callee): info::call_extern_reg = operands.split();
 
         // TODO
 
@@ -758,10 +831,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn ret(
         _operands: u24,
-        ops: *mut (),
-        _code: *mut Instruction,
+        ops: *const (),
+        _code: *const Instruction,
         _stack: *mut StackSlot,
-        _literals: *mut Literal,
+        _literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
         let (code, stack, literals) = return_from_call(context);
@@ -773,10 +846,10 @@ wrap_abi! {
 wrap_abi! {
     unsafe fn end(
         _operands: u24,
-        _ops: *mut (),
-        _code: *mut Instruction,
+        _ops: *const (),
+        _code: *const Instruction,
         _stack: *mut StackSlot,
-        _literals: *mut Literal,
+        _literals: *const Literal,
         _context: *mut LocalContext,
     ) -> Control {
         Control::End
@@ -810,6 +883,7 @@ macro_rules! ops {
         #[repr(u8)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum $Opcode {
+            $invalid_op = 0,
             $($op = $index),*
         }
 
@@ -828,6 +902,10 @@ macro_rules! ops {
         pub mod $asm {
             use super::*;
 
+            pub const fn $invalid_op() -> Instruction {
+                Instruction(0u32)
+            }
+
             $(
                 pub fn $op(
                     $(
@@ -842,7 +920,7 @@ macro_rules! ops {
             )*
         }
 
-        pub struct $Disasm(pub $Opcode, pub u24);
+        struct $Disasm(pub u8, pub u24);
 
         impl core::fmt::Display for Disasm {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -850,7 +928,7 @@ macro_rules! ops {
 
                 match opcode {
                     $(
-                        $Opcode::$op => {
+                        $index => {
                             let ($($($operand,)*)?): $info::$op = operands.split();
                             write!(f,
                                 concat!(
@@ -866,6 +944,9 @@ macro_rules! ops {
                             )
                         }
                     )*
+                    _ => {
+                        write!(f, "invalid")
+                    }
                 }
             }
         }
@@ -924,9 +1005,9 @@ ops! {
         0x62 = not_bool(dst: Register, rhs: Register),
 
         0x80 = call(ret: Register, callee: FunctionId),
-        0x81 = call_host(ret: Register, callee: ExternFunctionId),
+        0x81 = call_extern(ret: Register, callee: ExternFunctionId),
         0x82 = call_reg(ret: Register, callee: Register),
-        0x83 = call_host_reg(ret: Register, callee: Register),
+        0x83 = call_extern_reg(ret: Register, callee: Register),
 
         0x90 = ret,
 

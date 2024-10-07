@@ -1,41 +1,74 @@
 use alloc::alloc::{alloc_zeroed as allocate_zeroed, dealloc as deallocate};
 use core::alloc::Layout;
 
-pub struct DynArray<T: Sized + Default + Copy> {
-    base: *mut T,
+pub struct DynList<T: Sized + Default + Copy> {
+    inner: DynArray<T>,
     length: usize,
 }
 
-impl<T: Sized + Default + Copy> DynArray<T> {
-    /// # Safety
-    /// - `0` must a valid bit-pattern for `T`
+impl<T: Sized + Default + Copy> DynList<T> {
+    /// `initial_capacity` must be a power of two.
+    pub fn new(initial_capacity: usize) -> Self {
+        Self {
+            inner: DynArray::new(initial_capacity),
+            length: 0,
+        }
+    }
+
     #[inline]
-    pub unsafe fn new(initial_capacity: usize) -> Self {
+    pub fn push(&mut self, value: T) {
+        unsafe {
+            if self.inner.remaining(self.length) == 0 {
+                self.inner.grow(1);
+            }
+
+            self.inner.offset(self.length).write(value);
+            self.length += 1;
+        }
+    }
+
+    #[inline]
+    pub unsafe fn pop_unchecked(&mut self) -> T {
+        self.length -= 1;
+        self.inner.offset(self.length).read()
+    }
+}
+
+pub struct DynArray<T: Sized + Default + Copy> {
+    base: *mut T,
+    capacity: usize,
+}
+
+impl<T: Sized + Default + Copy> DynArray<T> {
+    /// `initial_capacity` must be a power of two.
+    #[inline]
+    pub fn new(initial_capacity: usize) -> Self {
         assert!(initial_capacity.is_power_of_two());
 
-        let length = initial_capacity;
-        let base = allocate_zeroed(Self::layout(length)).cast::<T>();
-        for i in 0..length {
-            base.add(i).write(T::default());
+        unsafe {
+            let capacity = initial_capacity;
+            let base = allocate_zeroed(Self::layout(capacity)).cast::<T>();
+            for i in 0..capacity {
+                base.add(i).write(T::default());
+            }
+            Self { base, capacity }
         }
-
-        Self { base, length }
     }
 
     #[inline]
     pub fn offset(&self, offset: usize) -> *mut T {
-        debug_assert!(offset < self.length);
+        debug_assert!(offset < self.capacity);
         unsafe { self.base.add(offset) }
     }
 
     #[inline]
-    pub fn len(&self) -> usize {
-        self.length
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 
     #[inline]
     pub fn remaining(&self, offset: usize) -> usize {
-        self.length.saturating_sub(offset)
+        self.capacity.saturating_sub(offset)
     }
 
     /// Grow the stack.
@@ -44,31 +77,31 @@ impl<T: Sized + Default + Copy> DynArray<T> {
     #[inline(never)]
     #[cold]
     pub unsafe fn grow(&mut self, additional: usize) {
-        let old_length = self.length;
+        let old_capacity = self.capacity;
         let old_base = self.base;
 
-        let new_length = (old_length + additional).next_power_of_two();
-        let new_base = allocate_zeroed(Self::layout(new_length)).cast::<T>();
+        let new_capacity = (old_capacity + additional).next_power_of_two();
+        let new_base = allocate_zeroed(Self::layout(new_capacity)).cast::<T>();
 
-        core::ptr::copy_nonoverlapping(old_base, new_base, old_length);
-        for i in old_length..new_length {
+        core::ptr::copy_nonoverlapping(old_base, new_base, old_capacity);
+        for i in old_capacity..new_capacity {
             new_base.add(i).write(T::default());
         }
-        deallocate(old_base.cast(), Self::layout(old_length));
+        deallocate(old_base.cast(), Self::layout(old_capacity));
 
         self.base = new_base;
-        self.length = new_length;
+        self.capacity = new_capacity;
     }
 
     #[inline]
-    fn layout(length: usize) -> Layout {
-        unsafe { Layout::array::<T>(length).unwrap_unchecked() }
+    fn layout(capacity: usize) -> Layout {
+        unsafe { Layout::array::<T>(capacity).unwrap_unchecked() }
     }
 }
 
 impl<T: Sized + Default + Copy> Drop for DynArray<T> {
     #[inline]
     fn drop(&mut self) {
-        unsafe { deallocate(self.base.cast(), Self::layout(self.length)) }
+        unsafe { deallocate(self.base.cast(), Self::layout(self.capacity)) }
     }
 }

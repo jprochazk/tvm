@@ -108,7 +108,7 @@ fn iter_fib(n: i64) -> i64 {
 
 #[test]
 fn invalid_op() {
-    let functions = vec![Arc::new(Function::new(vec![0xABABABAB], vec![], 0))];
+    let functions = vec![Arc::new(Function::new(vec![asm::invalid_op()], vec![], 0))];
 
     let mut context = context(functions);
 

@@ -1,5 +1,5 @@
 [workspace]
-members = ["vm"]
+members = ["vm", "xtask"]
 
 [package]
 name = "tvm"

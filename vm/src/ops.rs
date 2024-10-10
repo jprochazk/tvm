@@ -3,7 +3,6 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr::addr_of_mut as mut_;
-use std::ptr::null;
 
 use crate::dyn_array::{DynArray, DynList};
 use crate::operands::{
@@ -36,7 +35,7 @@ pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
     unsafe {
         let callee = &*current_frame.callee;
 
-        let ops = (&OPS) as *const Op;
+        let ops = OPS.as_ptr().cast::<()>();
         let mut code = Function::code_ptr(callee);
         let mut stack = context.stack.offset(0);
         let mut literals = Function::literals_ptr(callee);
@@ -44,8 +43,8 @@ pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
 
         let (mut opcode, mut operands) = operands::decode(code.read());
         loop {
-            let op = ops.add(opcode as usize).read();
-            match (op)(operands, ops as *mut _, code, stack, literals, context) {
+            let op = ops.cast::<Op>().add(opcode as usize).read();
+            match (op)(operands, ops, code, stack, literals, context) {
                 Control::End => return Ok(()),
                 Control::Error => return Err(error.unwrap()),
                 Control::Continue(

@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use crate::ast::{BinaryOp, Ident, UnaryOp};
 use crate::lex::Span;
-use crate::value::f64n;
+use crate::vm2::value::f64n;
 use crate::Str;
 
 pub struct Hir<'src> {

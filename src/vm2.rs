@@ -1,14 +1,17 @@
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
-use core::ptr::addr_of_mut as mut_;
+mod dyn_array;
+pub mod operands;
+pub mod value;
 
-use crate::dyn_array::{DynArray, DynList};
-use crate::operands::{
-    self, u24, ExternFunctionId, FunctionId, LiteralId, Offset, Register, SplitOperands as _,
+use core::ptr::addr_of_mut as mut_;
+use std::boxed::Box;
+use std::marker::PhantomData;
+use std::sync::Arc;
+
+use dyn_array::{DynArray, DynList};
+use operands::{
+    u24, ExternFunctionId, FunctionId, LiteralId, Offset, Register, SplitOperands as _,
 };
-use crate::value::{Literal, Value};
+use value::{Literal, Value};
 
 pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
     let mut current_frame = CallFrame {
@@ -151,6 +154,138 @@ impl Drop for Function {
     }
 }
 
+pub trait TryIntoValue<E> {
+    fn try_into_value(self) -> std::result::Result<Value, E>;
+}
+
+impl<T: Into<Value>, E> TryIntoValue<E> for Result<T, E> {
+    #[inline]
+    fn try_into_value(self) -> std::result::Result<Value, E> {
+        match self {
+            Ok(value) => Ok(value.into()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl<T: Into<Value>, E> TryIntoValue<E> for T {
+    #[inline]
+    fn try_into_value(self) -> std::result::Result<Value, E> {
+        Ok(self.into())
+    }
+}
+
+pub trait ExternFunctionCallback<Ret: TryIntoValue<ExternFunctionError>, Args> {
+    unsafe fn call(&self, scope: Scope<'_>) -> std::result::Result<Value, ExternFunctionError>;
+}
+
+macro_rules! impl_extern_function_callback {
+    ($($arg:ident),* $(,)?) => {
+        impl<F, Ret, $($arg),*> ExternFunctionCallback<Ret, ($($arg,)*)> for F
+        where
+            F: for<'a> Fn(Scope<'a>, $($arg),*) -> Ret,
+            $(
+                $arg: From<Value>,
+            )*
+            Ret: TryIntoValue<ExternFunctionError>,
+        {
+            #[inline]
+            unsafe fn call(&self, scope: Scope<'_>)  -> std::result::Result<Value, ExternFunctionError> {
+                #![allow(unused_variables, unused_mut, non_snake_case, unused_assignments)]
+
+                let mut index = 0;
+                $(
+                    let $arg = scope.get_arg(index).into();
+                    index += 1;
+                )*
+
+                (self)(scope.clone(), $($arg),*).try_into_value()
+            }
+        }
+    };
+}
+
+impl_extern_function_callback!();
+impl_extern_function_callback!(A);
+impl_extern_function_callback!(A, B);
+impl_extern_function_callback!(A, B, C);
+impl_extern_function_callback!(A, B, C, D);
+impl_extern_function_callback!(A, B, C, D, E);
+impl_extern_function_callback!(A, B, C, D, E, F);
+impl_extern_function_callback!(A, B, C, D, E, F, G);
+impl_extern_function_callback!(A, B, C, D, E, F, G, H);
+
+pub struct Scope<'a> {
+    ops: *const (),
+    code: *const Instruction,
+    stack: *mut StackSlot,
+    literals: *const Literal,
+    context: *mut LocalContext,
+
+    lifetime: PhantomData<fn(&'a ()) -> &'a ()>,
+}
+
+impl<'a> Scope<'a> {
+    unsafe fn get_arg(&self, index: usize) -> Value {
+        // first arg at `stack_base+1`
+        self.stack.add(index + 1).read()
+    }
+
+    unsafe fn set_ret<T: Into<Value>>(&self, value: T) {
+        // ret at `stack_base`
+        self.stack.write(value.into());
+    }
+
+    unsafe fn set_error(&self, error: Error) {
+        (*self.context).error.write(Some(error));
+    }
+
+    fn clone(&self) -> Self {
+        Self {
+            ops: self.ops,
+            code: self.code,
+            stack: self.stack,
+            literals: self.literals,
+            context: self.context,
+            lifetime: PhantomData,
+        }
+    }
+}
+
+// TODO:
+pub type ExternFunctionError = ();
+
+pub type ExternFunctionCallbackWrapper =
+    for<'a> unsafe fn(Scope<'a>) -> std::result::Result<Value, ExternFunctionError>;
+
+#[non_exhaustive]
+pub struct ExternFunction {
+    wrapper: ExternFunctionCallbackWrapper,
+}
+
+impl ExternFunction {
+    #[doc(hidden)]
+    pub fn __internal_new(wrapper: ExternFunctionCallbackWrapper) -> Self {
+        Self { wrapper }
+    }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __extern_function {
+    ($inner:expr) => {{
+        unsafe fn _inner(
+            scope: $crate::vm2::Scope<'_>,
+        ) -> std::result::Result<$crate::vm2::Value, $crate::vm2::ExternFunctionError> {
+            $crate::vm2::ExternFunctionCallback::call(&$inner, scope)
+        }
+
+        $crate::vm2::ExternFunction::__internal_new(_inner)
+    }};
+}
+
+pub use crate::__extern_function as f;
+
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct CallFrame {
@@ -190,21 +325,19 @@ pub struct Context {
     stack: DynArray<StackSlot>,
     frames: DynList<CallFrame>,
     functions: Vec<Arc<Function>>,
+    external_functions: Vec<ExternFunction>,
 }
 
 impl Context {
     // 16 pages worth of `Value`
     pub const DEFAULT_INITIAL_STACK_SIZE: usize = 16 * 4096 / core::mem::size_of::<Value>();
 
-    pub fn builder(functions: Vec<Arc<Function>>) -> ContextBuilder {
+    pub fn builder() -> ContextBuilder {
         ContextBuilder {
-            functions,
+            functions: vec![],
+            external_functions: vec![],
             initial_stack_size: Self::DEFAULT_INITIAL_STACK_SIZE,
         }
-    }
-
-    pub fn new(functions: Vec<Arc<Function>>) -> Context {
-        Self::builder(functions).build()
     }
 
     pub fn ret(&self) -> Value {
@@ -219,10 +352,21 @@ impl Context {
 
 pub struct ContextBuilder {
     functions: Vec<Arc<Function>>,
+    external_functions: Vec<ExternFunction>,
     initial_stack_size: usize,
 }
 
 impl ContextBuilder {
+    pub fn functions(mut self, functions: Vec<Arc<Function>>) -> Self {
+        self.functions = functions;
+        self
+    }
+
+    pub fn external_functions(mut self, external_functions: Vec<ExternFunction>) -> Self {
+        self.external_functions = external_functions;
+        self
+    }
+
     /// `initial_stack_size` will be rounded to the nearest power of two,
     /// and it may be no smaller than `2`.
     pub fn initial_stack_size(mut self, initial_stack_size: usize) -> Self {
@@ -240,6 +384,7 @@ impl ContextBuilder {
             stack,
             frames,
             functions: self.functions,
+            external_functions: self.external_functions,
         }
     }
 }
@@ -268,6 +413,16 @@ struct LocalContext {
 unsafe fn get_function_unchecked(context: *mut LocalContext, index: FunctionId) -> *mut Function {
     let function: &Function = (*(*context).outer).functions.get_unchecked(index as usize);
     function as *const Function as *mut Function
+}
+
+unsafe fn get_extern_function_unchecked(
+    context: *mut LocalContext,
+    index: ExternFunctionId,
+) -> *mut ExternFunction {
+    let function: &ExternFunction = (*(*context).outer)
+        .external_functions
+        .get_unchecked(index as usize);
+    function as *const ExternFunction as *mut ExternFunction
 }
 
 #[cfg(not(windows))]
@@ -891,7 +1046,7 @@ macro_rules! ops {
         pub mod $info {
             #![allow(non_camel_case_types)]
 
-            use $crate::operands::*;
+            use $crate::vm2::operands::*;
 
             $(
                 pub type $op = ($($($operand_ty,)*)?);
@@ -911,7 +1066,7 @@ macro_rules! ops {
                         $($operand : $operand_ty),*
                     )?
                 ) -> Instruction {
-                    $crate::operands::encode(
+                    $crate::vm2::operands::encode(
                         $Opcode::$op,
                         ($($($operand,)*)?)
                     )
@@ -1013,3 +1168,6 @@ ops! {
         0xFF = end,
     ]
 }
+
+#[cfg(test)]
+mod tests;

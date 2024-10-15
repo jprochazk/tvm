@@ -9,9 +9,8 @@ use crate::error::{Error, ErrorCtx, Report, Result};
 use crate::hir::Hir;
 use crate::lex::Span;
 use crate::util::{default, JoinIter};
-use crate::value::{f64n, Literal, LiteralPool};
-use crate::vm::ExternFunctionCallback;
-use crate::{hir, vm, HashMap, Str};
+use crate::vm2::value::{f64n, Literal, LiteralPool};
+use crate::{hir, vm2, HashMap, Str};
 
 pub mod op;
 use op::*;

@@ -1,5 +1,4 @@
-use alloc::alloc::{alloc_zeroed as allocate_zeroed, dealloc as deallocate};
-use core::alloc::Layout;
+use std::alloc::{alloc_zeroed as allocate_zeroed, dealloc as deallocate, Layout};
 
 pub struct DynList<T: Sized + Default + Copy> {
     inner: DynArray<T>,

@@ -1,5 +1,4 @@
-use super::ops::{Opcode, RawOpcode};
-use crate::ops::Instruction;
+use super::{Instruction, Opcode, RawOpcode};
 
 pub type Register = u8;
 

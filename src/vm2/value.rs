@@ -1,3 +1,5 @@
+pub mod intern;
+
 #[derive(Default, Debug, Clone, Copy)]
 #[repr(u64)]
 pub enum Value {
@@ -125,12 +127,12 @@ impl From<bool> for Value {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(u64)]
 pub enum Literal {
     JumpOffset(usize) = 0,
     I64(i64) = 1,
-    F64(f64) = 2,
+    F64(f64n) = 2,
 }
 
 impl Literal {
@@ -142,7 +144,7 @@ impl Literal {
         match self {
             Literal::JumpOffset(_) => unsafe { core::hint::unreachable_unchecked() },
             Literal::I64(v) => Value::I64(v),
-            Literal::F64(v) => Value::F64(v),
+            Literal::F64(v) => Value::F64(v.into()),
         }
     }
 
@@ -180,7 +182,7 @@ impl Literal {
     #[inline]
     pub fn f64(self) -> Option<f64> {
         match self {
-            Self::F64(v) => Some(v),
+            Self::F64(v) => Some(v.get()),
             _ => None,
         }
     }
@@ -191,7 +193,7 @@ impl Literal {
     pub unsafe fn f64_unchecked(self) -> f64 {
         debug_assert!(!matches!(self, Literal::JumpOffset(_)));
         match self {
-            Literal::F64(v) => v,
+            Literal::F64(v) => v.get(),
             _ => core::hint::unreachable_unchecked(),
         }
     }
@@ -230,10 +232,147 @@ impl From<i64> for Literal {
     }
 }
 
-impl From<f64> for Literal {
+impl From<f64n> for Literal {
     #[inline]
-    fn from(value: f64) -> Self {
+    fn from(value: f64n) -> Self {
         Self::F64(value)
+    }
+}
+
+/// An `f64` which is guaranteed to be non-NaN
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct f64n {
+    value: f64,
+}
+
+impl f64n {
+    pub const ZERO: f64n = f64n { value: 0.0 };
+
+    /// # Panics
+    /// If `value.is_nan()`
+    #[inline]
+    pub fn new(value: f64) -> Self {
+        assert!(!value.is_nan());
+
+        Self { value }
+    }
+
+    #[inline]
+    pub fn try_new(value: f64) -> Option<Self> {
+        if value.is_nan() {
+            return None;
+        }
+
+        Some(Self { value })
+    }
+
+    #[inline]
+    pub fn get(self) -> f64 {
+        self.value
+    }
+}
+
+impl std::fmt::Debug for f64n {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.get(), f)
+    }
+}
+
+impl std::fmt::Display for f64n {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.get(), f)
+    }
+}
+
+impl PartialEq for f64n {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.value.to_bits() == other.value.to_bits()
+    }
+}
+
+impl Eq for f64n {}
+
+impl PartialOrd for f64n {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for f64n {
+    #[inline]
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.to_bits().cmp(&other.value.to_bits())
+    }
+}
+
+impl std::hash::Hash for f64n {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value.to_bits().hash(state);
+    }
+}
+
+impl From<f64n> for f64 {
+    #[inline]
+    fn from(value: f64n) -> Self {
+        value.get()
+    }
+}
+
+pub struct ParseFloatError {
+    inner: ParseFloatErrorInner,
+}
+
+enum ParseFloatErrorInner {
+    Std(std::num::ParseFloatError),
+    Nan,
+}
+
+impl std::fmt::Debug for ParseFloatError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.inner {
+            ParseFloatErrorInner::Std(e) => std::fmt::Debug::fmt(e, f),
+            ParseFloatErrorInner::Nan => f
+                .debug_struct("ParseFloatError")
+                .field("kind", &"NaN")
+                .finish(),
+        }
+    }
+}
+
+impl std::fmt::Display for ParseFloatError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.inner {
+            ParseFloatErrorInner::Std(e) => std::fmt::Display::fmt(e, f),
+            ParseFloatErrorInner::Nan => f.write_str("float literal must not be nan"),
+        }
+    }
+}
+
+impl std::error::Error for ParseFloatError {}
+
+impl From<std::num::ParseFloatError> for ParseFloatError {
+    #[inline]
+    fn from(value: std::num::ParseFloatError) -> Self {
+        ParseFloatError {
+            inner: ParseFloatErrorInner::Std(value),
+        }
+    }
+}
+
+impl std::str::FromStr for f64n {
+    type Err = ParseFloatError;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let v = f64::from_str(s)?;
+        f64n::try_new(v).ok_or_else(|| ParseFloatError {
+            inner: ParseFloatErrorInner::Nan,
+        })
     }
 }
 
@@ -244,6 +383,6 @@ mod tests {
     #[test]
     fn literal_value_tags_match() {
         assert_eq!(Literal::I64(0).tag(), Value::I64(0).tag());
-        assert_eq!(Literal::F64(0.0).tag(), Value::F64(0.0).tag());
+        assert_eq!(Literal::F64(f64n::ZERO).tag(), Value::F64(0.0).tag());
     }
 }

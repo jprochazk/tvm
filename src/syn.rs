@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::error::{Error, ErrorCtx, Report, Result};
 use crate::lex::{Lexer, Span, Token, TokenKind, EOF};
-use crate::value::f64n;
+use crate::vm2::value::f64n;
 use crate::Str;
 
 /// Performs a resilient parse, in which the returned `Ast`

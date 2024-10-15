@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use ops::{asm, Function};
-use value::Value;
-use vm::*;
+use super::value::Value;
+use super::{asm, dispatch, Context, Error, Function};
 
-fn context(functions: Vec<Arc<Function>>) -> ops::Context {
+fn context(functions: Vec<Arc<Function>>) -> Context {
     // always test with starting stack size of `1` to
     // properly exercise the stack growth logic
-    ops::Context::builder(functions)
+    Context::builder()
+        .functions(functions)
         .initial_stack_size(1)
         .build()
 }
@@ -26,7 +26,7 @@ fn add_i64() {
     ))];
 
     let mut context = context(functions);
-    ops::dispatch(&mut context, 0).unwrap();
+    dispatch(&mut context, 0).unwrap();
 
     assert!(
         matches!(context.ret(), Value::I64(20)),
@@ -84,7 +84,7 @@ fn fibonacci() {
 
     let mut context = context(functions);
 
-    ops::dispatch(&mut context, 0).unwrap();
+    dispatch(&mut context, 0).unwrap();
 
     assert_eq!(
         context.ret().i64().unwrap(),
@@ -112,8 +112,5 @@ fn invalid_op() {
 
     let mut context = context(functions);
 
-    assert!(matches!(
-        ops::dispatch(&mut context, 0),
-        Err(ops::Error::InvalidOp)
-    ));
+    assert!(matches!(dispatch(&mut context, 0), Err(Error::InvalidOp)));
 }

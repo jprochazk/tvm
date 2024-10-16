@@ -7,7 +7,10 @@ To run this, you need the following tools:
 - `python` v3.11 or higher
 - `cargo`
 - `lua` v5.4 or higher
+- `node` v20 or higher
 """
+
+from __future__ import annotations
 
 import subprocess
 from subprocess import check_output
@@ -19,7 +22,7 @@ import sys
 def run(cmd: str, env: dict[str, str] | None = None) -> str:
     print(f"$ {cmd}", file=sys.stderr)
     return check_output(
-        cmd.split(), text=True, stderr=subprocess.STDOUT, cwd=script_dir, env=env
+        cmd.split(), text=True, stderr=subprocess.DEVNULL, cwd=script_dir, env=env
     )
 
 
@@ -41,6 +44,15 @@ def parse_divan(name: str, output: str) -> list[str]:
 
 
 def parse_lua(output: str) -> list[str]:
+    rows: list[str] = []
+    for line in output.splitlines():
+        parts = line.split()
+        time = " ".join(parts[1:])
+        rows.append(time)
+    return rows
+
+
+def parse_node(output: str) -> list[str]:
     rows: list[str] = []
     for line in output.splitlines():
         parts = line.split()
@@ -72,7 +84,7 @@ def render_markdown_table(data: list[list[str]]):
 def get_lua_version():
     try:
         o = run("lua -v")
-        return o.split()[1]
+        return o.split()[1].strip()
     except:
         return None
 
@@ -80,7 +92,15 @@ def get_lua_version():
 def get_luajit_version():
     try:
         o = run("luajit -v")
-        return o.split()[1]
+        return o.split()[1].strip()
+    except:
+        return None
+
+
+def get_node_version():
+    try:
+        o = run("node --version")
+        return o.strip()
     except:
         return None
 
@@ -88,8 +108,12 @@ def get_luajit_version():
 script_dir = Path(os.path.dirname(__file__))
 
 
-def main():
+def main() -> None:
     results = {}
+
+    # set directory to script_dir if it isnt already
+    if Path(os.getcwd()).absolute() != script_dir.absolute():
+        os.chdir(script_dir.absolute())
 
     cargo = run("cargo bench main")
 
@@ -121,6 +145,20 @@ def main():
             "lang": "lua",
         }
 
+    node_v = get_node_version()
+    if node_v is not None:
+        results[f"node {node_v} (no JIT)"] = {
+            "src": (script_dir / "fib.js").read_text().strip(),
+            "timings": parse_node(run("node --jitless main.js")),
+            "lang": "js",
+        }
+
+        results[f"node {node_v} (JIT)"] = {
+            "src": (script_dir / "fib.js").read_text().strip(),
+            "timings": parse_node(run("node main.js")),
+            "lang": "js",
+        }
+
     print("## Benchmark: recursive fibonacci\n")
     rows = [["entry", "N=5", "N=10", "N=15", "N=20", "N=25"]]
     code: list[str] = []
@@ -142,7 +180,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        import psutil
+        import psutil # type: ignore
 
         psutil.Process().cpu_affinity([0])
     except ImportError:

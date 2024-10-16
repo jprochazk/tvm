@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@types/node": "^22.7.5"
+  },
+  "main": "main.mjs",
+  "type": "module"
+}
+

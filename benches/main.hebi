@@ -11,7 +11,7 @@ fn fib(n: int) -> int {
 fn benchmark(times: int, value: int) {
   benchmark_start(value);
 
-  let elapsed_ns = 0.0;
+  // hebi does not currently support `while` loops:
   let i = 0;
   loop {
     if i >= times {

@@ -2,13 +2,10 @@
 
 | entry                 | N=5       | N=10      | N=15     | N=20      | N=25      |
 | --------------------- | --------- | --------- | -------- | --------- | --------- |
-| Rust (native)         | 10.47 ns  | 108.4 ns  | 1.236 µs | 13.34 µs  | 148.2 µs  |
-| hebi3 (tvm)           | 37.68 ns  | 62.84 ns  | 400.7 ns | 4.455 µs  | 46.81 µs  |
-| lua 5.4.4             | 377.00 ns | 2.84 us   | 29.83 us | 325.43 us | 3.65 ms   |
-| luajit 2.1.1713773202 | 414.00 ns | 686.00 ns | 5.95 us  | 64.24 us  | 735.07 us |
-
-> [!NOTE]
-> I don't know why `hebi3` is better than native Rust for inputs `N>=10`...
+| Rust (native)         | 12.44 ns  | 146.7 ns  | 1.713 µs | 18.85 µs  | 205.6 µs  |
+| hebi3 (tvm)           | 387 ns    | 4.358 µs  | 47.31 µs | 497.4 µs  | 5.716 ms  |
+| lua 5.4.6             | 509.00 ns | 3.50 us   | 33.84 us | 370.85 us | 4.10 ms   |
+| luajit 2.1.1713773202 | 1.32 us   | 686.00 ns | 4.99 us  | 52.66 us  | 580.21 us |
 
 ### Rust (native)
 ```rust
@@ -30,7 +27,7 @@ fn fib(n: int) -> int {
 }
 ```
 
-### lua 5.4.4
+### lua 5.4.6
 ```lua
 function fib(n)
     if n < 2 then return n

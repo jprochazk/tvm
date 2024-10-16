@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
         psutil.Process().cpu_affinity([0])
     except ImportError:
-        print("could not set core affinity")
+        print("could not set core affinity", file=sys.stderr)
         pass
 
     main()

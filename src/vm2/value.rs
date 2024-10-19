@@ -1,4 +1,7 @@
+use super::operands::LiteralId;
+
 pub mod intern;
+pub mod pool;
 
 #[derive(Default, Debug, Clone, Copy)]
 #[repr(u64)]
@@ -127,7 +130,7 @@ impl From<bool> for Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u64)]
 pub enum Literal {
     JumpOffset(usize) = 0,

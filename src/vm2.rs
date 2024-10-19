@@ -3,6 +3,7 @@ pub mod operands;
 pub mod value;
 
 use core::ptr::addr_of_mut as mut_;
+use std::borrow::Cow;
 use std::boxed::Box;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -12,6 +13,13 @@ use operands::{
     u24, ExternFunctionId, FunctionId, LiteralId, Offset, Register, SplitOperands as _,
 };
 use value::{Literal, Value};
+
+// TODO: hoo boy...
+// 1. need `Offset` type like in old vm, together with a helper to emit jmp using that
+// 2. need `Module` type in vm somewhere this is just a wrapper around a list of functions
+//    there are no module variables
+// 3. fix all these errors one by one so r-a stops shitting pants
+use crate::hir;
 
 pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
     let mut current_frame = CallFrame {
@@ -175,15 +183,23 @@ impl<T: Into<Value>, E> TryIntoValue<E> for T {
     }
 }
 
-pub trait ExternFunctionCallback<Ret: TryIntoValue<ExternFunctionError>, Args> {
+pub trait ValueAbi {
+    const TYPE: hir::Ty;
+}
+
+pub trait ExternFunctionCallback<Ret, Args> {
     unsafe fn call(&self, scope: Scope<'_>) -> std::result::Result<Value, ExternFunctionError>;
 }
 
-macro_rules! impl_extern_function_callback {
+pub trait ExternFunctionMetadata<Ret, Args> {
+    const ABI: ExternFunctionAbi;
+}
+
+macro_rules! impl_extern_function_traits {
     ($($arg:ident),* $(,)?) => {
-        impl<F, Ret, $($arg),*> ExternFunctionCallback<Ret, ($($arg,)*)> for F
+        impl<Func, Ret, $($arg),*> ExternFunctionCallback<Ret, ($($arg,)*)> for Func
         where
-            F: for<'a> Fn(Scope<'a>, $($arg),*) -> Ret,
+            Func: for<'a> Fn(Scope<'a>, $($arg),*) -> Ret,
             $(
                 $arg: From<Value>,
             )*
@@ -202,18 +218,32 @@ macro_rules! impl_extern_function_callback {
                 (self)(scope.clone(), $($arg),*).try_into_value()
             }
         }
+
+        impl<Func, Ret, $($arg),*> ExternFunctionMetadata<Ret, ($($arg,)*)> for Func
+        where
+            Func: for<'a> Fn(Scope<'a>, $($arg),*) -> Ret,
+            $(
+                $arg: ValueAbi,
+            )*
+            Ret: ValueAbi,
+        {
+            const ABI: ExternFunctionAbi = ExternFunctionAbi {
+                params: std::borrow::Cow::Borrowed(&[$(<$arg as ValueAbi>::TYPE),*]),
+                ret: <Ret as ValueAbi>::TYPE,
+            };
+        }
     };
 }
 
-impl_extern_function_callback!();
-impl_extern_function_callback!(A);
-impl_extern_function_callback!(A, B);
-impl_extern_function_callback!(A, B, C);
-impl_extern_function_callback!(A, B, C, D);
-impl_extern_function_callback!(A, B, C, D, E);
-impl_extern_function_callback!(A, B, C, D, E, F);
-impl_extern_function_callback!(A, B, C, D, E, F, G);
-impl_extern_function_callback!(A, B, C, D, E, F, G, H);
+impl_extern_function_traits!();
+impl_extern_function_traits!(A);
+impl_extern_function_traits!(A, B);
+impl_extern_function_traits!(A, B, C);
+impl_extern_function_traits!(A, B, C, D);
+impl_extern_function_traits!(A, B, C, D, E);
+impl_extern_function_traits!(A, B, C, D, E, F);
+impl_extern_function_traits!(A, B, C, D, E, F, G);
+impl_extern_function_traits!(A, B, C, D, E, F, G, H);
 
 pub struct Scope<'a> {
     ops: *const (),
@@ -258,15 +288,26 @@ pub type ExternFunctionError = ();
 pub type ExternFunctionCallbackWrapper =
     for<'a> unsafe fn(Scope<'a>) -> std::result::Result<Value, ExternFunctionError>;
 
+pub struct ExternFunctionAbi {
+    pub params: Cow<'static, [hir::Ty]>,
+    pub ret: hir::Ty,
+}
+
 #[non_exhaustive]
 pub struct ExternFunction {
+    name: &'static str,
+    abi: ExternFunctionAbi,
     wrapper: ExternFunctionCallbackWrapper,
 }
 
 impl ExternFunction {
     #[doc(hidden)]
-    pub fn __internal_new(wrapper: ExternFunctionCallbackWrapper) -> Self {
-        Self { wrapper }
+    pub const fn __internal_new(
+        name: &'static str,
+        abi: ExternFunctionAbi,
+        wrapper: ExternFunctionCallbackWrapper,
+    ) -> Self {
+        Self { name, abi, wrapper }
     }
 }
 
@@ -280,11 +321,12 @@ macro_rules! __extern_function {
             $crate::vm2::ExternFunctionCallback::call(&$inner, scope)
         }
 
-        $crate::vm2::ExternFunction::__internal_new(_inner)
+        const { $crate::vm2::ExternFunction::__internal_new(_inner) }
     }};
 }
 
 pub use crate::__extern_function as f;
+use crate::hir;
 
 #[derive(Clone, Copy)]
 #[repr(C)]

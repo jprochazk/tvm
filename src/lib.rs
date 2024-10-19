@@ -17,8 +17,6 @@ pub mod code;
 pub mod hir;
 pub mod syn;
 pub mod ty;
-// pub mod value;
-// pub mod vm;
 pub mod vm2;
 
 mod util;

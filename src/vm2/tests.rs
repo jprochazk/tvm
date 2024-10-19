@@ -114,3 +114,9 @@ fn invalid_op() {
 
     assert!(matches!(dispatch(&mut context, 0), Err(Error::InvalidOp)));
 }
+
+// Compile-test:
+#[test]
+fn extern_() {
+    super::f!(|_: super::Scope| {});
+}

@@ -9,19 +9,16 @@ use crate::error::{Error, ErrorCtx, Report, Result};
 use crate::hir::Hir;
 use crate::lex::Span;
 use crate::util::{default, JoinIter};
-use crate::vm2::value::{f64n, Literal, LiteralPool};
-use crate::{hir, vm2, HashMap, Str};
-
-pub mod op;
-use op::*;
-
-use self::asm::Callee;
+use crate::vm2::operands::{ExternFunctionId, FunctionId, Register};
+use crate::vm2::value::pool::LiteralPool;
+use crate::vm2::value::{f64n, Literal};
+use crate::vm2::{asm, ExternFunction, ExternFunctionAbi, ExternFunctionCallback, Instruction};
+use crate::{hir, HashMap, Str};
 
 pub fn compile(hir: Hir<'_>) -> Result<CodeUnit, Report> {
     Compiler {
         ecx: ErrorCtx::new(hir.src),
         module_state: ModuleState {
-            vars: default(),
             fn_table: FnTableBuilder::new(),
         },
     }
@@ -30,13 +27,13 @@ pub fn compile(hir: Hir<'_>) -> Result<CodeUnit, Report> {
 
 struct Compiler<'src> {
     ecx: ErrorCtx<'src>,
-    module_state: ModuleState<'src>,
+    module_state: ModuleState,
 }
 
 impl<'src> Compiler<'src> {
     fn compile(mut self, hir: Hir<'src>) -> Result<CodeUnit, Report> {
         // 1. reserve a slot in the function table for each function
-        let mut pending_fns = Vec::<(FnId, &hir::Fn)>::with_capacity(hir.fns.len());
+        let mut pending_fns = Vec::<(FunctionId, &hir::Fn)>::with_capacity(hir.fns.len());
         for (_, fn_) in hir.fns.iter() {
             if fn_.is_extern_fn() {
                 // for host functions, we just reserve them
@@ -79,8 +76,7 @@ impl<'src> Compiler<'src> {
     }
 }
 
-struct ModuleState<'src> {
-    vars: HashMap<Ident<'src>, MVar>,
+struct ModuleState {
     fn_table: FnTableBuilder,
 }
 
@@ -177,7 +173,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         }
 
         if let Some(id) = self.resolve_host_function(&name) {
-            return Symbol::Host(id);
+            return Symbol::Extern(id);
         }
 
         unreachable!("BUG: unresolved variable: {name}@{}", name.span);
@@ -196,7 +192,7 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         self.compiler.module_state.vars.get(name).copied()
     }
 
-    fn resolve_script_function(&self, name: &str) -> Option<FnId> {
+    fn resolve_script_function(&self, name: &str) -> Option<FunctionId> {
         self.compiler.module_state.fn_table.get_script_id(name)
     }
 
@@ -216,14 +212,14 @@ impl<'src, 'a> FunctionState<'src, 'a> {
         let _ = scope.insert(name, reg);
     }
 
-    fn alloc_reg(&mut self, span: Span) -> Result<Reg> {
+    fn alloc_reg(&mut self, span: Span) -> Result<Register> {
         match self.regalloc.alloc() {
             Some(reg) => Ok(reg),
             None => Err(self.compiler.ecx.too_many_registers(span)),
         }
     }
 
-    fn free_reg(&mut self, reg: Reg) {
+    fn free_reg(&mut self, reg: Register) {
         self.regalloc.free(reg);
     }
 
@@ -270,8 +266,8 @@ impl<'src, 'a> FunctionState<'src, 'a> {
     fn with_reg<T>(
         &mut self,
         span: Span,
-        reg: Option<Reg>,
-        inner: impl FnOnce(&mut Self, Reg) -> Result<T>,
+        reg: Option<Register>,
+        inner: impl FnOnce(&mut Self, Register) -> Result<T>,
     ) -> Result<T> {
         match reg {
             Some(reg) => inner(self, reg),
@@ -350,8 +346,8 @@ fn expr_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Expr<'src>
 fn expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::Expr<'src>,
-    dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+    dst: Option<Register>,
+) -> Result<Option<Register>> {
     let span = hir.span;
     match &hir.kind {
         hir::ExprKind::Return(hir) => return_expr(f, span, hir).map(|_| None),
@@ -403,8 +399,8 @@ fn binary_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     span: Span,
     hir: &'a hir::Binary<'src>,
-    dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+    dst: Option<Register>,
+) -> Result<Option<Register>> {
     f.with_reg(span, dst, |f, dst| {
         let lhs = expr(f, &hir.lhs, Some(dst))?.unwrap_or(dst).ty(hir.lhs.ty);
         let fresh_rhs = f.alloc_reg(span)?;
@@ -424,8 +420,8 @@ fn unary_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     span: Span,
     hir: &'a hir::Unary<'src>,
-    dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+    dst: Option<Register>,
+) -> Result<Option<Register>> {
     f.with_reg(span, dst, |f, dst| {
         let rhs = expr(f, &hir.rhs, Some(dst))?.unwrap_or(dst).ty(hir.rhs.ty);
 
@@ -438,22 +434,29 @@ fn unary_expr<'src, 'a>(
 #[derive(Debug, Clone, Copy)]
 struct TyReg {
     ty: hir::Ty,
-    reg: Reg,
+    reg: Register,
 }
 
-impl Reg {
+impl Register {
     fn ty(self, ty: hir::Ty) -> TyReg {
         TyReg::new(ty, self)
     }
 }
 
 impl TyReg {
-    fn new(ty: hir::Ty, reg: Reg) -> Self {
+    fn new(ty: hir::Ty, reg: Register) -> Self {
         Self { ty, reg }
     }
 }
 
-fn emit_binop(f: &mut FunctionState, span: Span, lhs: TyReg, rhs: TyReg, op: BinaryOp, dst: Reg) {
+fn emit_binop(
+    f: &mut FunctionState,
+    span: Span,
+    lhs: TyReg,
+    rhs: TyReg,
+    op: BinaryOp,
+    dst: Register,
+) {
     use asm::*;
     use BinaryOp as O;
     let op = match op {
@@ -483,7 +486,7 @@ fn emit_binop(f: &mut FunctionState, span: Span, lhs: TyReg, rhs: TyReg, op: Bin
     f.asm.emit(span, op(ty, lhs.reg, rhs.reg, dst));
 }
 
-fn emit_unop(f: &mut FunctionState, span: Span, rhs: TyReg, op: UnaryOp, dst: Reg) {
+fn emit_unop(f: &mut FunctionState, span: Span, rhs: TyReg, op: UnaryOp, dst: Register) {
     use asm::*;
     use UnaryOp as O;
     match op {
@@ -506,8 +509,8 @@ fn primitive_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     span: Span,
     hir: &'a hir::Primitive<'src>,
-    dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+    dst: Option<Register>,
+) -> Result<Option<Register>> {
     use asm::*;
 
     let Some(dst) = dst else { return Ok(None) };
@@ -540,13 +543,13 @@ fn use_var_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     span: Span,
     hir: &'a hir::UseVar<'src>,
-    dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+    dst: Option<Register>,
+) -> Result<Option<Register>> {
     let symbol = f.resolve_symbol(hir.name);
 
     use asm::*;
     let ret = match symbol {
-        Symbol::Host(id) => {
+        Symbol::Extern(id) => {
             let Some(dst) = dst else { return Ok(None) };
             f.asm.emit(span, load_fn_host(id, dst));
             None
@@ -598,15 +601,15 @@ fn call_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     span: Span,
     hir: &'a hir::Call<'src>,
-    dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+    dst: Option<Register>,
+) -> Result<Option<Register>> {
     'value_call: {
         if let hir::ExprKind::UseVar(var) = &hir.callee.kind {
             //   fn f() {}
             //   f(); // calling function directly
             let callee = match f.resolve_symbol(var.name) {
                 Symbol::Fn(id) => Callee::Script(id),
-                Symbol::Host(id) => Callee::Host(id),
+                Symbol::Extern(id) => Callee::Host(id),
                 _ => break 'value_call,
             };
             return call_expr_direct(f, span, hir, callee, dst);
@@ -624,8 +627,8 @@ fn call_expr_direct<'src, 'a>(
     span: Span,
     hir: &'a hir::Call<'src>,
     callee: Callee,
-    dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+    dst: Option<Register>,
+) -> Result<Option<Register>> {
     // caller: [.., ret, a, b, c]
     // callee:     [ret, a, b, c, ..]
 
@@ -663,8 +666,8 @@ fn call_expr_value<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     span: Span,
     hir: &'a hir::Call<'src>,
-    dst: Option<Reg>,
-) -> Result<Option<Reg>> {
+    dst: Option<Register>,
+) -> Result<Option<Register>> {
     // caller: [.., fn, a, b, c]
     // callee:     [ret, a, b, c, ..]
 
@@ -706,7 +709,7 @@ fn call_expr_value<'src, 'a>(
 fn block_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::Block<'src>,
-    dst: Option<Reg>,
+    dst: Option<Register>,
 ) -> Result<()> {
     f.scope(|f| {
         for v in &hir.body {
@@ -733,7 +736,7 @@ fn block_expr<'src, 'a>(
 fn if_expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::If<'src>,
-    dst: Option<Reg>,
+    dst: Option<Register>,
 ) -> Result<()> {
     f.with_reg(hir.if_token, dst, |f, dst| {
         let exit = ForwardJumpLabel::new();
@@ -766,7 +769,12 @@ fn if_expr<'src, 'a>(
 /// if `src` is Some and not `dst`, then this emits a `mov src, dst`
 ///
 /// this exists to support moving out of variables
-fn maybe_move(f: &mut FunctionState, src: Option<Reg>, dst: Reg, span: Span) -> Result<()> {
+fn maybe_move(
+    f: &mut FunctionState,
+    src: Option<Register>,
+    dst: Register,
+    span: Span,
+) -> Result<()> {
     use asm::*;
 
     if let Some(src) = src {
@@ -789,7 +797,7 @@ fn maybe_move(f: &mut FunctionState, src: Option<Reg>, dst: Reg, span: Span) -> 
 fn assign_to<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     value: &'a hir::Expr<'src>,
-    dst: Reg,
+    dst: Register,
 ) -> Result<()> {
     let out = expr(f, value, Some(dst))?;
     maybe_move(f, out, dst, value.span)
@@ -801,18 +809,18 @@ struct Loop {
 }
 
 #[derive(Default)]
-struct Assembler<'src> {
-    bytecode: Vec<Op>,
+struct Assembler {
+    bytecode: Vec<Instruction>,
     spans: Vec<Span>,
-    literal_pool: LiteralPool<'src>,
+    literal_pool: LiteralPool,
 }
 
-impl<'src> Assembler<'src> {
+impl Assembler {
     fn new() -> Self {
         default()
     }
 
-    fn emit(&mut self, span: Span, op: Op) {
+    fn emit(&mut self, span: Span, op: Instruction) {
         self.bytecode.push(op);
         self.spans.push(span);
     }
@@ -862,7 +870,7 @@ impl BackwardJumpLabel {
 
     /// calculates distance to this label and emits a `jmpf` into `f`
     /// using the distance as the offset
-    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) -> Result<()> {
+    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Register) -> Result<()> {
         let from = f.asm.bytecode.len() as isize;
         let to = self.pos;
         let offset = Offset::get(f, from, to)?;
@@ -906,7 +914,7 @@ impl ForwardJumpLabel {
 
     /// emits a `jmpf` which will be patched with the real offset
     /// when this label is bound
-    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) {
+    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Register) {
         let referrer = f.asm.bytecode.len();
         self.referrers.borrow_mut().push(referrer);
         f.asm.emit(span, asm::jmpf(cond, Offset::placeholder()));
@@ -945,7 +953,7 @@ impl SingleJumpLabel {
 
     /// emits a `jmpf` which will be patched with the real offset
     /// when this label is bound
-    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Reg) {
+    fn emit_jmpf(&self, f: &mut FunctionState, span: Span, cond: Register) {
         let referrer = f.asm.bytecode.len();
         self.referrer.set(Some(referrer));
         f.asm.emit(span, asm::jmpf(cond, Offset::placeholder()));
@@ -977,7 +985,7 @@ impl RegisterAllocator {
         }
     }
 
-    fn alloc(&mut self) -> Option<Reg> {
+    fn alloc(&mut self) -> Option<Register> {
         if self.current == u8::MAX {
             return None;
         }
@@ -985,10 +993,10 @@ impl RegisterAllocator {
         let reg = self.current;
         self.current += 1;
         self.total = std::cmp::max(self.current, self.total);
-        Some(Reg(reg))
+        Some(reg)
     }
 
-    fn free(&mut self, reg: Reg) {
+    fn free(&mut self, reg: Register) {
         assert!(self.current >= reg.get(), "registers freed out of order");
         self.current = reg.get();
     }
@@ -996,9 +1004,8 @@ impl RegisterAllocator {
 
 #[derive(Clone, Copy, Debug)]
 enum Symbol {
-    Host(HostId),
-    Fn(FnId),
-    Mvar(MVar),
+    Extern(ExternFunctionId),
+    Fn(FunctionId),
     Var(TyReg),
 }
 
@@ -1007,26 +1014,19 @@ pub struct CodeUnit {
 }
 
 pub struct Library {
-    functions: Cow<'static, [ExternFunctionDecl]>,
-}
-
-#[derive(Clone)]
-pub struct ExternFunctionDecl {
-    pub name: &'static str,
-    pub sig: ExternFunctionSig,
-    pub callback: ExternFunctionCallback,
+    functions: Cow<'static, [ExternFunction]>,
 }
 
 impl Library {
     pub fn new() -> Self {
         Self {
-            functions: default(),
+            functions: Cow::Owned(Vec::new()),
         }
     }
 
     /// ### Safety
     /// - All host function signatures must match their callbacks' signatures
-    pub const unsafe fn from_static(functions: &'static [ExternFunctionDecl]) -> Self {
+    pub const unsafe fn from_static(functions: &'static [ExternFunction]) -> Self {
         Self {
             functions: Cow::Borrowed(functions),
         }
@@ -1034,18 +1034,9 @@ impl Library {
 
     /// ### Safety
     /// - The signature must match the callback's signature
-    pub unsafe fn add(
-        mut self,
-        name: &'static str,
-        signature: ExternFunctionSig,
-        callback: ExternFunctionCallback,
-    ) -> Self {
+    pub unsafe fn add(mut self, function: ExternFunction) -> Self {
         let mut functions = self.functions.into_owned();
-        functions.push(ExternFunctionDecl {
-            name,
-            sig: signature,
-            callback,
-        });
+        functions.push(function);
         self.functions = Cow::Owned(functions);
         self
     }
@@ -1104,15 +1095,15 @@ impl CodeUnit {
 pub struct FnTable {
     main: Arc<Function>,
 
-    script_map: BTreeMap<String, FnId>,
+    script_map: BTreeMap<String, FunctionId>,
     script: Vec<Arc<Function>>,
 
-    host_map: BTreeMap<String, HostId>,
-    host: Vec<Arc<ExternFunctionSig>>,
+    host_map: BTreeMap<String, ExternFunctionId>,
+    host: Vec<Arc<ExternFunctionAbi>>,
 }
 
 struct FnTableBuilder {
-    next_fnid: u16,
+    next_function_id: u16,
     next_host_id: u16,
 
     table: FnTable,
@@ -1130,7 +1121,7 @@ impl FnTableBuilder {
             registers: 0,
         });
         Self {
-            next_fnid: 0,
+            next_function_id: 0,
             next_host_id: 0,
 
             table: FnTable {
@@ -1146,11 +1137,11 @@ impl FnTableBuilder {
         }
     }
 
-    fn get_script_id(&self, name: &str) -> Option<FnId> {
+    fn get_script_id(&self, name: &str) -> Option<FunctionId> {
         self.table.script_map.get(name).copied()
     }
 
-    fn get_host_id(&self, name: &str) -> Option<HostId> {
+    fn get_host_id(&self, name: &str) -> Option<ExternFunctionId> {
         self.table.host_map.get(name).copied()
     }
 
@@ -1158,9 +1149,9 @@ impl FnTableBuilder {
         self.table.main = Arc::new(main);
     }
 
-    fn reserve_script(&mut self, name: Ident<'_>) -> FnId {
-        let id = FnId(self.next_fnid);
-        self.next_fnid += 1;
+    fn reserve_script(&mut self, name: Ident<'_>) -> FunctionId {
+        let id = self.next_function_id;
+        self.next_function_id += 1;
 
         self.table.script_map.insert(name.to_string(), id);
         self.table.script.push(Arc::clone(&self.empty_fn));
@@ -1168,15 +1159,15 @@ impl FnTableBuilder {
         id
     }
 
-    fn set_script(&mut self, id: FnId, fn_: Function) {
-        self.table.script[id.to_index()] = Arc::new(fn_);
+    fn set_script(&mut self, id: FunctionId, fn_: Function) {
+        self.table.script[id as usize] = Arc::new(fn_);
     }
 
-    fn reserve_host(&mut self, name: String, sig: ExternFunctionSig) {
-        let id = HostId(self.next_host_id);
+    fn reserve_host(&mut self, name: String, abi: ExternFunctionAbi) {
+        let id = self.next_host_id;
         self.next_host_id += 1;
         self.table.host_map.insert(name, id);
-        self.table.host.push(Arc::new(sig));
+        self.table.host.push(Arc::new(abi));
     }
 
     fn finish(self) -> FnTable {
@@ -1188,7 +1179,7 @@ impl FnTableBuilder {
 pub struct Function {
     pub name: String,
     pub params: u8,
-    pub bytecode: Vec<Op>,
+    pub bytecode: Vec<Instruction>,
     pub spans: Vec<Span>,
     pub literals: Vec<Literal>,
     pub registers: u8,
@@ -1202,24 +1193,6 @@ impl Debug for Function {
             .field("registers", &self.registers)
             .finish_non_exhaustive()
     }
-}
-
-#[derive(Clone, Copy)]
-pub struct ExternFunction {
-    pub name: &'static str,
-    pub callback: ExternFunctionCallback,
-}
-
-impl ExternFunction {
-    pub fn new(name: &'static str, callback: ExternFunctionCallback) -> Self {
-        Self { name, callback }
-    }
-}
-
-#[derive(Clone)]
-pub struct ExternFunctionSig {
-    pub params: Cow<'static, [hir::Ty]>,
-    pub ret: hir::Ty,
 }
 
 #[doc(hidden)]

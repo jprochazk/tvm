@@ -1,4 +1,5 @@
-use super::operands::LiteralId;
+use super::{ExternFunctionError, TryFromValue, ValueAbi};
+use crate::hir;
 
 pub mod intern;
 pub mod pool;
@@ -109,11 +110,41 @@ impl From<()> for Value {
     }
 }
 
+impl TryFromValue for () {
+    #[inline]
+    fn try_from_value(value: Value) -> std::result::Result<Self, ExternFunctionError> {
+        match value {
+            Value::Unit => Ok(()),
+            // TODO: proper error
+            _ => Err(()),
+        }
+    }
+}
+
+impl ValueAbi for () {
+    const TYPE: hir::Ty = hir::Ty::Unit;
+}
+
 impl From<i64> for Value {
     #[inline]
     fn from(value: i64) -> Self {
         Self::I64(value)
     }
+}
+
+impl TryFromValue for i64 {
+    #[inline]
+    fn try_from_value(value: Value) -> std::result::Result<Self, ExternFunctionError> {
+        match value {
+            Value::I64(v) => Ok(v),
+            // TODO: proper error
+            _ => Err(()),
+        }
+    }
+}
+
+impl ValueAbi for i64 {
+    const TYPE: hir::Ty = hir::Ty::INT;
 }
 
 impl From<f64> for Value {
@@ -123,6 +154,21 @@ impl From<f64> for Value {
     }
 }
 
+impl TryFromValue for f64 {
+    #[inline]
+    fn try_from_value(value: Value) -> std::result::Result<Self, ExternFunctionError> {
+        match value {
+            Value::F64(v) => Ok(v),
+            // TODO: proper error
+            _ => Err(()),
+        }
+    }
+}
+
+impl ValueAbi for f64 {
+    const TYPE: hir::Ty = hir::Ty::NUM;
+}
+
 impl From<bool> for Value {
     #[inline]
     fn from(value: bool) -> Self {
@@ -130,10 +176,25 @@ impl From<bool> for Value {
     }
 }
 
+impl TryFromValue for bool {
+    #[inline]
+    fn try_from_value(value: Value) -> std::result::Result<Self, ExternFunctionError> {
+        match value {
+            Value::Bool(v) => Ok(v),
+            // TODO: proper error
+            _ => Err(()),
+        }
+    }
+}
+
+impl ValueAbi for bool {
+    const TYPE: hir::Ty = hir::Ty::BOOL;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u64)]
 pub enum Literal {
-    JumpOffset(usize) = 0,
+    JumpOffset(isize) = 0,
     I64(i64) = 1,
     F64(f64n) = 2,
 }
@@ -202,7 +263,7 @@ impl Literal {
     }
 
     #[inline]
-    pub fn jump_offset(self) -> Option<usize> {
+    pub fn jump_offset(self) -> Option<isize> {
         match self {
             Self::JumpOffset(v) => Some(v),
             _ => None,
@@ -212,7 +273,7 @@ impl Literal {
     /// # Safety
     /// - `self` must be `Literal::JumpOffset`
     #[inline]
-    pub unsafe fn jump_offset_unchecked(self) -> usize {
+    pub unsafe fn jump_offset_unchecked(self) -> isize {
         debug_assert!(matches!(self, Literal::JumpOffset(_)));
         match self {
             Literal::JumpOffset(v) => v,
@@ -223,7 +284,7 @@ impl Literal {
 
 impl Literal {
     #[inline]
-    pub fn jmp(offset: usize) -> Self {
+    pub fn jmp(offset: isize) -> Self {
         Self::JumpOffset(offset)
     }
 }
@@ -373,7 +434,7 @@ impl std::str::FromStr for f64n {
     #[inline]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let v = f64::from_str(s)?;
-        f64n::try_new(v).ok_or_else(|| ParseFloatError {
+        f64n::try_new(v).ok_or(ParseFloatError {
             inner: ParseFloatErrorInner::Nan,
         })
     }

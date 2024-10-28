@@ -26,13 +26,13 @@ pub use std::borrow::Cow;
 pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 pub type HashSet<T> = rustc_hash::FxHashSet<T>;
 
-pub fn compile(s: &str) -> Result<code::CodeUnit, error::Report> {
+/* pub fn compile(s: &str) -> Result<code::CodeUnit, error::Report> {
     let ast = syn::try_parse(s)?;
     let hir = ty::check(&ast)?;
     code::compile(hir)
 }
 
-pub use code::{ExternFunctionDecl, ExternFunctionSig, Library};
+pub use code::{ExternFunctionDecl, ExternFunctionSig, Library}; */
 pub use hir::Ty;
 pub use vm2::value::Value;
-pub use vm2::{f, Context, Scope};
+pub use vm2::{f, Scope, Vm};

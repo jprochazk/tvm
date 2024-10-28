@@ -23,7 +23,8 @@ impl LiteralPool {
         }
     }
 
-    pub fn insert(&mut self, literal: impl Into<Literal>) -> LiteralId {
+    /// Returns `None` if the literal pool is full.
+    pub fn insert(&mut self, literal: impl Into<Literal>) -> Option<LiteralId> {
         let literal = literal.into();
 
         let hash = hash_literal(&literal);
@@ -32,14 +33,21 @@ impl LiteralPool {
             .raw_entry_mut()
             .from_hash(hash, |&id| literal == self.inner[id as usize]);
         match entry {
-            hashbrown::hash_map::RawEntryMut::Occupied(entry) => *entry.key(),
+            hashbrown::hash_map::RawEntryMut::Occupied(entry) => Some(*entry.key()),
             hashbrown::hash_map::RawEntryMut::Vacant(raw_vacant_entry_mut) => {
+                if self.inner.len() + 1 > u16::MAX as usize {
+                    return None;
+                }
                 let id = self.inner.len() as u16;
                 raw_vacant_entry_mut
                     .insert_with_hasher(hash, id, (), |&id| hash_literal(&self.inner[id as usize]));
                 self.inner.push(literal);
-                id
+                Some(id)
             }
         }
+    }
+
+    pub fn finish(self) -> Vec<Literal> {
+        self.inner
     }
 }

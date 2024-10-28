@@ -1,3 +1,5 @@
+use super::Library;
+
 fn _emit(input: &str) -> String {
     let ast = match crate::syn::try_parse(input) {
         Ok(ast) => ast,
@@ -7,8 +9,9 @@ fn _emit(input: &str) -> String {
         Ok(hir) => hir,
         Err(e) => panic!("{e}"),
     };
-    match crate::code::compile(hir) {
-        Ok(m) => super::print::DisplayModule(&m, Some(input)).to_string(),
+    let library = Library::new();
+    match crate::code::compile(hir, &library) {
+        Ok(m) => m.to_string(),
         Err(e) => e.to_string(),
     }
 }

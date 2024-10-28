@@ -6,14 +6,17 @@ use core::ptr::addr_of_mut as mut_;
 use std::borrow::Cow;
 use std::boxed::Box;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use dyn_array::{DynArray, DynList};
 use operands::{
-    u24, ExternFunctionId, FunctionId, LiteralId, Offset, Register, SplitOperands as _,
+    u24, ExternFunctionId, FunctionId, JoinOperands, LiteralId, PcRelativeOffset, Register,
+    SplitOperands,
 };
 use value::{Literal, Value};
 
+use crate::code;
 // TODO: hoo boy...
 // 1. need `Offset` type like in old vm, together with a helper to emit jmp using that
 // 2. need `Module` type in vm somewhere this is just a wrapper around a list of functions
@@ -21,12 +24,12 @@ use value::{Literal, Value};
 // 3. fix all these errors one by one so r-a stops shitting pants
 use crate::hir;
 
-pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
+pub fn dispatch(context: &mut Vm, module: Arc<Module>) -> Result<(), Error> {
     let mut current_frame = CallFrame {
         callee: &mut Function::new(
             vec![
-                operands::encode(Opcode::call, (0u8, main)),
-                operands::encode(Opcode::end, ()),
+                operands::encode(Opcode::Call, (0u8, module.entry)),
+                operands::encode(Opcode::End, ()),
             ],
             vec![],
             1,
@@ -37,6 +40,8 @@ pub fn dispatch(context: &mut Context, main: FunctionId) -> Result<(), Error> {
 
     let mut error = None;
     let mut local_context = LocalContext {
+        functions: module.functions.as_ptr() as *mut _,
+        external_functions: module.external_functions.as_ptr() as *mut _,
         outer: context,
         current_frame: &mut current_frame,
         error: &mut error,
@@ -114,10 +119,24 @@ enum Control {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instruction(pub(crate) u32);
 
+impl Instruction {
+    pub fn encode(opcode: Opcode, operands: impl JoinOperands) -> Self {
+        operands::encode(opcode, operands)
+    }
+
+    pub fn decode(self) -> DecodedInstruction {
+        let (opcode, operands) = operands::decode(self);
+        DecodedInstruction::from((opcode, operands))
+    }
+
+    pub fn opcode(self) -> RawOpcode {
+        operands::decode(self).0
+    }
+}
+
 impl core::fmt::Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (opcode, operands) = operands::decode(*self);
-        core::fmt::Display::fmt(&Disasm(opcode, operands), f)
+        core::fmt::Display::fmt(&Disasm(*self), f)
     }
 }
 
@@ -162,13 +181,17 @@ impl Drop for Function {
     }
 }
 
-pub trait TryIntoValue<E> {
-    fn try_into_value(self) -> std::result::Result<Value, E>;
+pub trait TryIntoValue: Sized {
+    fn try_into_value(self) -> std::result::Result<Value, ExternFunctionError>;
 }
 
-impl<T: Into<Value>, E> TryIntoValue<E> for Result<T, E> {
+pub trait TryFromValue: Sized {
+    fn try_from_value(value: Value) -> std::result::Result<Self, ExternFunctionError>;
+}
+
+impl<T: Into<Value>> TryIntoValue for Result<T, ExternFunctionError> {
     #[inline]
-    fn try_into_value(self) -> std::result::Result<Value, E> {
+    fn try_into_value(self) -> std::result::Result<Value, ExternFunctionError> {
         match self {
             Ok(value) => Ok(value.into()),
             Err(e) => Err(e),
@@ -176,9 +199,9 @@ impl<T: Into<Value>, E> TryIntoValue<E> for Result<T, E> {
     }
 }
 
-impl<T: Into<Value>, E> TryIntoValue<E> for T {
+impl<T: Into<Value>> TryIntoValue for T {
     #[inline]
-    fn try_into_value(self) -> std::result::Result<Value, E> {
+    fn try_into_value(self) -> std::result::Result<Value, ExternFunctionError> {
         Ok(self.into())
     }
 }
@@ -201,9 +224,9 @@ macro_rules! impl_extern_function_traits {
         where
             Func: for<'a> Fn(Scope<'a>, $($arg),*) -> Ret,
             $(
-                $arg: From<Value>,
+                $arg: TryFromValue,
             )*
-            Ret: TryIntoValue<ExternFunctionError>,
+            Ret: TryIntoValue,
         {
             #[inline]
             unsafe fn call(&self, scope: Scope<'_>)  -> std::result::Result<Value, ExternFunctionError> {
@@ -211,7 +234,7 @@ macro_rules! impl_extern_function_traits {
 
                 let mut index = 0;
                 $(
-                    let $arg = scope.get_arg(index).into();
+                    let $arg = <_>::try_from_value(scope.get_arg(index))?;
                     index += 1;
                 )*
 
@@ -288,45 +311,59 @@ pub type ExternFunctionError = ();
 pub type ExternFunctionCallbackWrapper =
     for<'a> unsafe fn(Scope<'a>) -> std::result::Result<Value, ExternFunctionError>;
 
+#[derive(Clone)]
 pub struct ExternFunctionAbi {
     pub params: Cow<'static, [hir::Ty]>,
     pub ret: hir::Ty,
 }
 
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct ExternFunction {
-    name: &'static str,
-    abi: ExternFunctionAbi,
+    pub name: &'static str,
+    pub abi: ExternFunctionAbi,
     wrapper: ExternFunctionCallbackWrapper,
 }
 
 impl ExternFunction {
     #[doc(hidden)]
-    pub const fn __internal_new(
+    pub const fn __internal_new<
+        F: ExternFunctionCallback<Ret, Args> + ExternFunctionMetadata<Ret, Args> + 'static,
+        Ret,
+        Args,
+    >(
+        _: &F,
         name: &'static str,
-        abi: ExternFunctionAbi,
         wrapper: ExternFunctionCallbackWrapper,
     ) -> Self {
-        Self { name, abi, wrapper }
+        Self {
+            name,
+            abi: <F>::ABI,
+            wrapper,
+        }
     }
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __extern_function {
-    ($inner:expr) => {{
-        unsafe fn _inner(
+    ($inner:ident) => {{
+        $crate::__extern_function!(stringify!($inner), $inner)
+    }};
+    ($name:expr, $inner:expr) => {{
+        unsafe fn _wrapper(
             scope: $crate::vm2::Scope<'_>,
-        ) -> std::result::Result<$crate::vm2::Value, $crate::vm2::ExternFunctionError> {
+        ) -> std::result::Result<$crate::vm2::value::Value, $crate::vm2::ExternFunctionError>
+        {
             $crate::vm2::ExternFunctionCallback::call(&$inner, scope)
         }
 
-        const { $crate::vm2::ExternFunction::__internal_new(_inner) }
+        const { $crate::vm2::ExternFunction::__internal_new(&$inner, $name, _wrapper) }
     }};
 }
 
 pub use crate::__extern_function as f;
-use crate::hir;
+use crate::util::JoinIter;
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -363,21 +400,44 @@ impl core::fmt::Debug for CallFrame {
 
 pub type StackSlot = Value;
 
-pub struct Context {
-    stack: DynArray<StackSlot>,
-    frames: DynList<CallFrame>,
-    functions: Vec<Arc<Function>>,
-    external_functions: Vec<ExternFunction>,
+pub struct Module {
+    // TODO: make `Function` and `ExternFunction` smaller structs
+    pub(crate) entry: FunctionId,
+    pub(crate) functions: Vec<code::Function>,
+    pub(crate) external_functions: Vec<ExternFunction>,
 }
 
-impl Context {
+impl std::fmt::Display for Module {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for function in &self.functions {
+            writeln!(f, "fn {}", function.name)?;
+            writeln!(f, "  registers: {}", function.registers)?;
+            writeln!(f, "  literals: {:?}", function.literals)?;
+            writeln!(f, "  bytecode:")?;
+            for instruction in &function.bytecode {
+                writeln!(f, "    {:?}", instruction)?;
+            }
+        }
+
+        for function in &self.external_functions {
+            writeln!(f, "extern fn {};", function.name)?;
+        }
+
+        Ok(())
+    }
+}
+
+pub struct Vm {
+    stack: DynArray<StackSlot>,
+    frames: DynList<CallFrame>,
+}
+
+impl Vm {
     // 16 pages worth of `Value`
     pub const DEFAULT_INITIAL_STACK_SIZE: usize = 16 * 4096 / core::mem::size_of::<Value>();
 
-    pub fn builder() -> ContextBuilder {
-        ContextBuilder {
-            functions: vec![],
-            external_functions: vec![],
+    pub fn builder() -> VmBuilder {
+        VmBuilder {
             initial_stack_size: Self::DEFAULT_INITIAL_STACK_SIZE,
         }
     }
@@ -392,23 +452,11 @@ impl Context {
     }
 }
 
-pub struct ContextBuilder {
-    functions: Vec<Arc<Function>>,
-    external_functions: Vec<ExternFunction>,
+pub struct VmBuilder {
     initial_stack_size: usize,
 }
 
-impl ContextBuilder {
-    pub fn functions(mut self, functions: Vec<Arc<Function>>) -> Self {
-        self.functions = functions;
-        self
-    }
-
-    pub fn external_functions(mut self, external_functions: Vec<ExternFunction>) -> Self {
-        self.external_functions = external_functions;
-        self
-    }
-
+impl VmBuilder {
     /// `initial_stack_size` will be rounded to the nearest power of two,
     /// and it may be no smaller than `2`.
     pub fn initial_stack_size(mut self, initial_stack_size: usize) -> Self {
@@ -416,18 +464,13 @@ impl ContextBuilder {
         self
     }
 
-    pub fn build(self) -> Context {
+    pub fn build(self) -> Vm {
         let stack = DynArray::new(self.initial_stack_size);
         // ~8 registers per function call,
         // and at least 2 for the trampoline + entrypoint.
         let frames = DynList::new(std::cmp::max(2, self.initial_stack_size / 8));
 
-        Context {
-            stack,
-            frames,
-            functions: self.functions,
-            external_functions: self.external_functions,
-        }
+        Vm { stack, frames }
     }
 }
 
@@ -447,24 +490,22 @@ impl core::fmt::Display for Error {
 impl core::error::Error for Error {}
 
 struct LocalContext {
-    outer: *mut Context,
+    functions: *mut Function,
+    external_functions: *mut ExternFunction,
+    outer: *mut Vm,
     current_frame: *mut CallFrame,
     error: *mut Option<Error>,
 }
 
 unsafe fn get_function_unchecked(context: *mut LocalContext, index: FunctionId) -> *mut Function {
-    let function: &Function = (*(*context).outer).functions.get_unchecked(index as usize);
-    function as *const Function as *mut Function
+    (*context).functions.add(index as usize)
 }
 
 unsafe fn get_extern_function_unchecked(
     context: *mut LocalContext,
     index: ExternFunctionId,
 ) -> *mut ExternFunction {
-    let function: &ExternFunction = (*(*context).outer)
-        .external_functions
-        .get_unchecked(index as usize);
-    function as *const ExternFunction as *mut ExternFunction
+    (*context).external_functions.add(index as usize)
 }
 
 #[cfg(not(windows))]
@@ -667,6 +708,36 @@ wrap_abi! {
 }
 
 wrap_abi! {
+    unsafe fn load_fn(
+        operands: u24,
+        ops: *const (),
+        code: *const Instruction,
+        stack: *mut StackSlot,
+        literals: *const Literal,
+        context: *mut LocalContext,
+    ) -> Control {
+        let (_dst, _id): info::load_fn = operands.split();
+
+        todo!();
+    }
+}
+
+wrap_abi! {
+    unsafe fn load_fn_extern(
+        operands: u24,
+        ops: *const (),
+        code: *const Instruction,
+        stack: *mut StackSlot,
+        literals: *const Literal,
+        context: *mut LocalContext,
+    ) -> Control {
+        let (_dst, _id): info::load_fn_extern = operands.split();
+
+        todo!();
+    }
+}
+
+wrap_abi! {
     unsafe fn jump(
         operands: u24,
         ops: *const (),
@@ -677,7 +748,7 @@ wrap_abi! {
     ) -> Control {
         let (offset,): info::jump = operands.split();
 
-        let code = code.add(offset as usize);
+        let code = code.offset(offset as isize);
 
         dispatch_current(ops, code, stack, literals, context)
     }
@@ -695,7 +766,7 @@ wrap_abi! {
         let (offset,): info::jump_long = operands.split();
         let offset = literals.add(offset as usize).read().jump_offset_unchecked();
 
-        let code = code.add(offset);
+        let code = code.offset(offset);
 
         dispatch_current(ops, code, stack, literals, context)
     }
@@ -714,7 +785,7 @@ wrap_abi! {
         let condition = stack.add(condition as usize).read();
 
         let code = if !condition.bool_unchecked() {
-            code.add(offset as usize)
+            code.offset(offset as isize)
         } else {
             code.add(1)
         };
@@ -737,7 +808,7 @@ wrap_abi! {
         let offset = literals.add(offset as usize).read().jump_offset_unchecked();
 
         let code = if !condition.bool_unchecked() {
-            code.add(offset)
+            code.offset(offset)
         } else {
             code.add(1)
         };
@@ -999,7 +1070,7 @@ wrap_abi! {
         literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (_ret, _callee): info::call_reg = operands.split();
+        let ( _callee, ): info::call_reg = operands.split();
 
         // TODO
 
@@ -1016,7 +1087,7 @@ wrap_abi! {
         literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (_ret, _callee): info::call_extern_reg = operands.split();
+        let ( _callee, ): info::call_extern_reg = operands.split();
 
         // TODO
 
@@ -1058,6 +1129,7 @@ macro_rules! ops {
         mod $asm:ident;
         struct $Disasm:ident;
         struct $RawOpcode:ident;
+        enum $DecodedInstruction:ident;
         invalid = $invalid_op:ident;
         $table:ident: [$Opcode:ident] = [
             $($index:literal = $op:ident $(($($operand:ident : $operand_ty:ty),+))?),* $(,)?
@@ -1075,12 +1147,99 @@ macro_rules! ops {
             table
         };
 
-        #[allow(non_camel_case_types)]
-        #[repr(u8)]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub enum $Opcode {
-            $invalid_op = 0,
-            $($op = $index),*
+        paste::paste! {
+            #[repr(u8)]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            pub enum $Opcode {
+                [<$invalid_op:camel>] = 0,
+                $([<$op:camel>] = $index),*
+            }
+
+            #[repr(u8)]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            pub enum $DecodedInstruction {
+                [<$invalid_op:camel>] = 0,
+                $([<$op:camel>] $({ $($operand: $operand_ty),* })? = $index),*
+            }
+
+            impl $DecodedInstruction {
+                pub fn name(&self) -> &'static str {
+                    #![allow(unused_variables)]
+
+                    match self {
+                        Self::[<$invalid_op:camel>] => "???",
+                        $(
+                            Self::[<$op:camel>] $({ $($operand),* })? => stringify!($op),
+                        )*
+                    }
+                }
+            }
+
+            impl From<(u8, u24)> for $DecodedInstruction {
+                fn from((opcode, operands): (u8, u24)) -> Self {
+                    match opcode {
+                        $(
+                            $index => {
+                                let ($($($operand,)*)?) = operands.split();
+                                Self::[<$op:camel>] $({ $($operand),* })?
+                            }
+                        )*
+                        _ => Self::[<$invalid_op:camel>],
+                    }
+                }
+            }
+
+            pub mod $asm {
+                use super::*;
+
+                pub const fn $invalid_op() -> Instruction {
+                    Instruction(0u32)
+                }
+
+                $(
+                    pub fn $op(
+                        $(
+                            $($operand : $operand_ty),*
+                        )?
+                    ) -> Instruction {
+                        $crate::vm2::operands::encode(
+                            $Opcode::[<$op:camel>],
+                            ($($($operand,)*)?)
+                        )
+                    }
+                )*
+            }
+
+
+            struct $Disasm(pub Instruction);
+
+            impl core::fmt::Display for Disasm {
+                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                    let Disasm(instruction) = self;
+
+                    match instruction.decode() {
+                        $(
+                            $DecodedInstruction::[<$op:camel>] $({ $($operand,)* })? => {
+                                write!(f,
+                                    concat!(
+                                        stringify!($op),
+                                        $($(
+                                            " ",
+                                            stringify!($operand),
+                                            "={}",
+                                        )*)?
+                                    ),
+
+                                    $($($operand),*)?
+                                )
+                            }
+                        )*
+                        _ => {
+                            write!(f, "invalid")
+                        }
+                    }
+                }
+            }
         }
 
         pub type $RawOpcode = u8;
@@ -1094,58 +1253,6 @@ macro_rules! ops {
                 pub type $op = ($($($operand_ty,)*)?);
             )*
         }
-
-        pub mod $asm {
-            use super::*;
-
-            pub const fn $invalid_op() -> Instruction {
-                Instruction(0u32)
-            }
-
-            $(
-                pub fn $op(
-                    $(
-                        $($operand : $operand_ty),*
-                    )?
-                ) -> Instruction {
-                    $crate::vm2::operands::encode(
-                        $Opcode::$op,
-                        ($($($operand,)*)?)
-                    )
-                }
-            )*
-        }
-
-        struct $Disasm(pub u8, pub u24);
-
-        impl core::fmt::Display for Disasm {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let Disasm(opcode, operands) = self;
-
-                match opcode {
-                    $(
-                        $index => {
-                            let ($($($operand,)*)?): $info::$op = operands.split();
-                            write!(f,
-                                concat!(
-                                    stringify!($op),
-                                    $($(
-                                        " ",
-                                        stringify!($operand),
-                                        "={}",
-                                    )*)?
-                                ),
-
-                                $($($operand),*)?
-                            )
-                        }
-                    )*
-                    _ => {
-                        write!(f, "invalid")
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -1154,6 +1261,7 @@ ops! {
     mod asm;
     struct Disasm;
     struct RawOpcode;
+    enum DecodedInstruction;
     invalid = invalid_op;
     OPS: [Opcode] = [
         0x01 = mov(dst: Register, src: Register),
@@ -1163,10 +1271,12 @@ ops! {
         0x04 = load_i16(dst: Register, src: i16),
         0x05 = load_true(dst: Register),
         0x06 = load_false(dst: Register),
+        0x07 = load_fn(dst: Register, id: FunctionId),
+        0x08 = load_fn_extern(dst: Register, id: ExternFunctionId),
 
-        0x20 = jump(offset: Offset),
+        0x20 = jump(offset: PcRelativeOffset),
         0x21 = jump_long(offset: LiteralId),
-        0x22 = jump_if_false(condition: Register, offset: Offset),
+        0x22 = jump_if_false(condition: Register, offset: PcRelativeOffset),
         0x23 = jump_if_false_long(condition: Register, offset: LiteralId),
 
         0x40 = add_i64(dst: Register, lhs: Register, rhs: Register),
@@ -1202,8 +1312,8 @@ ops! {
 
         0x80 = call(ret: Register, callee: FunctionId),
         0x81 = call_extern(ret: Register, callee: ExternFunctionId),
-        0x82 = call_reg(ret: Register, callee: Register),
-        0x83 = call_extern_reg(ret: Register, callee: Register),
+        0x82 = call_reg(callee: Register),
+        0x83 = call_extern_reg(callee: Register),
 
         0x90 = ret,
 

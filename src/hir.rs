@@ -38,6 +38,13 @@ impl Ty {
     pub fn is_err(&self) -> bool {
         matches!(self, Ty::Error)
     }
+
+    pub fn into_fn(self) -> Option<FnId> {
+        match self {
+            Self::Fn(id) => Some(id),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]

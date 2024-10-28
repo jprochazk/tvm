@@ -4,7 +4,7 @@ pub type Register = u8;
 
 pub type LiteralId = u16;
 
-pub type Offset = u16;
+pub type PcRelativeOffset = i16;
 
 pub type FunctionId = u16;
 
@@ -143,6 +143,23 @@ impl JoinOperands for (u16,) {
     }
 }
 
+impl SplitOperands<(i16,)> for u24 {
+    #[inline]
+    fn split(self) -> (i16,) {
+        let [a, b, _] = self.to_le_bytes();
+        (i16::from_le_bytes([a, b]),)
+    }
+}
+
+impl JoinOperands for (i16,) {
+    #[inline]
+    fn join(self) -> u24 {
+        let (ab,) = self;
+        let [a, b] = ab.to_le_bytes();
+        u24::from_le_bytes([a, b, 0])
+    }
+}
+
 impl SplitOperands<(u8, u16)> for u24 {
     #[inline]
     fn split(self) -> (u8, u16) {
@@ -197,13 +214,13 @@ mod tests {
 
     #[test]
     fn encode_decode() {
-        let opcode = Opcode::mov;
+        let opcode = Opcode::Mov;
         let encoded = encode(opcode, (0x01, 0x02, 0x03));
         let decoded = decode(encoded);
 
         assert_eq!(
             encoded.0.to_le_bytes(),
-            [Opcode::mov as u8, 0x01, 0x02, 0x03]
+            [Opcode::Mov as u8, 0x01, 0x02, 0x03]
         );
         assert_eq!(decoded, (opcode as u8, (0x01, 0x02, 0x03).join()));
     }

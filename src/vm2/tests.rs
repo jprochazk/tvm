@@ -1,39 +1,55 @@
 use std::sync::Arc;
 
+use super::operands::FunctionId;
 use super::value::Value;
-use super::{asm, dispatch, Context, Error, Function};
+use super::{asm, dispatch, Error, Function, Module, Vm};
+use crate::code;
 
-fn context(functions: Vec<Arc<Function>>) -> Context {
+fn init_vm() -> Vm {
     // always test with starting stack size of `1` to
     // properly exercise the stack growth logic
-    Context::builder()
-        .functions(functions)
-        .initial_stack_size(1)
-        .build()
+    Vm::builder().initial_stack_size(1).build()
+}
+
+fn init_module(entry: FunctionId, functions: Vec<code::Function>) -> Arc<Module> {
+    Arc::new(Module {
+        entry: 0,
+        functions,
+        external_functions: vec![],
+    })
+}
+
+macro_rules! function {
+    ($name:ident ($registers:expr) {
+        $($inst:ident $($operand:expr)*);*
+        $(;)?
+    }) => (code::Function::test(
+        stringify!($name),
+        vec![
+            $(asm::$inst($($operand),*),)*
+        ],
+        vec![],
+        $registers,
+    ));
 }
 
 #[test]
 fn add_i64() {
-    let functions = vec![Arc::new(Function::new(
-        vec![
-            asm::load_i16(0, 10),
-            asm::load_i16(1, 10),
-            asm::add_i64(0, 1, 0),
-            asm::ret(),
-        ],
-        vec![],
-        2,
-    ))];
-
-    let mut context = context(functions);
-    dispatch(&mut context, 0).unwrap();
-
-    assert!(
-        matches!(context.ret(), Value::I64(20)),
-        "{:?}",
-        context.ret()
+    let m = init_module(
+        0,
+        vec![function![add_i64(2) {
+            load_i16 0 10;
+            load_i16 1 10;
+            add_i64 0 1 0;
+            ret;
+        }]],
     );
-    assert_eq!(context.stack_size(), 2);
+
+    let mut vm = init_vm();
+    dispatch(&mut vm, m).unwrap();
+
+    assert!(matches!(vm.ret(), Value::I64(20)), "{:?}", vm.ret());
+    assert_eq!(vm.stack_size(), 2);
 }
 
 #[test]
@@ -47,50 +63,44 @@ fn fibonacci() {
 
     // fib(3) + fib(7)
 
-    let functions = vec![
-        Arc::new(Function::new(
-            vec![
-                asm::load_i16(r1, 3i16),
-                asm::call(r0, f1),
-                asm::load_i16(r2, 7i16),
-                asm::call(r1, f1),
-                asm::add_i64(r0, r0, r1),
-                asm::ret(),
-            ],
-            vec![],
-            3,
-        )),
-        Arc::new(Function::new(
-            vec![
-                asm::load_i16(r2, 2i16),
-                asm::cmp_lt_i64(r0, r1, r2),
-                asm::jump_if_false(r0, 3),
-                asm::mov(r0, r1),
-                asm::jump(9),
-                asm::load_i16(r4, 1i16),
-                asm::sub_i64(r3, r1, r4),
-                asm::call(r2, f1),
-                asm::mov(r0, r2),
-                asm::load_i16(r4, 2i16),
-                asm::sub_i64(r3, r1, r4),
-                asm::call(r2, f1),
-                asm::add_i64(r0, r0, r2),
-                asm::ret(),
-            ],
-            vec![],
-            5,
-        )),
-    ];
+    let m = init_module(
+        0,
+        vec![
+            function![main(3) {
+                load_i16 r1 3i16;
+                call r0 f1;
+                load_i16 r2 7i16;
+                call r1 f1;
+                add_i64 r0 r0 r1;
+                ret;
+            }],
+            function![fib(5) {
+                load_i16 r2 2i16;
+                cmp_lt_i64 r0 r1 r2;
+                jump_if_false r0 3;
+                mov r0 r1;
+                jump 9;
+                load_i16 r4 1i16;
+                sub_i64 r3 r1 r4;
+                call r2 f1;
+                mov r0 r2;
+                load_i16 r4 2i16;
+                sub_i64 r3 r1 r4;
+                call r2 f1;
+                add_i64 r0 r0 r2;
+                ret;
+            }],
+        ],
+    );
 
-    let mut context = context(functions);
-
-    dispatch(&mut context, 0).unwrap();
+    let mut vm = init_vm();
+    dispatch(&mut vm, m).unwrap();
 
     assert_eq!(
-        context.ret().i64().unwrap(),
+        vm.ret().i64().unwrap(),
         iter_fib(3) + iter_fib(7),
         "{:?}",
-        context.ret()
+        vm.ret()
     );
 }
 
@@ -108,15 +118,34 @@ fn iter_fib(n: i64) -> i64 {
 
 #[test]
 fn invalid_op() {
-    let functions = vec![Arc::new(Function::new(vec![asm::invalid_op()], vec![], 0))];
+    let m = init_module(0, vec![function![invalid_op(0) { invalid_op; }]]);
 
-    let mut context = context(functions);
-
-    assert!(matches!(dispatch(&mut context, 0), Err(Error::InvalidOp)));
+    let mut vm = init_vm();
+    assert!(matches!(dispatch(&mut vm, m), Err(Error::InvalidOp)));
 }
 
 // Compile-test:
 #[test]
 fn extern_() {
-    super::f!(|_: super::Scope| {});
+    use super::{f, Scope};
+
+    fn _unit(_: Scope) {}
+    fn _int(_: Scope, _: i64) -> i64 {
+        0
+    }
+    fn _int2(_: Scope, _: i64, _: i64) -> i64 {
+        0
+    }
+    fn _num(_: Scope, _: f64) -> f64 {
+        0.0
+    }
+    fn _bool(_: Scope, _: bool) -> bool {
+        false
+    }
+
+    f!(_unit);
+    f!(_int);
+    f!(_int2);
+    f!(_num);
+    f!(_bool);
 }

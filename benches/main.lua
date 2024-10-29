@@ -37,7 +37,7 @@ do
         local unit_median = get_unit(median_ns)
         local avg_ns = elapsed_ns / n
         local unit_avg = get_unit(avg_ns)
-        local output = string.format('%d mean=%.2f %s, median=%.2f %s',
+        local output = string.format('%d %.2f %s',
             value,
             avg_ns / scale[unit_avg],
             unit_avg,

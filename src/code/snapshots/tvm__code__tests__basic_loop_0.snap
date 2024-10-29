@@ -1,15 +1,11 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        loop {}\n    \"#)"
+expression: "emit! (r#\"\n        loop {}\n    \"#)"
 ---
-function "main" {
-  registers: 1 (0 params)
+fn main
+  registers: 1
   literals: []
-  bytecode: (3 ops) [
-    jmp 0    // loop {}
-    unit r0  // 
-    ret      //   
-  ]
-}
-
-
+  bytecode:
+    jump offset=0
+    load_unit dst=0
+    ret

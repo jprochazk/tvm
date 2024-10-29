@@ -57,7 +57,7 @@ impl Value {
     /// - `self` must be `Self::I64`
     #[inline]
     pub unsafe fn i64_unchecked(self) -> i64 {
-        debug_assert!(matches!(self, Self::I64(_)));
+        assert!(matches!(self, Self::I64(_)));
         match self {
             Value::I64(v) => v,
             _ => core::hint::unreachable_unchecked(),
@@ -101,6 +101,17 @@ impl Value {
             _ => core::hint::unreachable_unchecked(),
         }
     }
+}
+
+impl TryFromValue for Value {
+    #[inline]
+    fn try_from_value(value: Value) -> std::result::Result<Self, ExternFunctionError> {
+        Ok(value)
+    }
+}
+
+impl ValueAbi for Value {
+    const TYPE: hir::Ty = hir::Ty::Dynamic;
 }
 
 impl From<()> for Value {

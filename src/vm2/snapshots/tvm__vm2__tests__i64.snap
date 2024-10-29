@@ -1,0 +1,5 @@
+---
+source: src/vm2/tests.rs
+expression: "emit! (r#\"\n        123\n    \"#)"
+---
+I64(123)

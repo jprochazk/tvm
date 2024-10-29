@@ -1,17 +1,13 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        let a = 0;\n        let a = 0;\n        let b = 0;\n    \"#)"
+expression: "emit! (r#\"\n        let a = 0;\n        let a = 0;\n        let b = 0;\n    \"#)"
 ---
-function "main" {
-  registers: 3 (0 params)
+fn main
+  registers: 3
   literals: []
-  bytecode: (5 ops) [
-    smi 0, r1  // let a = 0;
-    smi 0, r1  // let a = 0;
-    smi 0, r2  // let b = 0;
-    unit r0    // 
-    ret        //   
-  ]
-}
-
-
+  bytecode:
+    load_i16 dst=1 value=0
+    load_i16 dst=1 value=0
+    load_i16 dst=2 value=0
+    load_unit dst=0
+    ret

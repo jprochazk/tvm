@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use crate::ast::{BinaryOp, Ident, UnaryOp};
 use crate::error::{Error, ErrorCtx, Report, Result};
@@ -11,14 +10,13 @@ use crate::lex::Span;
 use crate::util::{default, JoinIter};
 use crate::vm2::operands::{ExternFunctionId, FunctionId, LiteralId, PcRelativeOffset, Register};
 use crate::vm2::value::pool::LiteralPool;
-use crate::vm2::value::{f64n, Literal};
+use crate::vm2::value::Literal;
 use crate::vm2::{
-    self, asm, operands, DecodedInstruction, ExternFunction, ExternFunctionAbi,
-    ExternFunctionCallback, Instruction, Opcode,
+    self, asm, operands, DecodedInstruction, ExternFunction, ExternFunctionAbi, Instruction,
 };
-use crate::{hir, HashMap, Str};
+use crate::{hir, HashMap};
 
-pub fn compile(hir: Hir<'_>, library: &Library) -> Result<Arc<vm2::Module>, Report> {
+pub fn compile(hir: Hir<'_>, library: &Library) -> Result<vm2::Module, Report> {
     Compiler {
         ecx: ErrorCtx::new(hir.src),
         module_state: ModuleState {
@@ -34,7 +32,7 @@ struct Compiler<'src> {
 }
 
 impl<'src> Compiler<'src> {
-    fn compile(mut self, hir: Hir<'src>, library: &Library) -> Result<Arc<vm2::Module>, Report> {
+    fn compile(mut self, hir: Hir<'src>, library: &Library) -> Result<vm2::Module, Report> {
         // 1. Generate and store entrypoint
         let main_fn = generate_main_fn(hir.top_level);
         let entry = self.module_state.fn_table.reserve_function(main_fn.name);
@@ -78,15 +76,19 @@ impl<'src> Compiler<'src> {
                 vec![]
             }
         };
-        let functions = function_table.functions;
+        let functions = function_table
+            .functions
+            .into_iter()
+            .map(Function::finish)
+            .collect();
 
         self.ecx.finish()?;
 
-        Ok(Arc::new(vm2::Module {
+        Ok(vm2::Module {
             entry,
             functions,
             external_functions,
-        }))
+        })
     }
 }
 
@@ -121,7 +123,7 @@ fn link_external_functions(
         unreachable!("ICE: unreachable");
     }
 
-    let empty_external_function = vm2::f!(unreachable);
+    let empty_external_function = vm2::function!(unreachable);
     let mut external_functions =
         vec![empty_external_function; function_table.external_functions.len()];
     for decl in library.functions.iter() {
@@ -376,6 +378,12 @@ fn expr_stmt<'src, 'a>(f: &mut FunctionState<'src, 'a>, hir: &'a hir::Expr<'src>
     Ok(())
 }
 
+fn _asdf() {
+    let mut v = 1;
+    let mut v = 2;
+    let u = v;
+}
+
 fn expr<'src, 'a>(
     f: &mut FunctionState<'src, 'a>,
     hir: &'a hir::Expr<'src>,
@@ -577,7 +585,7 @@ fn primitive_expr<'src, 'a>(
             false => f.asm.emit(span, load_false(dst)),
         },
         hir::Primitive::Str(v) => {
-            todo!()
+            todo!("strings")
             // let idx = f.literal(span, v.clone())?;
             // f.asm.emit(span, load_literal(dst, idx));
         }
@@ -1228,6 +1236,11 @@ pub struct Function {
 }
 
 impl Function {
+    pub(crate) fn finish(self) -> vm2::Function {
+        // TODO: retain more of those fields
+        vm2::Function::new(self.name, self.bytecode, self.literals, self.registers)
+    }
+
     #[cfg(test)]
     #[doc(hidden)]
     pub fn test(

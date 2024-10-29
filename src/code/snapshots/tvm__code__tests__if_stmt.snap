@@ -1,23 +1,19 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        if true {\n            0\n        } else if true {\n            1\n        } else {\n            2\n        };\n    \"#)"
+expression: "emit!\n(r#\"\n        if true {\n            0\n        } else if true {\n            1\n        } else {\n            2\n        };\n    \"#)"
 ---
-function "main" {
-  registers: 2 (0 params)
+fn main
+  registers: 2
   literals: []
-  bytecode: (11 ops) [
-    bool true, r1  // if true {
-    jmpf r1, +3    // 
-    smi 0, r1      // 0
-    jmp +6         // if true {
-    bool true, r1  // } else if true {
-    jmpf r1, +3    // 
-    smi 1, r1      // 1
-    jmp +2         // } else if true {
-    smi 2, r1      // 2
-    unit r0        // 
-    ret            //   
-  ]
-}
-
-
+  bytecode:
+    load_true dst=1
+    jump_if_false condition=1 offset=3
+    load_i16 dst=1 value=0
+    jump offset=6
+    load_true dst=1
+    jump_if_false condition=1 offset=3
+    load_i16 dst=1 value=1
+    jump offset=2
+    load_i16 dst=1 value=2
+    load_unit dst=0
+    ret

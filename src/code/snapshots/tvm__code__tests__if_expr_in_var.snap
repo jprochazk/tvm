@@ -1,19 +1,15 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        let v = if true { 0 } else { 1 };\n        v\n    \"#)"
+expression: "emit! (r#\"\n        let v = if true { 0 } else { 1 };\n        v\n    \"#)"
 ---
-function "main" {
-  registers: 2 (0 params)
+fn main
+  registers: 2
   literals: []
-  bytecode: (7 ops) [
-    bool true, r1  // let v = if true { 0 } else { 1 };
-    jmpf r1, +3    // 
-    smi 0, r1      // 
-    jmp +2         // 
-    smi 1, r1      // 
-    mov r1, r0     // v
-    ret            //   
-  ]
-}
-
-
+  bytecode:
+    load_true dst=1
+    jump_if_false condition=1 offset=3
+    load_i16 dst=1 value=0
+    jump offset=2
+    load_i16 dst=1 value=1
+    mov dst=0 src=1
+    ret

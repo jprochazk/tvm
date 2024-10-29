@@ -6,8 +6,6 @@ use core::ptr::addr_of_mut as mut_;
 use std::borrow::Cow;
 use std::boxed::Box;
 use std::marker::PhantomData;
-use std::ops::Deref;
-use std::sync::Arc;
 
 use dyn_array::{DynArray, DynList};
 use operands::{
@@ -16,17 +14,12 @@ use operands::{
 };
 use value::{Literal, Value};
 
-use crate::code;
-// TODO: hoo boy...
-// 1. need `Offset` type like in old vm, together with a helper to emit jmp using that
-// 2. need `Module` type in vm somewhere this is just a wrapper around a list of functions
-//    there are no module variables
-// 3. fix all these errors one by one so r-a stops shitting pants
 use crate::hir;
 
-pub fn dispatch(context: &mut Vm, module: Arc<Module>) -> Result<(), Error> {
+pub fn dispatch(context: &mut Vm, module: &Module) -> Result<(), Error> {
     let mut current_frame = CallFrame {
         callee: &mut Function::new(
+            "[entry]",
             vec![
                 operands::encode(Opcode::Call, (0u8, module.entry)),
                 operands::encode(Opcode::End, ()),
@@ -40,9 +33,9 @@ pub fn dispatch(context: &mut Vm, module: Arc<Module>) -> Result<(), Error> {
 
     let mut error = None;
     let mut local_context = LocalContext {
-        functions: module.functions.as_ptr() as *mut _,
-        external_functions: module.external_functions.as_ptr() as *mut _,
-        outer: context,
+        functions: module.functions.as_ptr(),
+        external_functions: module.external_functions.as_ptr(),
+        vm: context,
         current_frame: &mut current_frame,
         error: &mut error,
     };
@@ -141,6 +134,7 @@ impl core::fmt::Display for Instruction {
 }
 
 pub struct Function {
+    name: Cow<'static, str>,
     code: *const [Instruction],
     literals: *const [Literal],
     // TODO: store this as pointer tag
@@ -149,8 +143,14 @@ pub struct Function {
 
 impl Function {
     #[inline]
-    pub fn new(code: Vec<Instruction>, literals: Vec<Literal>, registers: u8) -> Self {
+    pub fn new(
+        name: impl Into<Cow<'static, str>>,
+        code: Vec<Instruction>,
+        literals: Vec<Literal>,
+        registers: u8,
+    ) -> Self {
         Self {
+            name: name.into(),
             code: Box::into_raw(code.into_boxed_slice()),
             literals: Box::into_raw(literals.into_boxed_slice()),
             registers,
@@ -270,9 +270,7 @@ impl_extern_function_traits!(A, B, C, D, E, F, G, H);
 
 pub struct Scope<'a> {
     ops: *const (),
-    code: *const Instruction,
     stack: *mut StackSlot,
-    literals: *const Literal,
     context: *mut LocalContext,
 
     lifetime: PhantomData<fn(&'a ()) -> &'a ()>,
@@ -296,16 +294,14 @@ impl<'a> Scope<'a> {
     fn clone(&self) -> Self {
         Self {
             ops: self.ops,
-            code: self.code,
             stack: self.stack,
-            literals: self.literals,
             context: self.context,
             lifetime: PhantomData,
         }
     }
 }
 
-// TODO:
+// TODO: proper error
 pub type ExternFunctionError = ();
 
 pub type ExternFunctionCallbackWrapper =
@@ -362,7 +358,7 @@ macro_rules! __extern_function {
     }};
 }
 
-pub use crate::__extern_function as f;
+pub use crate::__extern_function as function;
 use crate::util::JoinIter;
 
 #[derive(Clone, Copy)]
@@ -376,6 +372,7 @@ struct CallFrame {
 impl Default for CallFrame {
     fn default() -> Self {
         static INVALID_FUNCTION: Function = Function {
+            name: Cow::Borrowed("invalid"),
             code: &[asm::invalid_op()],
             literals: &[],
             registers: 1,
@@ -403,7 +400,7 @@ pub type StackSlot = Value;
 pub struct Module {
     // TODO: make `Function` and `ExternFunction` smaller structs
     pub(crate) entry: FunctionId,
-    pub(crate) functions: Vec<code::Function>,
+    pub(crate) functions: Vec<Function>,
     pub(crate) external_functions: Vec<ExternFunction>,
 }
 
@@ -412,10 +409,12 @@ impl std::fmt::Display for Module {
         for function in &self.functions {
             writeln!(f, "fn {}", function.name)?;
             writeln!(f, "  registers: {}", function.registers)?;
-            writeln!(f, "  literals: {:?}", function.literals)?;
+            writeln!(f, "  literals: {:?}", unsafe { &*function.literals })?;
             writeln!(f, "  bytecode:")?;
-            for instruction in &function.bytecode {
-                writeln!(f, "    {:?}", instruction)?;
+            unsafe {
+                for instruction in &*function.code {
+                    writeln!(f, "    {}", Disasm(*instruction))?;
+                }
             }
         }
 
@@ -427,12 +426,27 @@ impl std::fmt::Display for Module {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __extern_library {
+    ($name:ident: $($function:ident),* $(,)?) => {
+        const FUNCTIONS: &'static [$crate::vm2::ExternFunction] = &[$($crate::__extern_function!($function)),*];
+        const $name: $crate::code::Library = const { unsafe { $crate::code::Library::from_static(FUNCTIONS) } };
+    };
+}
+
+pub use crate::__extern_library as library;
+
 pub struct Vm {
     stack: DynArray<StackSlot>,
     frames: DynList<CallFrame>,
 }
 
 impl Vm {
+    pub fn new() -> Self {
+        Self::builder().build()
+    }
+
     // 16 pages worth of `Value`
     pub const DEFAULT_INITIAL_STACK_SIZE: usize = 16 * 4096 / core::mem::size_of::<Value>();
 
@@ -442,6 +456,10 @@ impl Vm {
         }
     }
 
+    pub fn run(&mut self, module: &Module) -> Result<Value, Error> {
+        dispatch(self, module).map(|_| self.ret())
+    }
+
     pub fn ret(&self) -> Value {
         unsafe { self.stack.offset(0).read() }
     }
@@ -449,6 +467,12 @@ impl Vm {
     #[doc(hidden)]
     pub fn stack_size(&self) -> usize {
         self.stack.capacity()
+    }
+}
+
+impl Default for Vm {
+    fn default() -> Self {
+        Self::builder().build()
     }
 }
 
@@ -477,12 +501,16 @@ impl VmBuilder {
 #[derive(Debug, Clone, Copy)]
 pub enum Error {
     InvalidOp,
+    // TODO: proper error
+    Extern(ExternFunctionError),
 }
 
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Error::InvalidOp => write!(f, "invalid op"),
+            // TODO: proper error
+            Error::Extern(e) => write!(f, "extern function error"),
         }
     }
 }
@@ -490,21 +518,21 @@ impl core::fmt::Display for Error {
 impl core::error::Error for Error {}
 
 struct LocalContext {
-    functions: *mut Function,
-    external_functions: *mut ExternFunction,
-    outer: *mut Vm,
+    functions: *const Function,
+    external_functions: *const ExternFunction,
+    vm: *mut Vm,
     current_frame: *mut CallFrame,
     error: *mut Option<Error>,
 }
 
-unsafe fn get_function_unchecked(context: *mut LocalContext, index: FunctionId) -> *mut Function {
+unsafe fn get_function_unchecked(context: *mut LocalContext, index: FunctionId) -> *const Function {
     (*context).functions.add(index as usize)
 }
 
 unsafe fn get_extern_function_unchecked(
     context: *mut LocalContext,
     index: ExternFunctionId,
-) -> *mut ExternFunction {
+) -> *const ExternFunction {
     (*context).external_functions.add(index as usize)
 }
 
@@ -663,11 +691,11 @@ wrap_abi! {
         literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (dst, src): info::load_i16 = operands.split();
+        let (dst, value): info::load_i16 = operands.split();
 
         // println!("load_i64 dst={dst} src={src}");
 
-        stack.add(dst as usize).write(Value::I64(src as i64));
+        stack.add(dst as usize).write(Value::I64(value as i64));
 
         dispatch_next(ops, code, stack, literals, context)
     }
@@ -959,12 +987,11 @@ unsafe fn prepare_call(
     callee: *const Function,
     ret: Register,
     code_ptr: *const Instruction,
-    stack_ptr: *mut StackSlot,
     context_ptr: *mut LocalContext,
 ) -> (*const Instruction, *mut StackSlot, *const Literal) {
     let context = &mut *context_ptr;
     let current_frame = &mut *context.current_frame;
-    let outer_context = &mut *context.outer;
+    let vm = &mut *context.vm;
 
     let current_code_addr = code_ptr.offset_from(Function::code_ptr(current_frame.callee)) as u32;
 
@@ -975,28 +1002,37 @@ unsafe fn prepare_call(
     };
 
     // grow the stack if needed
-    let remaining_stack_space = outer_context.stack.remaining(new_frame.stack_base as usize);
-    let required_stack_space = (*callee).registers as usize;
-    let new_stack_ptr = if remaining_stack_space < required_stack_space {
-        outer_context
-            .stack
-            .grow(required_stack_space - remaining_stack_space);
-        outer_context.stack.offset(new_frame.stack_base as usize)
-    } else {
-        stack_ptr.add(ret as usize)
-    };
+    let stack_ptr = grow_stack(
+        vm,
+        new_frame.stack_base as usize,
+        (*callee).registers as usize,
+    );
 
     // allocate new call frame
-    outer_context
-        .frames
-        .push(core::mem::replace(current_frame, new_frame));
+    vm.frames.push(core::mem::replace(current_frame, new_frame));
 
     // jump to start of callee
     // -> replacing the code ptr is equivalent to a jump
-    let new_code_ptr = Function::code_ptr(callee);
-    let new_literals_ptr = Function::literals_ptr(callee);
+    let code_ptr = Function::code_ptr(callee);
+    let literals_ptr = Function::literals_ptr(callee);
 
-    (new_code_ptr, new_stack_ptr, new_literals_ptr)
+    (code_ptr, stack_ptr, literals_ptr)
+}
+
+#[inline]
+unsafe fn grow_stack(
+    vm: &mut Vm,
+    new_stack_base: usize,
+    required_stack_space: usize,
+) -> *mut StackSlot {
+    let remaining_stack_space = vm.stack.remaining(new_stack_base);
+    if remaining_stack_space < required_stack_space {
+        vm.stack.grow(required_stack_space - remaining_stack_space);
+        vm.stack.offset(new_stack_base)
+    } else {
+        vm.stack.offset(new_stack_base)
+        // stack_ptr.add(required_stack_space)
+    }
 }
 
 // return procedure:
@@ -1008,7 +1044,7 @@ unsafe fn return_from_call(
 ) -> (*const Instruction, *mut StackSlot, *const Literal) {
     let context = &mut *context_ptr;
     let current_frame = &mut *context.current_frame;
-    let outer_context = &mut *context.outer;
+    let outer_context = &mut *context.vm;
 
     // pop call frame
     let prev_frame = outer_context.frames.pop_unchecked();
@@ -1030,7 +1066,7 @@ wrap_abi! {
         operands: u24,
         ops: *const (),
         code: *const Instruction,
-        stack: *mut StackSlot,
+        _stack: *mut StackSlot,
         _literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
@@ -1038,10 +1074,34 @@ wrap_abi! {
 
         let callee = get_function_unchecked(context, callee);
 
-        let (code, stack, literals) = prepare_call(callee, ret, code, stack, context);
+        let (code, stack, literals) = prepare_call(callee, ret, code, context);
 
         dispatch_current(ops, code, stack, literals, context)
     }
+}
+
+unsafe fn do_extern_call(
+    callee: *const ExternFunction,
+    ret: Register,
+
+    ops: *const (),
+    context: *mut LocalContext,
+) -> Result<Value, ExternFunctionError> {
+    let context = &mut *context;
+    let current_frame = &mut *context.current_frame;
+    let vm = &mut *context.vm;
+    let stack = grow_stack(
+        vm,
+        current_frame.stack_base as usize + ret as usize,
+        0, // no additional stack space required
+    );
+
+    ((*callee).wrapper)(Scope {
+        ops,
+        stack,
+        context,
+        lifetime: PhantomData,
+    })
 }
 
 wrap_abi! {
@@ -1053,9 +1113,17 @@ wrap_abi! {
         literals: *const Literal,
         context: *mut LocalContext,
     ) -> Control {
-        let (_ret, _callee): info::call_extern = operands.split();
+        let (ret, callee): info::call_extern = operands.split();
 
-        // TODO
+        let callee = get_extern_function_unchecked(context, callee);
+        let result = do_extern_call(callee, ret, ops,  context);
+        match result {
+            Ok(value) => stack.add(ret as usize).write(value),
+            Err(e) => {
+                (*context).error.write(Some(Error::Extern(e)));
+                return Control::Error
+            }
+        }
 
         dispatch_next(ops, code, stack, literals, context)
     }
@@ -1268,7 +1336,7 @@ ops! {
 
         0x02 = load_unit(dst: Register),
         0x03 = load_literal(dst: Register, src: LiteralId),
-        0x04 = load_i16(dst: Register, src: i16),
+        0x04 = load_i16(dst: Register, value: i16),
         0x05 = load_true(dst: Register),
         0x06 = load_false(dst: Register),
         0x07 = load_fn(dst: Register, id: FunctionId),

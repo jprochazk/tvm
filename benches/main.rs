@@ -18,7 +18,7 @@ fn fib(bencher: Bencher, n: usize) {
     );
 
     let mut vm = tvm::Vm::new();
-    let module = tvm::compile(&src).unwrap().link().unwrap();
+    let module = tvm::compile(&src).unwrap();
 
     bencher.bench_local(move || black_box(vm.run(&module)));
 }

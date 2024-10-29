@@ -1,0 +1,5 @@
+---
+source: src/vm2/tests.rs
+expression: "emit! (r#\"\n        let v = 1.0;\n        -v\n    \"#)"
+---
+F64(-1.0)

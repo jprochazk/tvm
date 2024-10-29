@@ -15,7 +15,7 @@ macro_rules! test {
     ($name:ident, $input:literal) => {
         #[test]
         fn $name() {
-            insta::assert_snapshot!(parse!($input))
+            assert_snapshot!(parse!($input))
         }
     };
 }

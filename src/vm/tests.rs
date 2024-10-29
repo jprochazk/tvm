@@ -95,14 +95,14 @@ macro_rules! test {
     ($name:ident, $input:literal) => {
         #[test]
         fn $name() {
-            insta::assert_snapshot!(run!($input))
+            assert_snapshot!(run!($input))
         }
     };
     ($name:ident, silent, $input:literal) => {
         #[test]
         fn $name() {
             COLLECT_EVENTS.set(false);
-            insta::assert_snapshot!(run!($input));
+            assert_snapshot!(run!($input));
             COLLECT_EVENTS.set(true);
         }
     };

@@ -1,29 +1,5 @@
 ---
 source: src/vm/tests.rs
-expression: "run!(r#\"\n        10 + 10\n    \"#)"
+expression: "emit! (r#\"\n        10 + 10\n    \"#)"
 ---
-## Module
-
-function "main" {
-  registers: 2 (0 params)
-  literals: []
-  bytecode: (4 ops) [
-    smi 10, r0          // 10 + 10
-    smi 10, r1          // 
-    add.i64 r0, r1, r0  // 
-    ret                 //   
-  ]
-}
-
-
-## Output
-
 I64(20)
-
-## Events
-
-smi 10, r0               [_, _] -> [10i, _]
-smi 10, r1               [10i, _] -> [10i, 10i]
-add.i64 r0, r1, r0       [10i, 10i] -> [20i, 10i]
-ret                      [20i, 10i]
-

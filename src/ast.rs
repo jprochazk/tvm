@@ -6,7 +6,7 @@ mod print;
 use std::hash::Hash;
 
 use crate::lex::Span;
-use crate::value::f64n;
+use crate::vm::value::f64n;
 use crate::Str;
 
 pub struct Ast<'src> {

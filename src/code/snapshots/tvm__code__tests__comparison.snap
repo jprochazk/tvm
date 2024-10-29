@@ -1,22 +1,18 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        let a = 1;\n        let b = 2;\n\n        a == b;\n        a != b;\n        a < b;\n        a > b;\n        a <= b;\n        a >= b;\n    \"#)"
+expression: "emit!\n(r#\"\n        let a = 1;\n        let b = 2;\n\n        a == b;\n        a != b;\n        a < b;\n        a > b;\n        a <= b;\n        a >= b;\n    \"#)"
 ---
-function "main" {
-  registers: 5 (0 params)
+fn main
+  registers: 5
   literals: []
-  bytecode: (10 ops) [
-    smi 1, r1           // let a = 1;
-    smi 2, r2           // let b = 2;
-    ceq.i64 r1, r2, r3  // a == b;
-    cne.i64 r1, r2, r3  // a != b;
-    clt.i64 r1, r2, r3  // a < b;
-    cgt.i64 r1, r2, r3  // a > b;
-    cle.i64 r1, r2, r3  // a <= b;
-    cge.i64 r1, r2, r3  // a >= b;
-    unit r0             // 
-    ret                 //   
-  ]
-}
-
-
+  bytecode:
+    load_i16 dst=1 value=1
+    load_i16 dst=2 value=2
+    cmp_eq_i64 dst=3 lhs=1 rhs=2
+    cmp_ne_i64 dst=3 lhs=1 rhs=2
+    cmp_lt_i64 dst=3 lhs=1 rhs=2
+    cmp_gt_i64 dst=3 lhs=1 rhs=2
+    cmp_le_i64 dst=3 lhs=1 rhs=2
+    cmp_ge_i64 dst=3 lhs=1 rhs=2
+    load_unit dst=0
+    ret

@@ -1,18 +1,14 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        loop {\n            let v = 0;\n            break;\n            let v = 1;\n        }\n    \"#)"
+expression: "emit!\n(r#\"\n        loop {\n            let v = 0;\n            break;\n            let v = 1;\n        }\n    \"#)"
 ---
-function "main" {
-  registers: 2 (0 params)
+fn main
+  registers: 2
   literals: []
-  bytecode: (6 ops) [
-    smi 0, r1  // let v = 0;
-    jmp +3     // break;
-    smi 1, r1  // let v = 1;
-    jmp -3     // }
-    unit r0    // 
-    ret        //   
-  ]
-}
-
-
+  bytecode:
+    load_i16 dst=1 value=0
+    jump offset=3
+    load_i16 dst=1 value=1
+    jump offset=-3
+    load_unit dst=0
+    ret

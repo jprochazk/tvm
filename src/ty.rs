@@ -259,7 +259,7 @@ impl<'src> TyCtx<'src> {
     }
 
     fn current_scope(&mut self) -> &mut Scope<'src> {
-        self.scopes.last_mut().expect("BUG: no open scope")
+        self.scopes.last_mut().expect("ICE: no open scope")
     }
 
     fn check_symbol(&mut self, name: &Ident<'src>, kind: SymbolKind) -> Result<()> {
@@ -523,7 +523,7 @@ impl<'src> TyCtx<'src> {
         let mut branches = Vec::with_capacity(v.branches.len());
         let mut block_ty = None;
         for branch in &v.branches {
-            let cond = self.check_expr(&branch.cond, Bool.ty(), NoDiscard);
+            let cond = self.check_expr(&branch.cond, Ty::BOOL, NoDiscard);
             let body = self.infer_block(&branch.body);
 
             if intent == NoDiscard {
@@ -591,7 +591,7 @@ impl<'src> TyCtx<'src> {
             use ast::BinaryOp as Op;
             match op {
                 Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Rem | Op::Pow => lhs.ty,
-                Op::Eq | Op::Ne | Op::Gt | Op::Lt | Op::Ge | Op::Le | Op::And | Op::Or => Bool.ty(),
+                Op::Eq | Op::Ne | Op::Gt | Op::Lt | Op::Ge | Op::Le | Op::And | Op::Or => Ty::BOOL,
                 Op::Opt => todo!("opt binop"),
             }
         }
@@ -645,10 +645,10 @@ impl<'src> TyCtx<'src> {
 
     fn infer_primitive(&mut self, span: Span, v: &ast::expr::Primitive<'src>) -> Expr<'src> {
         let (ty, prim) = match v {
-            ast::expr::Primitive::Int(v) => (Int.ty(), Primitive::Int(*v)),
-            ast::expr::Primitive::Num(v) => (Num.ty(), Primitive::Num(*v)),
-            ast::expr::Primitive::Bool(v) => (Bool.ty(), Primitive::Bool(*v)),
-            ast::expr::Primitive::Str(v) => (Str.ty(), Primitive::Str(v.clone())),
+            ast::expr::Primitive::Int(v) => (Ty::INT, Primitive::Int(*v)),
+            ast::expr::Primitive::Num(v) => (Ty::NUM, Primitive::Num(*v)),
+            ast::expr::Primitive::Bool(v) => (Ty::BOOL, Primitive::Bool(*v)),
+            ast::expr::Primitive::Str(v) => (Ty::STR, Primitive::Str(v.clone())),
         };
 
         Expr {
@@ -763,7 +763,7 @@ impl<'src> TyCtx<'src> {
             }
             Ty::Error => Ty::Error,
             Ty::Unreachable => Ty::Unreachable,
-            Ty::Dynamic => unreachable!("BUG: `any` appears as callee"),
+            Ty::Dynamic => unreachable!("ICE: `any` appears as callee"),
         }
     }
 
@@ -834,7 +834,7 @@ impl<'src> TyCtx<'src> {
 }
 
 macro_rules! primitives {
-    ($($name:ident),* $(,)?) => {
+    ($prim:ident; $($name:ident),* $(,)?) => {
         paste::paste! {
             #[allow(non_camel_case_types)]
             #[repr(u32)]
@@ -842,27 +842,34 @@ macro_rules! primitives {
                 $($name),*
             }
 
-            $(
-                #[allow(non_upper_case_globals)]
-                pub const [<$name:camel>]: Prim = Prim {
-                    name: stringify!($name),
-                    id: DefId(_Builtins::$name as u32),
-                };
-            )*
+            pub mod $prim {
+                use super::*;
+                $(
+                    #[allow(non_upper_case_globals)]
+                    pub const [<$name:camel>]: Prim = Prim {
+                        name: stringify!($name),
+                        id: DefId(_Builtins::$name as u32),
+                    };
+                )*
+            }
 
-            const _PRIMITIVES_LEN: usize = [$([<$name:camel>]),*].len();
+            const _PRIMITIVES_LEN: usize = [$($prim::[<$name:camel>]),*].len();
 
             impl Prim {
                 pub const LIST: [Prim; _PRIMITIVES_LEN] = [
-                    $([<$name:camel>]),*
+                    $($prim::[<$name:camel>]),*
                 ];
             }
 
             impl Ty {
                 $(
+                    pub const [<$name:upper>]: Ty = Ty::Def(DefId(_Builtins::$name as u32));
+                )*
+
+                $(
                     pub fn [<is_ $name:lower>](&self) -> bool {
                         match self {
-                            Self::Def(id) => *id == [<$name:camel>].id,
+                            Self::Def(id) => *id == $prim::[<$name:camel>].id,
                             _ => false,
                         }
                     }
@@ -885,6 +892,7 @@ impl Prim {
 }
 
 primitives! {
+    prim;
     int, num, bool, str
 }
 

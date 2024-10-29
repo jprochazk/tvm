@@ -1,24 +1,18 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        -1;\n        -1.0;\n        !true;\n        !false;\n    \"#)"
+expression: "emit! (r#\"\n        -1;\n        -1.0;\n        !true;\n        !false;\n    \"#)"
 ---
-function "main" {
-  registers: 2 (0 params)
-  literals: [
-    F64(1.0)
-  ]
-  bytecode: (10 ops) [
-    smi 1, r1       // -1;
-    mns.i64 r1, r1  // 
-    lit [0], r1     // -1.0;
-    mns.f64 r1, r1  // 
-    bool true, r1   // !true;
-    not r1, r1      // 
-    bool false, r1  // !false;
-    not r1, r1      // 
-    unit r0         // 
-    ret             //   
-  ]
-}
-
-
+fn main
+  registers: 2
+  literals: [F64(1.0)]
+  bytecode:
+    load_i16 dst=1 value=1
+    neg_i64 dst=1 rhs=1
+    load_literal dst=1 src=0
+    neg_f64 dst=1 rhs=1
+    load_true dst=1
+    not_bool dst=1 rhs=1
+    load_false dst=1
+    not_bool dst=1 rhs=1
+    load_unit dst=0
+    ret

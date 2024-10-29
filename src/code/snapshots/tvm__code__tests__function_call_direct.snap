@@ -1,25 +1,18 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v\n        }\n\n        f(10);\n    \"#)"
+expression: "emit!\n(r#\"\n        fn f(v: int) -> int {\n            v\n        }\n\n        f(10);\n    \"#)"
 ---
-function "main" {
-  registers: 3 (0 params)
+fn main
+  registers: 3
   literals: []
-  bytecode: (4 ops) [
-    smi 10, r2   // f(10);
-    call f0, r1  // 
-    unit r0      // 
-    ret          //   
-  ]
-}
-
-function "f" #0 {
-  registers: 2 (1 params)
+  bytecode:
+    load_i16 dst=2 value=10
+    call ret=1 callee=1
+    load_unit dst=0
+    ret
+fn f
+  registers: 2
   literals: []
-  bytecode: (2 ops) [
-    mov r1, r0  // v
-    ret         //   
-  ]
-}
-
-
+  bytecode:
+    mov dst=0 src=1
+    ret

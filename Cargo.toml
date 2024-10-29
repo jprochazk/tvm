@@ -1,5 +1,5 @@
 [workspace]
-members = ["vm", "xtask"]
+members = ["xtask"]
 
 [package]
 name = "tvm"
@@ -11,9 +11,11 @@ publish = true
 
 [features]
 __debug = []
+__disable_snapshots = []
 
 [dependencies]
 beef = "0.5.2"
+hashbrown = "0.15.0"
 logos = "0.13.0"
 paste = "1.0.13"
 rustc-hash = "1.1.0"

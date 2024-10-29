@@ -1,33 +1,23 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        fn f(v: int) -> int {\n            v + 1\n        }\n\n        fn g() -> int {\n            2\n        }\n    \"#)"
+expression: "emit!\n(r#\"\n        fn f(v: int) -> int {\n            v + 1\n        }\n\n        fn g() -> int {\n            2\n        }\n    \"#)"
 ---
-function "main" {
-  registers: 1 (0 params)
+fn main
+  registers: 1
   literals: []
-  bytecode: (2 ops) [
-    unit r0  // 
-    ret      //   
-  ]
-}
-
-function "f" #0 {
-  registers: 3 (1 params)
+  bytecode:
+    load_unit dst=0
+    ret
+fn f
+  registers: 3
   literals: []
-  bytecode: (3 ops) [
-    smi 1, r2           // v + 1
-    add.i64 r1, r2, r0  // 
-    ret                 //   
-  ]
-}
-
-function "g" #1 {
-  registers: 1 (0 params)
+  bytecode:
+    load_i16 dst=2 value=1
+    add_i64 dst=0 lhs=1 rhs=2
+    ret
+fn g
+  registers: 1
   literals: []
-  bytecode: (2 ops) [
-    smi 2, r0  // 2
-    ret        //   
-  ]
-}
-
-
+  bytecode:
+    load_i16 dst=0 value=2
+    ret

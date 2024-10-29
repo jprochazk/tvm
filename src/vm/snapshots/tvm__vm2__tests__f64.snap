@@ -1,0 +1,5 @@
+---
+source: src/vm2/tests.rs
+expression: "emit! (r#\"\n        1.23\n    \"#)"
+---
+F64(1.23)

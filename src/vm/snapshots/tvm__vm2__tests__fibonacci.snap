@@ -1,0 +1,5 @@
+---
+source: src/vm2/tests.rs
+expression: "emit!\n(r#\"\n        fn fib(n: int) -> int {\n            if n < 2 { n }\n            else { fib(n - 1) + fib(n - 2) }\n        }\n\n        fib(25)\n    \"#)"
+---
+I64(75025)

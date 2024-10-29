@@ -1,40 +1,39 @@
+use std::ffi::OsStr;
+use std::process::Command;
+
 fn main() {
-    let (cmd, args, dry_run) = {
+    if let Err(e) = try_main() {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+}
+
+fn try_main() -> Result {
+    let (cmd, args) = {
         let mut args = std::env::args().skip(1);
 
         let Some(cmd) = args.next() else {
             help();
         };
+        if cmd == "-h" || cmd == "--help" {
+            help();
+        }
 
-        let mut args = args.collect::<Vec<_>>();
+        let args = args.collect::<Vec<_>>();
         for arg in &args {
             if arg == "-h" || arg == "--help" {
                 help();
             }
         }
-        let dry_run = match args.iter().position(|v| v == "--dry-run") {
-            Some(i) => {
-                args.remove(i);
-                true
-            }
-            None => false,
-        };
 
-        (cmd, args, dry_run)
+        (cmd, args)
     };
 
-    let mut ctx = Context::new();
     match cmd.as_str() {
-        "setup" => setup(&mut ctx, &args),
-        "test" => test(&mut ctx, &args),
-        "miri" => miri(&mut ctx, &args),
+        "setup" => setup(&args),
+        "test" => test(&args),
+        "miri" => miri(&args),
         _ => help(),
-    }
-
-    if dry_run {
-        ctx.dry_run();
-    } else {
-        ctx.run();
     }
 }
 
@@ -59,86 +58,98 @@ Global options:
     std::process::exit(0)
 }
 
-fn setup(ctx: &mut Context, _: &[String]) {
-    cargo(ctx, "install cargo-binstall --locked");
-    cargo(ctx, "binstall cargo-nextest --secure");
-    rustup(ctx, "component add miri");
+type Result<T = (), E = Box<dyn std::error::Error + 'static>> = std::result::Result<T, E>;
+
+fn setup(_: &[String]) -> Result {
+    cargo("install")
+        .with_args(["cargo-binstall", "--locked"])
+        .run()?;
+    cargo("binstall").with_args(["cargo-insta", "-y"]).run()?;
+    cargo("binstall").with_args(["cargo-nextest", "-y"]).run()?;
+    rustup("component").with_args(["add", "miri"]).run()?;
+
+    Ok(())
 }
 
-fn test(ctx: &mut Context, _: &[String]) {
-    cargo(ctx, "nextest run -p vm");
-    cargo(ctx, "nextest run -p vm --release");
+fn test(args: &[String]) -> Result {
+    cargo("test").with_args(args).run()
 }
 
-fn miri(ctx: &mut Context, _: &[String]) {
-    cargo(ctx, "miri nextest run -p vm");
-    cargo(ctx, "miri nextest run -p vm --release");
+fn miri(args: &[String]) -> Result {
+    const MIRIFLAGS: &str = "-Zmiri-tree-borrows";
+    cargo("miri")
+        .with_args(["test"])
+        .with_args(args)
+        .with_envs([("MIRIFLAGS", MIRIFLAGS)])
+        .run()
 }
 
-struct Context {
-    commands: Vec<Command>,
+fn cargo(cmd: &str) -> Command {
+    Command::new("cargo").with_arg(cmd)
 }
 
-impl Context {
-    fn new() -> Self {
-        Self { commands: vec![] }
+fn rustup(cmd: &str) -> Command {
+    Command::new("rustup").with_arg(cmd)
+}
+
+#[allow(dead_code)]
+trait CommandExt {
+    fn with_arg(self, arg: impl AsRef<OsStr>) -> Self;
+    fn with_args(self, args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self;
+    fn with_env(self, key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) -> Self;
+    fn with_envs(
+        self,
+        envs: impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)>,
+    ) -> Self;
+    fn run(self) -> Result;
+}
+
+impl CommandExt for Command {
+    fn with_arg(mut self, arg: impl AsRef<OsStr>) -> Self {
+        self.arg(arg);
+        self
     }
 
-    fn dry_run(&self) {
-        for command in &self.commands {
-            println!("$ {command}");
+    fn with_args(mut self, args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> Self {
+        self.args(args);
+        self
+    }
+
+    fn with_env(mut self, key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) -> Self {
+        self.env(key, value);
+        self
+    }
+
+    fn with_envs(
+        mut self,
+        envs: impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)>,
+    ) -> Self {
+        self.envs(envs);
+        self
+    }
+
+    fn run(mut self) -> Result {
+        println!(
+            "$ {} {} {}",
+            self.get_envs()
+                .map(|(k, v)| format!(
+                    "{}={}",
+                    k.to_string_lossy(),
+                    v.map(|v| v.to_string_lossy()).unwrap_or_default()
+                ))
+                .collect::<Vec<_>>()
+                .join(" "),
+            self.get_program().to_string_lossy(),
+            self.get_args()
+                .map(|v| v.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        let success = self.spawn()?.wait()?.success();
+        if !success {
+            return Err(format!("command failed with status: {success}").into());
         }
-    }
 
-    fn run(&self) {
-        for command in &self.commands {
-            println!("$ {command}");
-            command.run();
-        }
-    }
-}
-
-struct Command {
-    name: &'static str,
-    args: String,
-}
-
-impl Command {
-    fn run(&self) {
-        match std::process::Command::new(self.name)
-            .args(self.args.split_ascii_whitespace().filter(|v| !v.is_empty()))
-            .status()
-        {
-            Ok(status) => {
-                if !status.success() {
-                    eprintln!("command failed with status: {status}");
-                }
-            }
-            Err(err) => eprintln!("error running command: {err}"),
-        };
-    }
-}
-
-impl std::fmt::Display for Command {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)?;
-        if !self.args.is_empty() {
-            write!(f, " {}", self.args)?;
-        }
         Ok(())
     }
-}
-
-fn cargo(ctx: &mut Context, args: &str) {
-    ctx.commands.push(Command {
-        name: "cargo",
-        args: args.to_owned(),
-    });
-}
-
-fn rustup(ctx: &mut Context, args: &str) {
-    ctx.commands.push(Command {
-        name: "rustup",
-        args: args.to_owned(),
-    })
 }

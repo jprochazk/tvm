@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use crate::ast::{BinaryOp, Ident, UnaryOp};
 use crate::lex::Span;
-use crate::value::f64n;
+use crate::vm::value::f64n;
 use crate::Str;
 
 pub struct Hir<'src> {
@@ -37,6 +37,13 @@ pub enum Ty {
 impl Ty {
     pub fn is_err(&self) -> bool {
         matches!(self, Ty::Error)
+    }
+
+    pub fn into_fn(self) -> Option<FnId> {
+        match self {
+            Self::Fn(id) => Some(id),
+            _ => None,
+        }
     }
 }
 

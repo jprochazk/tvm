@@ -1,25 +1,5 @@
 ---
 source: src/vm/tests.rs
-expression: "run!(r#\"\n        123\n    \"#)"
+expression: "emit! (r#\"\n        123\n    \"#)"
 ---
-## Module
-
-function "main" {
-  registers: 1 (0 params)
-  literals: []
-  bytecode: (2 ops) [
-    smi 123, r0  // 123
-    ret          //   
-  ]
-}
-
-
-## Output
-
 I64(123)
-
-## Events
-
-smi 123, r0              [_] -> [123i]
-ret                      [123i]
-

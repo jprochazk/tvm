@@ -1,25 +1,21 @@
 ---
 source: src/code/tests.rs
-expression: "emit!(r#\"\n        let v: int = 1;\n        v += 1;\n        v -= 1;\n        v /= 1;\n        v *= 1;\n        v %= 1;\n    \"#)"
+expression: "emit!\n(r#\"\n        let v: int = 1;\n        v += 1;\n        v -= 1;\n        v /= 1;\n        v *= 1;\n        v %= 1;\n    \"#)"
 ---
-function "main" {
-  registers: 3 (0 params)
+fn main
+  registers: 3
   literals: []
-  bytecode: (13 ops) [
-    smi 1, r1           // let v: int = 1;
-    smi 1, r2           // v += 1;
-    add.i64 r1, r2, r1  // 
-    smi 1, r2           // v -= 1;
-    sub.i64 r1, r2, r1  // 
-    smi 1, r2           // v /= 1;
-    div.i64 r1, r2, r1  // 
-    smi 1, r2           // v *= 1;
-    mul.i64 r1, r2, r1  // 
-    smi 1, r2           // v %= 1;
-    rem.i64 r1, r2, r1  // 
-    unit r0             // 
-    ret                 //   
-  ]
-}
-
-
+  bytecode:
+    load_i16 dst=1 value=1
+    load_i16 dst=2 value=1
+    add_i64 dst=1 lhs=1 rhs=2
+    load_i16 dst=2 value=1
+    sub_i64 dst=1 lhs=1 rhs=2
+    load_i16 dst=2 value=1
+    div_i64 dst=1 lhs=1 rhs=2
+    load_i16 dst=2 value=1
+    mul_i64 dst=1 lhs=1 rhs=2
+    load_i16 dst=2 value=1
+    rem_i64 dst=1 lhs=1 rhs=2
+    load_unit dst=0
+    ret

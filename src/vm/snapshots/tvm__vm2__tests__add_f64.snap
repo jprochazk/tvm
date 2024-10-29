@@ -1,0 +1,5 @@
+---
+source: src/vm2/tests.rs
+expression: "emit! (r#\"\n        10.5 + 20.5\n    \"#)"
+---
+F64(31.0)

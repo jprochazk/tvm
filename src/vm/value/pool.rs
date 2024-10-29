@@ -1,5 +1,5 @@
 use super::Literal;
-use crate::vm2::operands::LiteralId;
+use crate::vm::operands::LiteralId;
 
 #[derive(Default)]
 pub struct LiteralPool {

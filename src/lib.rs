@@ -18,7 +18,7 @@ pub mod code;
 pub mod hir;
 pub mod syn;
 pub mod ty;
-pub mod vm2;
+pub mod vm;
 
 mod util;
 
@@ -26,8 +26,8 @@ pub use std::borrow::Cow;
 
 pub use code::Library;
 pub use hir::Ty;
-pub use vm2::value::Value;
-pub use vm2::{function, library, Module, Scope, Vm};
+pub use vm::value::Value;
+pub use vm::{function, library, Module, Scope, Vm};
 
 pub type Str<'a> = beef::lean::Cow<'a, str>;
 pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;

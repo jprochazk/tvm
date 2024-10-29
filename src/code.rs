@@ -8,15 +8,15 @@ use crate::error::{Error, ErrorCtx, Report, Result};
 use crate::hir::Hir;
 use crate::lex::Span;
 use crate::util::{default, JoinIter};
-use crate::vm2::operands::{ExternFunctionId, FunctionId, LiteralId, PcRelativeOffset, Register};
-use crate::vm2::value::pool::LiteralPool;
-use crate::vm2::value::Literal;
-use crate::vm2::{
+use crate::vm::operands::{ExternFunctionId, FunctionId, LiteralId, PcRelativeOffset, Register};
+use crate::vm::value::pool::LiteralPool;
+use crate::vm::value::Literal;
+use crate::vm::{
     self, asm, operands, DecodedInstruction, ExternFunction, ExternFunctionAbi, Instruction,
 };
 use crate::{hir, HashMap};
 
-pub fn compile(hir: Hir<'_>, library: &Library) -> Result<vm2::Module, Report> {
+pub fn compile(hir: Hir<'_>, library: &Library) -> Result<vm::Module, Report> {
     Compiler {
         ecx: ErrorCtx::new(hir.src),
         module_state: ModuleState {
@@ -32,7 +32,7 @@ struct Compiler<'src> {
 }
 
 impl<'src> Compiler<'src> {
-    fn compile(mut self, hir: Hir<'src>, library: &Library) -> Result<vm2::Module, Report> {
+    fn compile(mut self, hir: Hir<'src>, library: &Library) -> Result<vm::Module, Report> {
         // 1. Generate and store entrypoint
         let main_fn = generate_main_fn(hir.top_level);
         let entry = self.module_state.fn_table.reserve_function(main_fn.name);
@@ -84,7 +84,7 @@ impl<'src> Compiler<'src> {
 
         self.ecx.finish()?;
 
-        Ok(vm2::Module {
+        Ok(vm::Module {
             entry,
             functions,
             external_functions,
@@ -119,11 +119,11 @@ fn link_external_functions(
         .into());
     }
 
-    fn unreachable(_: vm2::Scope) {
+    fn unreachable(_: vm::Scope) {
         unreachable!("ICE: unreachable");
     }
 
-    let empty_external_function = vm2::function!(unreachable);
+    let empty_external_function = vm::function!(unreachable);
     let mut external_functions =
         vec![empty_external_function; function_table.external_functions.len()];
     for decl in library.functions.iter() {
@@ -1236,9 +1236,9 @@ pub struct Function {
 }
 
 impl Function {
-    pub(crate) fn finish(self) -> vm2::Function {
+    pub(crate) fn finish(self) -> vm::Function {
         // TODO: retain more of those fields
-        vm2::Function::new(self.name, self.bytecode, self.literals, self.registers)
+        vm::Function::new(self.name, self.bytecode, self.literals, self.registers)
     }
 
     #[cfg(test)]

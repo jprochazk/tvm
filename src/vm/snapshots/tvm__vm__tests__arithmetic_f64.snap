@@ -1,0 +1,5 @@
+---
+source: src/vm/tests.rs
+expression: "emit! (r#\"\n        1.23 + 3.21 * 6.12 - 3.0 / 1.5\n    \"#)"
+---
+F64(18.8752)

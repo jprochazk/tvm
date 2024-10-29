@@ -1,0 +1,5 @@
+---
+source: src/vm/tests.rs
+expression: "emit!\n(r#\"\n        let v: int = 1;\n        v += 1; // 2\n        v /= 2; // 1\n        v *= 2; // 2\n        v -= 1; // 1\n        v %= 1; // 0\n\n        v\n    \"#)"
+---
+I64(0)

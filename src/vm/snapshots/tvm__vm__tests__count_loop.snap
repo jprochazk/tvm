@@ -1,0 +1,5 @@
+---
+source: src/vm/tests.rs
+expression: "emit!\n(r#\"\n        let i = 0;\n        loop {\n            if i >= 10 { break }\n            i += 1;\n        }\n        i\n    \"#)"
+---
+I64(10)

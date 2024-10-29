@@ -1,0 +1,5 @@
+---
+source: src/vm/tests.rs
+expression: "emit!\n(r#\"\n        fn id(v: int) -> int { v }\n        fn add(a: int, b: int) -> int { id(a) + id(b) }\n\n        add(id(2), id(3))\n    \"#)"
+---
+I64(5)

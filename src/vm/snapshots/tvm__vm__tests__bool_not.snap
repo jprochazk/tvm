@@ -1,0 +1,5 @@
+---
+source: src/vm/tests.rs
+expression: "emit! (r#\"\n        let v = true;\n        !v\n    \"#)"
+---
+Bool(false)
